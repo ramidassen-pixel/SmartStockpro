@@ -1,134 +1,55 @@
-# SmartStock Pro
+# SmartStock Pro v2
 
-> **Run Your Business Like a Pro**
+> **Run Your Business Like a Pro** — Mobile-first PWA
 
-Enterprise business management platform for tile stores, hardware shops, wholesale & retail.
-
-## Quick Start
-
-```bash
-# 1. Clone
-git clone https://github.com/YOUR_USERNAME/smartstock-pro.git
-cd smartstock-pro
-
-# 2. Open locally (no build step needed!)
-open index.html
-# or: npx serve .
+## Live Site
+```
+https://ramidassen-pixel.github.io/smart-stock-pro
 ```
 
-## Project Structure
-
+## Structure
 ```
 smartstock-pro/
-├── index.html              ← Entry point
+├── index.html              ← Single entry point
 ├── css/
-│   ├── variables.css       ← Design tokens & CSS variables
-│   ├── layout.css          ← Sidebar, topbar, main area
-│   ├── components.css      ← Cards, buttons, badges, modals
-│   ├── forms.css           ← Form elements
-│   ├── tables.css          ← Table styles
-│   ├── dashboard.css       ← Dashboard-specific styles
+│   ├── variables.css       ← All design tokens & CSS variables
+│   ├── layout.css          ← App shell, topbar, bottom nav, sidebar
+│   ├── components.css      ← Cards, buttons, badges, lists
+│   ├── forms.css           ← Drawers, form inputs
 │   └── responsive.css      ← Mobile breakpoints
 ├── js/
-│   ├── config.js           ← ⚙️  App configuration (edit this!)
+│   ├── config.js           ← ⚙️ Edit this — API keys & company info
 │   ├── utils.js            ← Shared helpers
-│   ├── mock-data.js        ← Sample data (replace with DB calls)
-│   ├── components.js       ← HTML component builders
+│   ├── data.js             ← Mock data (replace with DB calls)
 │   ├── toast.js            ← Toast notifications
-│   ├── router.js           ← Client-side routing
-│   ├── app.js              ← App shell & navigation
-│   ├── auth.js             ← Authentication (stub)
-│   ├── dashboard.js        ← Dashboard page
-│   ├── inventory.js        ← Inventory management
-│   ├── sales.js            ← Sales & invoices
-│   ├── customers.js        ← Customer management
-│   ├── suppliers.js        ← Supplier management
-│   ├── expenses.js         ← Expense tracking
-│   ├── payroll.js          ← Payroll system
-│   ├── reports.js          ← Financial reports
-│   ├── analytics.js        ← Analytics & charts
-│   ├── ai.js               ← AI assistant page
-│   ├── settings.js         ← Settings page
-│   └── notifications.js    ← Notifications
+│   ├── app.js              ← App shell, navigation, sidebar
+│   └── pages/
+│       ├── home.js         ← Dashboard
+│       ├── inventory.js    ← Products & stock
+│       ├── sales.js        ← Invoices & POS
+│       ├── customers.js    ← Customer management
+│       ├── reports.js      ← P&L, cash flow, expenses
+│       ├── ai.js           ← AI assistant (Claude)
+│       └── more.js         ← More features & settings
 ├── services/
-│   ├── database.js         ← DB service (wraps MockData → swap for Supabase)
-│   ├── auth-service.js     ← Auth service
-│   ├── notification-service.js
-│   └── ai-service.js       ← Anthropic API integration
+│   ├── db.js               ← Database service (swap MockData for Supabase)
+│   └── ai-service.js       ← Anthropic Claude API
 ├── pwa/
-│   ├── manifest.json       ← PWA manifest
+│   ├── manifest.json       ← PWA manifest (installable)
 │   └── service-worker.js   ← Offline support
-└── database/
-    └── schema.sql          ← PostgreSQL schema for Supabase
+└── database/schema.sql     ← PostgreSQL schema for Supabase
 ```
 
-## Configuration
+## Setup
+1. Edit `js/config.js` — add your company name, currency, API keys
+2. Go to **More → Settings** to enter your Anthropic API key
+3. That's it — the app works with mock data out of the box
 
-Edit `js/config.js`:
-
-```js
-const CONFIG = {
-  api: {
-    supabaseUrl:  'https://xxxx.supabase.co',
-    supabaseKey:  'your-anon-key',
-    anthropicKey: 'sk-ant-...',  // use a backend proxy in production!
-  },
-  company: {
-    name:     'Your Store Name',
-    currency: '$',
-    tax:      8,
-  },
-};
-```
-
-## Deploy to GitHub Pages
-
-1. Push to GitHub
-2. Go to **Settings → Pages → Source: main branch / root**
-3. Done — live at `https://USERNAME.github.io/smartstack-pro`
-
-## Deploy to Cloudflare Pages
-
-```bash
-npx wrangler pages deploy .
-```
-
-Or connect the GitHub repo in the Cloudflare Pages dashboard.
+## Deploy
+Push to GitHub, enable GitHub Pages from main branch root.
+Your live URL: `https://YOUR_USERNAME.github.io/REPO_NAME`
 
 ## Connect Supabase
-
-1. Create a project at [supabase.com](https://supabase.com)
-2. Run `database/schema.sql` in the SQL editor
-3. Add your URL + anon key to `js/config.js`
-4. In `services/database.js`, replace `MockData.*` calls with:
-   ```js
-   const { data, error } = await supabase.from('products').select('*');
-   ```
-
-## Features
-
-| Module | Status |
-|---|---|
-| Dashboard with KPIs & charts | ✅ |
-| Inventory (CRUD, search, filters) | ✅ |
-| Sales & Invoices | ✅ |
-| Customer Management | ✅ |
-| Supplier Management | ✅ |
-| Expense Tracking | ✅ |
-| Payroll System | ✅ |
-| Financial Reports (P&L, Cash Flow) | ✅ |
-| Analytics & Charts | ✅ |
-| AI Assistant (Claude API) | ✅ |
-| Settings & User Management | ✅ |
-| PWA (installable, offline) | ✅ |
-| Responsive / Mobile | ✅ |
-
-## Tech Stack
-
-- **Frontend**: Vanilla HTML5 + CSS3 + ES6 JavaScript (zero dependencies, zero build step)
-- **Database**: Supabase (PostgreSQL)
-- **AI**: Anthropic Claude API
-- **Hosting**: GitHub Pages / Cloudflare Pages
-
----
-MIT License · Built with SmartStock Pro
+1. Create project at supabase.com
+2. Run `database/schema.sql`
+3. In `services/db.js` replace `MockData.*` with Supabase queries

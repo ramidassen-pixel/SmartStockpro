@@ -1,80 +1,316 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8"/>
-
-  <!-- Mobile App & PWA Meta Tags -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <meta name="mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="SmartStock"/>
-  <meta name="application-name" content="SmartStock Pro"/>
-  <meta name="msapplication-TileColor" content="#E8A020"/>
-
-  <title>SmartStock Pro — Run Your Business Like a Pro</title>
-  <meta name="description" content="Enterprise business management platform for tile stores, hardware shops, wholesale & retail."/>
-  <meta name="theme-color" content="#E8A020"/>
-
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="pwa/manifest.json"/>
-
-  <!-- CSS -->
-  <link rel="stylesheet" href="css/variables.css"/>
-  <link rel="stylesheet" href="css/layout.css"/>
-  <link rel="stylesheet" href="css/components.css"/>
-  <link rel="stylesheet" href="css/dashboard.css"/>
-  <link rel="stylesheet" href="css/tables.css"/>
-  <link rel="stylesheet" href="css/forms.css"/>
-  <link rel="stylesheet" href="css/responsive.css"/>
-
-  <!-- Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock">
+<meta name="application-name" content="SmartStock Pro">
+<meta name="theme-color" content="#060810">
+<meta name="description" content="SmartStock Pro — Business Management System">
+<link rel="manifest" href="pwa/manifest.json">
+<title>SmartStock Pro</title>
+<!-- CSS -->
+<link rel="stylesheet" href="css/variables.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/forms.css">
+<link rel="stylesheet" href="css/responsive.css">
 </head>
 <body>
-  <div id="app">
-    <!-- Rendered by router.js -->
+
+<!-- LOADER -->
+<div id="ss-loader">
+  <div class="ss-loader-inner">
+    <div class="ss-loader-logo">📦</div>
+    <div class="ss-loader-spinner">
+      <div class="ss-loader-dot"></div>
+      <div class="ss-loader-dot"></div>
+      <div class="ss-loader-dot"></div>
+    </div>
+    <div class="ss-loader-tagline">Loading your business...</div>
   </div>
+  <div class="ss-loader-footer">SmartStock Pro · v2.0</div>
+</div>
 
-  <!-- Core JS (order matters) -->
-  <script src="js/config.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/mock-data.js"></script>
-  <script src="services/database.js"></script>
-  <script src="services/auth-service.js"></script>
-  <script src="services/notification-service.js"></script>
-  <script src="services/ai-service.js"></script>
-  <script src="js/components.js"></script>
-  <script src="js/toast.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/router.js"></script>
-  <script src="js/app.js"></script>
+<!-- TOAST -->
+<div id="toast"></div>
 
-  <!-- Page modules -->
-  <script src="js/dashboard.js"></script>
-  <script src="js/inventory.js"></script>
-  <script src="js/sales.js"></script>
-  <script src="js/customers.js"></script>
-  <script src="js/suppliers.js"></script>
-  <script src="js/expenses.js"></script>
-  <script src="js/payroll.js"></script>
-  <script src="js/reports.js"></script>
-  <script src="js/analytics.js"></script>
-  <script src="js/ai.js"></script>
-  <script src="js/settings.js"></script>
-  <script src="js/notifications.js"></script>
+<!-- APP -->
+<div id="app">
+  <div id="shell">
 
-  <!-- Boot -->
-  <script>
-    window.addEventListener('load', () => {
-      App.init();
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('pwa/service-worker.js')
-          .then(() => console.log('SW registered'))
-          .catch(err => console.log('SW error:', err));
-      }
-    });
-  </script>
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="tb-brand" onclick="App.goHome()">
+        <div class="tb-logo" id="tb-logo">S</div>
+        <div>
+          <div class="tb-name" id="tb-biz-name">SmartStock Pro</div>
+          <div class="tb-sub" id="tb-biz-sub">Business Manager</div>
+        </div>
+      </div>
+      <div class="tb-r">
+        <div class="theme-toggle" id="theme-toggle" onclick="App.toggleTheme()" title="Toggle theme"></div>
+        <button class="tb-btn" onclick="App.openNotifs()" title="Notifications">
+          🔔<span class="ndot" id="notif-dot" style="display:none"></span>
+        </button>
+        <div class="av" id="top-av" onclick="App.openSidebar()">A</div>
+        <button class="tb-menu-btn" id="menu-btn" onclick="App.openSidebar()">
+          <span></span><span></span><span></span>
+          <span class="ndot" id="menu-dot" style="display:none"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- PAGE CONTENT -->
+    <div id="pc">
+      <div class="pg on" id="pg-home"></div>
+      <div class="pg" id="pg-inventory"></div>
+      <div class="pg" id="pg-sales"></div>
+      <div class="pg" id="pg-customers"></div>
+      <div class="pg" id="pg-reports"></div>
+      <div class="pg" id="pg-ai"></div>
+      <div class="pg" id="pg-more"></div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <nav class="bnav">
+      <div class="bn on" id="bn-home" onclick="App.nav('home')">
+        <div class="bi">🏠</div><span>Home</span>
+      </div>
+      <div class="bn" id="bn-inventory" onclick="App.nav('inventory')">
+        <div class="bi">📦</div><span>Stock</span>
+      </div>
+      <div class="bn" id="bn-sales" onclick="App.nav('sales')">
+        <div class="bi">🧾</div><span>Sales</span>
+      </div>
+      <div class="bn" id="bn-customers" onclick="App.nav('customers')">
+        <div class="bi">👥</div><span>Clients</span>
+      </div>
+      <div class="bn" id="bn-more" onclick="App.nav('more')">
+        <div class="bi">⋯</div><span>More</span>
+      </div>
+    </nav>
+
+  </div><!-- #shell -->
+</div><!-- #app -->
+
+<!-- SIDEBAR OVERLAY -->
+<div class="sidebar-overlay" id="sb-overlay" onclick="App.closeSidebar()"></div>
+
+<!-- SIDEBAR MENU -->
+<div class="sidebar-menu" id="sidebar-menu">
+  <div class="sb-head">
+    <div class="sb-head-row">
+      <div class="av" id="sb-av">A</div>
+      <div style="flex:1;min-width:0">
+        <div class="sb-name" id="sb-user-name">Admin User</div>
+        <div class="sb-role" id="sb-user-role">Administrator</div>
+      </div>
+      <button class="sb-close" onclick="App.closeSidebar()">✕</button>
+    </div>
+    <div class="sb-biz-pill">
+      <div class="sb-biz-logo" id="sb-biz-logo">S</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--t1)" id="sb-biz-name">SmartStock Pro</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--fm)" id="sb-biz-type">Business Manager</div>
+      </div>
+      <span style="color:var(--t3);font-size:14px">›</span>
+    </div>
+  </div>
+  <div class="sb-body" id="sb-body"></div>
+  <div class="sb-footer">SmartStock Pro · v2.0</div>
+</div>
+
+<!-- ════ PRODUCT FORM DRAWER ════ -->
+<div class="dov" id="d-product">
+  <div class="dbox">
+    <div class="dh2" style="background:linear-gradient(90deg,var(--g),var(--g3))"></div>
+    <div class="dhead">
+      <div><div class="dtitle" id="prod-form-title">Add Product</div><div class="dsub">Fill in product details</div></div>
+      <button class="dclose" onclick="closeD('d-product')">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="fg"><label class="fl">Product Name <span class="req">*</span></label>
+        <input class="fi" id="pf-name" placeholder="e.g. Ceramic Floor Tile 60x60"></div>
+      <div class="fr2">
+        <div class="fg"><label class="fl">SKU / Code</label>
+          <input class="fi" id="pf-sku" placeholder="CFT-6060"></div>
+        <div class="fg"><label class="fl">Category</label>
+          <select class="fi" id="pf-cat">
+            <option>Tiles</option><option>Mosaic</option><option>Paving</option>
+            <option>Stone</option><option>Adhesives</option><option>Grout</option>
+            <option>Tools</option><option>Other</option>
+          </select></div>
+      </div>
+      <div class="fr3">
+        <div class="fg"><label class="fl">Qty <span class="req">*</span></label>
+          <input class="fi" id="pf-qty" type="number" placeholder="0" min="0"></div>
+        <div class="fg"><label class="fl">Cost ($)</label>
+          <input class="fi" id="pf-cost" type="number" placeholder="0.00" step="0.01" min="0"></div>
+        <div class="fg"><label class="fl">Price ($) <span class="req">*</span></label>
+          <input class="fi" id="pf-price" type="number" placeholder="0.00" step="0.01" min="0"></div>
+      </div>
+      <div class="fg"><label class="fl">Low Stock Alert</label>
+        <input class="fi" id="pf-low" type="number" placeholder="50" value="50" min="0"></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn bgh bbl" onclick="Inventory.saveProduct('addnew')">💾➕ Save & New</button>
+      <button class="btn bg bbl" onclick="Inventory.saveProduct('save')">💾 Save Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ SALE FORM DRAWER ════ -->
+<div class="dov" id="d-sale">
+  <div class="dbox" style="max-height:96vh">
+    <div class="dh2" style="background:linear-gradient(90deg,#16a34a,#15803d)"></div>
+    <div class="dhead">
+      <div><div class="dtitle">🧾 New Invoice</div><div class="dsub">Create a new sale</div></div>
+      <button class="dclose" onclick="closeD('d-sale')">✕</button>
+    </div>
+    <div class="dbnp">
+      <div style="padding:12px 14px;border-bottom:1px solid var(--bd)">
+        <div class="fr2">
+          <div class="fg" style="margin:0"><label class="fl">Customer</label>
+            <select class="fi" id="sf-cust" style="padding:9px 10px"></select></div>
+          <div class="fg" style="margin:0"><label class="fl">Date</label>
+            <input class="fi" type="date" id="sf-date" style="padding:9px 10px"></div>
+        </div>
+      </div>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--bd)">
+        <div class="fl">Add Products</div>
+        <select class="fi" id="sf-prod-select" onchange="Sales.addToCart(this)" style="padding:9px 10px">
+          <option value="">— tap to add product —</option>
+        </select>
+      </div>
+      <div id="sf-cart" style="min-height:60px"></div>
+      <div id="sf-totals" style="padding:12px 14px;background:var(--s2);border-top:1px solid var(--bd)"></div>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--bd)">
+        <div class="fr2">
+          <div class="fg" style="margin:0"><label class="fl">Discount %</label>
+            <input class="fi" id="sf-disc" type="number" value="0" min="0" max="100" oninput="Sales.updateTotals()"></div>
+          <div class="fg" style="margin:0"><label class="fl">Payment Method</label>
+            <select class="fi" id="sf-method" style="padding:9px 10px">
+              <option>Cash</option><option>Bank Transfer</option><option>Credit</option><option>Mobile Money</option>
+            </select></div>
+        </div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="btn bgh bbl" onclick="Sales.saveSale('addnew')">💾➕ Save & New</button>
+      <button class="btn bg bbl" onclick="Sales.saveSale('save')">🧾 Save Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ CUSTOMER FORM DRAWER ════ -->
+<div class="dov" id="d-customer">
+  <div class="dbox">
+    <div class="dh2" style="background:linear-gradient(90deg,#2563eb,#1d4ed8)"></div>
+    <div class="dhead">
+      <div><div class="dtitle" id="cust-form-title">Add Customer</div><div class="dsub">Customer details</div></div>
+      <button class="dclose" onclick="closeD('d-customer')">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="fr2">
+        <div class="fg"><label class="fl">Full Name <span class="req">*</span></label>
+          <input class="fi" id="cf-name" placeholder="John Doe"></div>
+        <div class="fg"><label class="fl">Phone</label>
+          <input class="fi" id="cf-phone" placeholder="+1 555-0000" type="tel"></div>
+      </div>
+      <div class="fg"><label class="fl">Email</label>
+        <input class="fi" id="cf-email" placeholder="email@example.com" type="email"></div>
+      <div class="fr2">
+        <div class="fg"><label class="fl">Status</label>
+          <select class="fi" id="cf-status"><option>Active</option><option>VIP</option><option>Inactive</option></select></div>
+        <div class="fg"><label class="fl">Credit Limit ($)</label>
+          <input class="fi" id="cf-credit" type="number" value="0" min="0"></div>
+      </div>
+      <div class="fg"><label class="fl">Address</label>
+        <input class="fi" id="cf-addr" placeholder="Street, City"></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn bgh bbl" onclick="Customers.save('addnew')">💾➕ Save & New</button>
+      <button class="btn bg bbl" onclick="Customers.save('save')">💾 Save Customer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ EXPENSE FORM DRAWER ════ -->
+<div class="dov" id="d-expense">
+  <div class="dbox">
+    <div class="dh2" style="background:linear-gradient(90deg,#dc2626,#b91c1c)"></div>
+    <div class="dhead">
+      <div><div class="dtitle">Add Expense</div><div class="dsub">Record a business expense</div></div>
+      <button class="dclose" onclick="closeD('d-expense')">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="fr2">
+        <div class="fg"><label class="fl">Category</label>
+          <select class="fi" id="ef-cat">
+            <option>Rent</option><option>Utilities</option><option>Salaries</option>
+            <option>Marketing</option><option>Maintenance</option><option>Insurance</option><option>Other</option>
+          </select></div>
+        <div class="fg"><label class="fl">Amount ($) <span class="req">*</span></label>
+          <input class="fi" id="ef-amt" type="number" placeholder="0.00" step="0.01" min="0"></div>
+      </div>
+      <div class="fg"><label class="fl">Description</label>
+        <input class="fi" id="ef-desc" placeholder="Expense description..."></div>
+      <div class="fr2">
+        <div class="fg"><label class="fl">Date</label>
+          <input class="fi" id="ef-date" type="date"></div>
+        <div class="fg"><label class="fl">Recurring?</label>
+          <select class="fi" id="ef-rec"><option value="0">No</option><option value="1">Yes — Monthly</option></select></div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="btn bgh bbl" onclick="Expenses.save('addnew')">💾➕ Save & New</button>
+      <button class="btn bg bbl" onclick="Expenses.save('save')">💾 Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ CONFIRM MODAL ════ -->
+<div class="dov" id="d-confirm" style="align-items:center;justify-content:center">
+  <div class="dbox" style="border-radius:var(--r18);max-width:340px;margin:20px">
+    <div class="dh2" style="background:linear-gradient(90deg,var(--er),#dc2626)"></div>
+    <div style="padding:22px 20px;text-align:center">
+      <div style="font-size:36px;margin-bottom:12px" id="conf-icon">⚠️</div>
+      <div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:8px" id="conf-title">Confirm</div>
+      <div style="font-size:13px;color:var(--t3);line-height:1.6" id="conf-msg">Are you sure?</div>
+    </div>
+    <div style="display:flex;gap:10px;padding:0 16px 20px">
+      <button class="btn bgn bbl" onclick="closeD('d-confirm')">Cancel</button>
+      <button class="btn bgr bbl" id="conf-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- JS — order matters -->
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/data.js"></script>
+<script src="services/db.js"></script>
+<script src="services/ai-service.js"></script>
+<script src="js/toast.js"></script>
+<script src="js/app.js"></script>
+<script src="js/pages/home.js"></script>
+<script src="js/pages/inventory.js"></script>
+<script src="js/pages/sales.js"></script>
+<script src="js/pages/customers.js"></script>
+<script src="js/pages/reports.js"></script>
+<script src="js/pages/ai.js"></script>
+<script src="js/pages/more.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    App.init();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('pwa/service-worker.js');
+    }
+  });
+</script>
 </body>
 </html>
