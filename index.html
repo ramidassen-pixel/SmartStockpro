@@ -2,12 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <!-- Mobile App & PWA Meta Tags -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="SmartStock"/>
+  <meta name="application-name" content="SmartStock Pro"/>
+  <meta name="msapplication-TileColor" content="#E8A020"/>
+
   <title>SmartStock Pro — Run Your Business Like a Pro</title>
   <meta name="description" content="Enterprise business management platform for tile stores, hardware shops, wholesale & retail."/>
   <meta name="theme-color" content="#E8A020"/>
+
+  <!-- PWA Manifest -->
   <link rel="manifest" href="pwa/manifest.json"/>
-  <link rel="icon" href="assets/icons/favicon.ico"/>
+
   <!-- CSS -->
   <link rel="stylesheet" href="css/variables.css"/>
   <link rel="stylesheet" href="css/layout.css"/>
@@ -16,6 +27,7 @@
   <link rel="stylesheet" href="css/tables.css"/>
   <link rel="stylesheet" href="css/forms.css"/>
   <link rel="stylesheet" href="css/responsive.css"/>
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
@@ -58,7 +70,9 @@
     window.addEventListener('load', () => {
       App.init();
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('pwa/service-worker.js');
+        navigator.serviceWorker.register('pwa/service-worker.js')
+          .then(() => console.log('SW registered'))
+          .catch(err => console.log('SW error:', err));
       }
     });
   </script>
