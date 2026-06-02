@@ -1,0 +1,107 @@
+/* ════════ FIN FILTER DRAWER ════════ */
+.finf-opt {
+  display: flex; align-items: center; gap: 11px;
+  padding: 13px 14px; margin-bottom: 7px;
+  background: var(--s2); border: 1.5px solid var(--bd);
+  border-radius: var(--r10); cursor: pointer;
+  transition: all .18s; user-select: none;
+}
+.finf-opt:hover { border-color: var(--g); }
+.finf-opt.on {
+  background: rgba(212,165,32,.1);
+  border-color: var(--g);
+}
+.finf-opt-radio {
+  font-size: 18px; color: var(--g);
+  flex-shrink: 0; width: 22px; text-align: center;
+}
+.finf-opt:not(.on) .finf-opt-radio { color: var(--t4); }
+.finf-opt-name {
+  font-size: 14px; font-weight: 700; color: var(--t1);
+}
+.finf-opt-sub {
+  font-size: 11px; color: var(--t3); margin-top: 2px;
+}
+
+
+
+/* ════════ PERMISSION LOCK STYLES ════════ */
+.perm-lock-card {
+  background: linear-gradient(135deg, rgba(245,158,11,.06), rgba(245,158,11,.02));
+  border: 1.5px dashed rgba(245,158,11,.35);
+  border-radius: var(--r14);
+  padding: 22px 18px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.perm-lock-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+  opacity: .8;
+}
+.perm-lock-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--wa);
+  margin-bottom: 4px;
+  letter-spacing: .02em;
+}
+.perm-lock-sub {
+  font-size: 11px;
+  color: var(--t3);
+  line-height: 1.5;
+}
+.perm-locked {
+  cursor: not-allowed !important;
+}
+/* Hide sales totals/dues when staff lacks permission */
+body.no-sales-totals .sale-item-total,
+body.no-sales-totals .sale-footer { display: none !important; }
+body.no-product-cost .prod-cost-show { display: none !important; }
+
+/* Hide product prices for sell agents */
+body.no-product-price .prod-price,
+body.no-product-price .pc-price { display: none !important; }
+
+
+
+/* ════════ USER PERMISSIONS TOGGLES ════════ */
+.up-toggle-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 13px;
+  background: var(--s2); border: 1px solid var(--bd);
+  border-radius: var(--r10); margin-bottom: 6px;
+  cursor: pointer; transition: all .18s; user-select: none;
+}
+.up-toggle-row:hover { border-color: var(--bd2); }
+.up-toggle-row.on {
+  background: rgba(34,197,94,.08);
+  border-color: rgba(34,197,94,.35);
+}
+.up-toggle-icon {
+  font-size: 18px; width: 28px; text-align: center; flex-shrink: 0;
+}
+.up-toggle-info { flex: 1; min-width: 0; }
+.up-toggle-name {
+  font-size: 13px; font-weight: 700; color: var(--t1);
+  margin-bottom: 1px;
+}
+.up-toggle-key {
+  font-size: 10px; color: var(--t3); font-family: var(--fm);
+}
+.up-toggle-switch {
+  width: 38px; height: 22px; border-radius: 99px;
+  background: var(--bd); position: relative; flex-shrink: 0;
+  transition: background .2s;
+}
+.up-toggle-switch::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--t2); transition: all .2s;
+}
+.up-toggle-row.on .up-toggle-switch {
+  background: var(--ok);
+}
+.up-toggle-row.on .up-toggle-switch::after {
+  left: 18px; background: #fff;
+}
