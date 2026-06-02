@@ -1,55 +1,48 @@
-# SmartStock Pro v2
+# SmartStock Pro — Multi-File Version
 
-> **Run Your Business Like a Pro** — Mobile-first PWA
+> This is the **multi-file version** of SmartStock Pro FINAL, split for easy editing on GitHub.
 
-## Live Site
+## 🔗 Live Site
 ```
 https://ramidassen-pixel.github.io/smart-stock-pro
 ```
 
-## Structure
+## 📁 File Structure
 ```
-smartstock-pro/
-├── index.html              ← Single entry point
+smart-stock-pro/
+├── index.html              ← Main entry point (loads everything)
 ├── css/
-│   ├── variables.css       ← All design tokens & CSS variables
-│   ├── layout.css          ← App shell, topbar, bottom nav, sidebar
-│   ├── components.css      ← Cards, buttons, badges, lists
-│   ├── forms.css           ← Drawers, form inputs
-│   └── responsive.css      ← Mobile breakpoints
+│   └── app.css             ← All styles (extracted from original)
 ├── js/
-│   ├── config.js           ← ⚙️ Edit this — API keys & company info
-│   ├── utils.js            ← Shared helpers
-│   ├── data.js             ← Mock data (replace with DB calls)
-│   ├── toast.js            ← Toast notifications
-│   ├── app.js              ← App shell, navigation, sidebar
-│   └── pages/
-│       ├── home.js         ← Dashboard
-│       ├── inventory.js    ← Products & stock
-│       ├── sales.js        ← Invoices & POS
-│       ├── customers.js    ← Customer management
-│       ├── reports.js      ← P&L, cash flow, expenses
-│       ├── ai.js           ← AI assistant (Claude)
-│       └── more.js         ← More features & settings
-├── services/
-│   ├── db.js               ← Database service (swap MockData for Supabase)
-│   └── ai-service.js       ← Anthropic Claude API
+│   ├── init.js             ← App init, auth, DB, Firebase, theme
+│   ├── dashboard.js        ← Dashboard rendering
+│   ├── products.js         ← Inventory management
+│   ├── expenses-salary.js  ← Expenses & payroll
+│   ├── customers.js        ← Customer management
+│   ├── reports.js          ← Financial reports
+│   └── utils-extra.js      ← AI, chat, utilities, password hashing
 ├── pwa/
-│   ├── manifest.json       ← PWA manifest (installable)
+│   ├── manifest.json       ← PWA manifest
 │   └── service-worker.js   ← Offline support
-└── database/schema.sql     ← PostgreSQL schema for Supabase
+└── README.md
 ```
 
-## Setup
-1. Edit `js/config.js` — add your company name, currency, API keys
-2. Go to **More → Settings** to enter your Anthropic API key
-3. That's it — the app works with mock data out of the box
+## ✏️ How to Edit
+- **Change colors/theme** → edit `css/app.css` (search for `:root {`)
+- **Change dashboard** → edit `js/dashboard.js`
+- **Change products page** → edit `js/products.js`
+- **Change expenses/salary** → edit `js/expenses-salary.js`
+- **Change customers** → edit `js/customers.js`
+- **Change reports** → edit `js/reports.js`
+- **Change AI / chat / utils** → edit `js/utils-extra.js`
 
-## Deploy
-Push to GitHub, enable GitHub Pages from main branch root.
-Your live URL: `https://YOUR_USERNAME.github.io/REPO_NAME`
+## 🚀 Deploy to GitHub Pages
+1. Upload all files to your repository
+2. Settings → Pages → Source: main branch / root
+3. Your site: `https://ramidassen-pixel.github.io/smart-stock-pro`
 
-## Connect Supabase
-1. Create project at supabase.com
-2. Run `database/schema.sql`
-3. In `services/db.js` replace `MockData.*` with Supabase queries
+## ⚙️ Configuration
+All settings are in `js/init.js`:
+- Search for `seedDB` to change default data
+- Search for `fbInit` to configure Firebase
+- Search for `CONFIG` for app settings
