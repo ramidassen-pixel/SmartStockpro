@@ -4,7 +4,7 @@
 
 ## 🔗 Live Site
 ```
-https://ramidassen-pixel.github.io/smart-stock-pro
+https://ramidassen-pixel.github.io/smartstockpro
 ```
 
 ## 📁 File Structure
