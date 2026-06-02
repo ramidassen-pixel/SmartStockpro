@@ -8256,12 +8256,26 @@ function renderProducts(){
 //  Setup: go to supabase.com → create project → paste URL + key below
 // ════════════════════════════════════════════════════════
 
-var SB_URL    = '';   // ← paste your Supabase project URL here
-var SB_KEY    = '';   // ← paste your Supabase anon key here
+var SB_URL    = 'https://aocesntlxfexnakaeknz.supabase.co';  // ✅ SmartStock Manager
+var SB_KEY    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvY2VzbnRseGZleG5ha2Fla256Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTk0NzQsImV4cCI6MjA5MDEzNTQ3NH0.tKZW0T5m_tQYkuTylYZLM-Xc0SZMoUwQmPRyQNLSnPE';
 var SB_READY  = false;
 var SB_CHANNEL = null;
 var SB_SYNCING = false;
 var SB_TABLE   = 'smartstock_data';  // table name in Supabase
+
+// ── AUTO-CONNECT: config is hardcoded above ──
+// On first load, save config and connect automatically
+(function() {
+  try {
+    var cfg = localStorage.getItem('ss_sb_config');
+    if (!cfg || cfg === '{}') {
+      localStorage.setItem('ss_sb_config', JSON.stringify({
+        url: SB_URL,
+        key: SB_KEY
+      }));
+    }
+  } catch(e) {}
+})();
 
 // ── Load saved Supabase config from localStorage ──
 function sbLoadConfig() {
