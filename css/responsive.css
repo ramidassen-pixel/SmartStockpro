@@ -1,8 +1,0 @@
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-@media(max-width:380px){.fr2,.fr3{grid-template-columns:1fr}}
-@media(min-width:600px){.dbox{border-radius:var(--r18);margin:auto;max-height:90vh}}
-@media(min-width:768px){
-  .qa-grid{grid-template-columns:repeat(4,1fr)}
-  .kgrid{grid-template-columns:repeat(4,1fr)}
-  .fr2{grid-template-columns:1fr 1fr}
-}
