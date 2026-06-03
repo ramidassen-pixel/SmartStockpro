@@ -1,0 +1,42 @@
+const MockData = {
+  products:[
+    {id:'P001',name:'Ceramic Floor Tile 60x60',sku:'CFT-6060',category:'Tiles',    qty:842, low:100,price:12.50,cost:8.20, status:'In Stock'    },
+    {id:'P002',name:'Polished Marble 80x80',   sku:'PMT-8080',category:'Tiles',    qty:48,  low:50, price:45.00,cost:28.00,status:'Low Stock'   },
+    {id:'P003',name:'Mosaic Glass Tile Sheet', sku:'MGT-001', category:'Mosaic',   qty:215, low:30, price:28.00,cost:16.50,status:'In Stock'    },
+    {id:'P004',name:'Outdoor Paving Stone',    sku:'OPS-400', category:'Paving',   qty:0,   low:20, price:8.75, cost:5.00, status:'Out of Stock'},
+    {id:'P005',name:'Wall Tile White 30x60',   sku:'WTW-3060',category:'Tiles',    qty:1203,low:200,price:9.00, cost:5.50, status:'In Stock'    },
+    {id:'P006',name:'Grout Dark Grey 5kg',     sku:'GDG-5K',  category:'Adhesives',qty:67,  low:50, price:14.50,cost:8.00, status:'Low Stock'   },
+    {id:'P007',name:'Tile Adhesive Premium',   sku:'TAP-20K', category:'Adhesives',qty:330, low:100,price:22.00,cost:13.00,status:'In Stock'    },
+    {id:'P008',name:'Travertine Natural Stone',sku:'TNS-600', category:'Stone',    qty:12,  low:20, price:65.00,cost:40.00,status:'Low Stock'   },
+  ],
+  customers:[
+    {id:'C001',name:'BuildRight Construction',email:'info@buildright.com',      phone:'+1 555-0101',credit:0,   purchases:42,total:12450,status:'Active'},
+    {id:'C002',name:'Renovate & Co',          email:'orders@renovate.co',       phone:'+1 555-0182',credit:1250,purchases:18,total:8200, status:'Active'},
+    {id:'C003',name:'Ahmed Al-Rashid',        email:'ahmed@gmail.com',          phone:'+1 555-0247',credit:0,   purchases:5, total:1840, status:'Active'},
+    {id:'C004',name:'HomeMakers Ltd',         email:'buy@homemakers.com',       phone:'+1 555-0318',credit:3200,purchases:31,total:22100,status:'VIP'  },
+    {id:'C005',name:'City Tiles Wholesale',   email:'procurement@citytiles.com',phone:'+1 555-0412',credit:0,   purchases:67,total:54300,status:'VIP'  },
+    {id:'C006',name:'Martin Flooring',        email:'martin@flooring.biz',      phone:'+1 555-0591',credit:800, purchases:9, total:4620, status:'Active'},
+  ],
+  sales:[
+    {id:'INV-001',customer:'BuildRight Construction',items:[{name:'Ceramic Floor Tile',qty:6,price:12.50}],  total:1842.50,paid:true, date:'2024-05-28',status:'Paid'   },
+    {id:'INV-002',customer:'Renovate & Co',          items:[{name:'Polished Marble',  qty:3,price:45.00}],  total:620.00, paid:false,date:'2024-05-28',status:'Partial'},
+    {id:'INV-003',customer:'Ahmed Al-Rashid',        items:[{name:'Mosaic Glass Tile',qty:1,price:28.00}],  total:245.00, paid:true, date:'2024-05-27',status:'Paid'   },
+    {id:'INV-004',customer:'HomeMakers Ltd',         items:[{name:'Wall Tile White',  qty:12,price:9.00}],  total:5400.00,paid:true, date:'2024-05-26',status:'Paid'   },
+    {id:'INV-005',customer:'City Tiles Wholesale',   items:[{name:'Mixed Order',      qty:28,price:45.00}], total:14820.0,paid:false,date:'2024-05-25',status:'Credit' },
+    {id:'INV-006',customer:'Martin Flooring',        items:[{name:'Tile Adhesive',    qty:4,price:22.00}],  total:980.00, paid:true, date:'2024-05-24',status:'Paid'   },
+  ],
+  expenses:[
+    {id:'EXP-001',category:'Rent',       description:'Monthly store rent',  amount:3200,date:'2024-05-01',recurring:true },
+    {id:'EXP-002',category:'Utilities',  description:'Electricity & Water', amount:420, date:'2024-05-05',recurring:true },
+    {id:'EXP-003',category:'Salaries',   description:'May payroll',         amount:8400,date:'2024-05-31',recurring:true },
+    {id:'EXP-004',category:'Marketing',  description:'Google Ads campaign', amount:650, date:'2024-05-12',recurring:false},
+    {id:'EXP-005',category:'Maintenance',description:'Forklift service',    amount:280, date:'2024-05-18',recurring:false},
+  ],
+  employees:[
+    {id:'E001',name:'Sarah Johnson',role:'Store Manager',   salary:4200,attendance:'22/22',status:'Paid',   dept:'Management'},
+    {id:'E002',name:'Carlos Rivera',role:'Sales Associate', salary:2800,attendance:'21/22',status:'Paid',   dept:'Sales'     },
+    {id:'E003',name:'Aisha Patel',  role:'Inventory Clerk', salary:2400,attendance:'22/22',status:'Pending',dept:'Warehouse' },
+    {id:'E004',name:'Tom Chen',     role:'Accountant',      salary:3600,attendance:'20/22',status:'Paid',   dept:'Finance'   },
+    {id:'E005',name:'Linda Park',   role:'Customer Service',salary:2600,attendance:'19/22',status:'Pending',dept:'Sales'     },
+  ],
+};
