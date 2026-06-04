@@ -1,0 +1,4 @@
+@media(min-width:600px){.modal{border-radius:var(--r20);margin:20px auto;max-height:88vh}.kpi-grid{grid-template-columns:repeat(4,1fr)}.form-row{grid-template-columns:1fr 1fr}.qa-grid{grid-template-columns:repeat(6,1fr)}}
+@media(min-width:900px){.sidebar{width:280px;transform:none;position:relative;top:auto;right:auto;bottom:auto;box-shadow:none;border-left:1px solid var(--border)}.app-shell{flex-direction:row}.pages-container{flex:1}}
+@media(max-width:380px){.form-row,.form-row-3{grid-template-columns:1fr}.kpi-grid{grid-template-columns:1fr 1fr}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
