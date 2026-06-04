@@ -7,310 +7,208 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SmartStock">
-<meta name="application-name" content="SmartStock Pro">
-<meta name="theme-color" content="#060810">
-<meta name="description" content="SmartStock Pro — Business Management System">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="description" content="SmartStock Pro V5 — Business Management System">
 <link rel="manifest" href="pwa/manifest.json">
 <title>SmartStock Pro</title>
-<!-- CSS -->
-<link rel="stylesheet" href="css/variables.css">
-<link rel="stylesheet" href="css/layout.css">
-<link rel="stylesheet" href="css/components.css">
-<link rel="stylesheet" href="css/forms.css">
-<link rel="stylesheet" href="css/responsive.css">
+
+<!-- Styles -->
+<link rel="stylesheet" href="assets/css/variables.css">
+<link rel="stylesheet" href="assets/css/reset.css">
+<link rel="stylesheet" href="assets/css/layout.css">
+<link rel="stylesheet" href="assets/css/components.css">
+<link rel="stylesheet" href="assets/css/pages.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
 </head>
 <body>
 
-<!-- LOADER -->
-<div id="ss-loader">
-  <div class="ss-loader-inner">
-    <div class="ss-loader-logo">📦</div>
-    <div class="ss-loader-spinner">
-      <div class="ss-loader-dot"></div>
-      <div class="ss-loader-dot"></div>
-      <div class="ss-loader-dot"></div>
+<!-- APP LOADER -->
+<div id="loader" class="loader">
+  <div class="loader-inner">
+    <div class="loader-logo">📦</div>
+    <div class="loader-name">SmartStock Pro</div>
+    <div class="loader-dots">
+      <span></span><span></span><span></span>
     </div>
-    <div class="ss-loader-tagline">Loading your business...</div>
   </div>
-  <div class="ss-loader-footer">SmartStock Pro · v2.0</div>
 </div>
 
-<!-- TOAST -->
-<div id="toast"></div>
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="login-screen hidden">
+  <div class="login-card">
+    <div class="login-logo">📦</div>
+    <h1 class="login-title">SmartStock Pro</h1>
+    <p class="login-sub">Business Management System</p>
+    <div class="login-tabs">
+      <button class="ltab active" id="ltab-in" onclick="Auth.showTab('in')">Sign In</button>
+      <button class="ltab" id="ltab-up" onclick="Auth.showTab('up')">Create Account</button>
+    </div>
+    <!-- Sign In -->
+    <div id="login-form">
+      <div class="fg"><label class="fl">Username</label>
+        <input class="fi" id="l-user" placeholder="Enter username" autocomplete="username"></div>
+      <div class="fg"><label class="fl">Password</label>
+        <div class="pw-wrap"><input class="fi" id="l-pass" type="password" placeholder="Enter password" autocomplete="current-password">
+        <button class="pw-eye" onclick="Auth.togglePw('l-pass')">👁</button></div></div>
+      <div id="login-err" class="form-err hidden"></div>
+      <button class="btn-primary btn-full" onclick="Auth.login()">Sign In</button>
+    </div>
+    <!-- Sign Up -->
+    <div id="signup-form" class="hidden">
+      <div class="fg"><label class="fl">Business Name</label>
+        <input class="fi" id="s-biz" placeholder="Your store name"></div>
+      <div class="fg"><label class="fl">Full Name</label>
+        <input class="fi" id="s-name" placeholder="Your full name"></div>
+      <div class="fg"><label class="fl">Username</label>
+        <input class="fi" id="s-user" placeholder="Choose a username"></div>
+      <div class="fg"><label class="fl">Password</label>
+        <div class="pw-wrap"><input class="fi" id="s-pass" type="password" placeholder="Min 6 characters">
+        <button class="pw-eye" onclick="Auth.togglePw('s-pass')">👁</button></div></div>
+      <div id="signup-err" class="form-err hidden"></div>
+      <button class="btn-primary btn-full" onclick="Auth.signup()">Create Account</button>
+    </div>
+  </div>
+</div>
 
-<!-- APP -->
-<div id="app">
-  <div id="shell">
+<!-- MAIN APP SHELL -->
+<div id="app-shell" class="app-shell hidden">
 
-    <!-- TOPBAR -->
-    <header class="topbar">
-      <div class="tb-brand" onclick="App.goHome()">
-        <div class="tb-logo" id="tb-logo">S</div>
+  <!-- TOPBAR -->
+  <header class="topbar" id="topbar">
+    <button class="tb-menu" id="tb-menu-btn" onclick="UI.toggleSidebar()">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="tb-brand" onclick="Router.go('dashboard')">
+      <span class="tb-logo">📦</span>
+      <span class="tb-name" id="tb-biz-name">SmartStock Pro</span>
+    </div>
+    <div class="tb-actions">
+      <button class="tb-btn" id="notif-btn" onclick="UI.toggleNotifPanel()">
+        🔔<span class="notif-badge hidden" id="notif-badge"></span>
+      </button>
+      <div class="tb-avatar" id="tb-avatar" onclick="Router.go('settings')">A</div>
+    </div>
+  </header>
+
+  <!-- PAGES CONTAINER -->
+  <main class="pages-container" id="pages-container">
+
+    <div class="page" id="pg-dashboard"></div>
+    <div class="page" id="pg-products"></div>
+    <div class="page" id="pg-sales"></div>
+    <div class="page" id="pg-customers"></div>
+    <div class="page" id="pg-suppliers"></div>
+    <div class="page" id="pg-expenses"></div>
+    <div class="page" id="pg-salary"></div>
+    <div class="page" id="pg-finance"></div>
+    <div class="page" id="pg-reports"></div>
+    <div class="page" id="pg-ai"></div>
+    <div class="page" id="pg-settings"></div>
+    <div class="page" id="pg-more"></div>
+
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bnav-item active" id="bn-dashboard" onclick="Router.go('dashboard')">
+      <span class="bnav-icon">🏠</span><span class="bnav-label">Home</span>
+    </button>
+    <button class="bnav-item" id="bn-sales" onclick="Router.go('sales')">
+      <span class="bnav-icon">🧾</span><span class="bnav-label">Sales</span>
+    </button>
+    <button class="bnav-item" id="bn-products" onclick="Router.go('products')">
+      <span class="bnav-icon">📦</span><span class="bnav-label">Products</span>
+    </button>
+    <button class="bnav-item" id="bn-customers" onclick="Router.go('customers')">
+      <span class="bnav-icon">👥</span><span class="bnav-label">Clients</span>
+    </button>
+    <button class="bnav-item" id="bn-more" onclick="Router.go('more')">
+      <span class="bnav-icon">⋯</span><span class="bnav-label">More</span>
+    </button>
+  </nav>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar-overlay hidden" id="sidebar-overlay" onclick="UI.closeSidebar()"></div>
+  <aside class="sidebar hidden" id="sidebar">
+    <div class="sb-head">
+      <div class="sb-user">
+        <div class="sb-avatar" id="sb-avatar">A</div>
         <div>
-          <div class="tb-name" id="tb-biz-name">SmartStock Pro</div>
-          <div class="tb-sub" id="tb-biz-sub">Business Manager</div>
+          <div class="sb-username" id="sb-username">User</div>
+          <div class="sb-role" id="sb-role">Owner</div>
         </div>
+        <button class="sb-close" onclick="UI.closeSidebar()">✕</button>
       </div>
-      <div class="tb-r">
-        <div class="theme-toggle" id="theme-toggle" onclick="App.toggleTheme()" title="Toggle theme"></div>
-        <button class="tb-btn" onclick="App.openNotifs()" title="Notifications">
-          🔔<span class="ndot" id="notif-dot" style="display:none"></span>
-        </button>
-        <div class="av" id="top-av" onclick="App.openSidebar()">A</div>
-        <button class="tb-menu-btn" id="menu-btn" onclick="App.openSidebar()">
-          <span></span><span></span><span></span>
-          <span class="ndot" id="menu-dot" style="display:none"></span>
-        </button>
-      </div>
-    </header>
-
-    <!-- PAGE CONTENT -->
-    <div id="pc">
-      <div class="pg on" id="pg-home"></div>
-      <div class="pg" id="pg-inventory"></div>
-      <div class="pg" id="pg-sales"></div>
-      <div class="pg" id="pg-customers"></div>
-      <div class="pg" id="pg-reports"></div>
-      <div class="pg" id="pg-ai"></div>
-      <div class="pg" id="pg-more"></div>
+      <div class="sb-biz" id="sb-biz-name">SmartStock Pro</div>
     </div>
-
-    <!-- BOTTOM NAV -->
-    <nav class="bnav">
-      <div class="bn on" id="bn-home" onclick="App.nav('home')">
-        <div class="bi">🏠</div><span>Home</span>
-      </div>
-      <div class="bn" id="bn-inventory" onclick="App.nav('inventory')">
-        <div class="bi">📦</div><span>Stock</span>
-      </div>
-      <div class="bn" id="bn-sales" onclick="App.nav('sales')">
-        <div class="bi">🧾</div><span>Sales</span>
-      </div>
-      <div class="bn" id="bn-customers" onclick="App.nav('customers')">
-        <div class="bi">👥</div><span>Clients</span>
-      </div>
-      <div class="bn" id="bn-more" onclick="App.nav('more')">
-        <div class="bi">⋯</div><span>More</span>
-      </div>
+    <nav class="sb-nav">
+      <div class="sb-section">Main</div>
+      <button class="sb-item" onclick="Router.go('dashboard')">🏠 <span>Dashboard</span></button>
+      <button class="sb-item" onclick="Router.go('sales')">🧾 <span>Sales & POS</span></button>
+      <button class="sb-item" onclick="Router.go('products')">📦 <span>Products</span></button>
+      <button class="sb-item" onclick="Router.go('customers')">👥 <span>Customers</span></button>
+      <button class="sb-item" onclick="Router.go('suppliers')">🏭 <span>Suppliers</span></button>
+      <div class="sb-section">Finance</div>
+      <button class="sb-item" onclick="Router.go('expenses')">💸 <span>Expenses</span></button>
+      <button class="sb-item" onclick="Router.go('salary')">💰 <span>Salary</span></button>
+      <button class="sb-item" onclick="Router.go('finance')">📊 <span>Finance</span></button>
+      <button class="sb-item" onclick="Router.go('reports')">📋 <span>Reports</span></button>
+      <div class="sb-section">Intelligence</div>
+      <button class="sb-item sb-ai" onclick="Router.go('ai')">🤖 <span>AI Assistant</span> <em>NEW</em></button>
+      <div class="sb-section">System</div>
+      <button class="sb-item" onclick="Router.go('settings')">⚙️ <span>Settings</span></button>
+      <button class="sb-item sb-logout" onclick="Auth.logout()">🚪 <span>Sign Out</span></button>
     </nav>
+  </aside>
 
-  </div><!-- #shell -->
-</div><!-- #app -->
-
-<!-- SIDEBAR OVERLAY -->
-<div class="sidebar-overlay" id="sb-overlay" onclick="App.closeSidebar()"></div>
-
-<!-- SIDEBAR MENU -->
-<div class="sidebar-menu" id="sidebar-menu">
-  <div class="sb-head">
-    <div class="sb-head-row">
-      <div class="av" id="sb-av">A</div>
-      <div style="flex:1;min-width:0">
-        <div class="sb-name" id="sb-user-name">Admin User</div>
-        <div class="sb-role" id="sb-user-role">Administrator</div>
-      </div>
-      <button class="sb-close" onclick="App.closeSidebar()">✕</button>
+  <!-- NOTIFICATION PANEL -->
+  <div class="notif-panel hidden" id="notif-panel">
+    <div class="notif-head">
+      <span>Notifications</span>
+      <button onclick="UI.toggleNotifPanel()">✕</button>
     </div>
-    <div class="sb-biz-pill">
-      <div class="sb-biz-logo" id="sb-biz-logo">S</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--t1)" id="sb-biz-name">SmartStock Pro</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--fm)" id="sb-biz-type">Business Manager</div>
-      </div>
-      <span style="color:var(--t3);font-size:14px">›</span>
-    </div>
+    <div id="notif-list" class="notif-list"></div>
   </div>
-  <div class="sb-body" id="sb-body"></div>
-  <div class="sb-footer">SmartStock Pro · v2.0</div>
-</div>
 
-<!-- ════ PRODUCT FORM DRAWER ════ -->
-<div class="dov" id="d-product">
-  <div class="dbox">
-    <div class="dh2" style="background:linear-gradient(90deg,var(--g),var(--g3))"></div>
-    <div class="dhead">
-      <div><div class="dtitle" id="prod-form-title">Add Product</div><div class="dsub">Fill in product details</div></div>
-      <button class="dclose" onclick="closeD('d-product')">✕</button>
-    </div>
-    <div class="dbody">
-      <div class="fg"><label class="fl">Product Name <span class="req">*</span></label>
-        <input class="fi" id="pf-name" placeholder="e.g. Ceramic Floor Tile 60x60"></div>
-      <div class="fr2">
-        <div class="fg"><label class="fl">SKU / Code</label>
-          <input class="fi" id="pf-sku" placeholder="CFT-6060"></div>
-        <div class="fg"><label class="fl">Category</label>
-          <select class="fi" id="pf-cat">
-            <option>Tiles</option><option>Mosaic</option><option>Paving</option>
-            <option>Stone</option><option>Adhesives</option><option>Grout</option>
-            <option>Tools</option><option>Other</option>
-          </select></div>
-      </div>
-      <div class="fr3">
-        <div class="fg"><label class="fl">Qty <span class="req">*</span></label>
-          <input class="fi" id="pf-qty" type="number" placeholder="0" min="0"></div>
-        <div class="fg"><label class="fl">Cost ($)</label>
-          <input class="fi" id="pf-cost" type="number" placeholder="0.00" step="0.01" min="0"></div>
-        <div class="fg"><label class="fl">Price ($) <span class="req">*</span></label>
-          <input class="fi" id="pf-price" type="number" placeholder="0.00" step="0.01" min="0"></div>
-      </div>
-      <div class="fg"><label class="fl">Low Stock Alert</label>
-        <input class="fi" id="pf-low" type="number" placeholder="50" value="50" min="0"></div>
-    </div>
-    <div class="dfoot">
-      <button class="btn bgh bbl" onclick="Inventory.saveProduct('addnew')">💾➕ Save & New</button>
-      <button class="btn bg bbl" onclick="Inventory.saveProduct('save')">💾 Save Product</button>
-    </div>
-  </div>
-</div>
+  <!-- TOAST -->
+  <div id="toast-container" class="toast-container"></div>
 
-<!-- ════ SALE FORM DRAWER ════ -->
-<div class="dov" id="d-sale">
-  <div class="dbox" style="max-height:96vh">
-    <div class="dh2" style="background:linear-gradient(90deg,#16a34a,#15803d)"></div>
-    <div class="dhead">
-      <div><div class="dtitle">🧾 New Invoice</div><div class="dsub">Create a new sale</div></div>
-      <button class="dclose" onclick="closeD('d-sale')">✕</button>
-    </div>
-    <div class="dbnp">
-      <div style="padding:12px 14px;border-bottom:1px solid var(--bd)">
-        <div class="fr2">
-          <div class="fg" style="margin:0"><label class="fl">Customer</label>
-            <select class="fi" id="sf-cust" style="padding:9px 10px"></select></div>
-          <div class="fg" style="margin:0"><label class="fl">Date</label>
-            <input class="fi" type="date" id="sf-date" style="padding:9px 10px"></div>
-        </div>
-      </div>
-      <div style="padding:10px 14px;border-bottom:1px solid var(--bd)">
-        <div class="fl">Add Products</div>
-        <select class="fi" id="sf-prod-select" onchange="Sales.addToCart(this)" style="padding:9px 10px">
-          <option value="">— tap to add product —</option>
-        </select>
-      </div>
-      <div id="sf-cart" style="min-height:60px"></div>
-      <div id="sf-totals" style="padding:12px 14px;background:var(--s2);border-top:1px solid var(--bd)"></div>
-      <div style="padding:10px 14px;border-bottom:1px solid var(--bd)">
-        <div class="fr2">
-          <div class="fg" style="margin:0"><label class="fl">Discount %</label>
-            <input class="fi" id="sf-disc" type="number" value="0" min="0" max="100" oninput="Sales.updateTotals()"></div>
-          <div class="fg" style="margin:0"><label class="fl">Payment Method</label>
-            <select class="fi" id="sf-method" style="padding:9px 10px">
-              <option>Cash</option><option>Bank Transfer</option><option>Credit</option><option>Mobile Money</option>
-            </select></div>
-        </div>
-      </div>
-    </div>
-    <div class="dfoot">
-      <button class="btn bgh bbl" onclick="Sales.saveSale('addnew')">💾➕ Save & New</button>
-      <button class="btn bg bbl" onclick="Sales.saveSale('save')">🧾 Save Invoice</button>
-    </div>
-  </div>
-</div>
+  <!-- MODAL OVERLAY -->
+  <div class="modal-overlay hidden" id="modal-overlay"></div>
 
-<!-- ════ CUSTOMER FORM DRAWER ════ -->
-<div class="dov" id="d-customer">
-  <div class="dbox">
-    <div class="dh2" style="background:linear-gradient(90deg,#2563eb,#1d4ed8)"></div>
-    <div class="dhead">
-      <div><div class="dtitle" id="cust-form-title">Add Customer</div><div class="dsub">Customer details</div></div>
-      <button class="dclose" onclick="closeD('d-customer')">✕</button>
-    </div>
-    <div class="dbody">
-      <div class="fr2">
-        <div class="fg"><label class="fl">Full Name <span class="req">*</span></label>
-          <input class="fi" id="cf-name" placeholder="John Doe"></div>
-        <div class="fg"><label class="fl">Phone</label>
-          <input class="fi" id="cf-phone" placeholder="+1 555-0000" type="tel"></div>
-      </div>
-      <div class="fg"><label class="fl">Email</label>
-        <input class="fi" id="cf-email" placeholder="email@example.com" type="email"></div>
-      <div class="fr2">
-        <div class="fg"><label class="fl">Status</label>
-          <select class="fi" id="cf-status"><option>Active</option><option>VIP</option><option>Inactive</option></select></div>
-        <div class="fg"><label class="fl">Credit Limit ($)</label>
-          <input class="fi" id="cf-credit" type="number" value="0" min="0"></div>
-      </div>
-      <div class="fg"><label class="fl">Address</label>
-        <input class="fi" id="cf-addr" placeholder="Street, City"></div>
-    </div>
-    <div class="dfoot">
-      <button class="btn bgh bbl" onclick="Customers.save('addnew')">💾➕ Save & New</button>
-      <button class="btn bg bbl" onclick="Customers.save('save')">💾 Save Customer</button>
-    </div>
-  </div>
-</div>
+</div><!-- end app-shell -->
 
-<!-- ════ EXPENSE FORM DRAWER ════ -->
-<div class="dov" id="d-expense">
-  <div class="dbox">
-    <div class="dh2" style="background:linear-gradient(90deg,#dc2626,#b91c1c)"></div>
-    <div class="dhead">
-      <div><div class="dtitle">Add Expense</div><div class="dsub">Record a business expense</div></div>
-      <button class="dclose" onclick="closeD('d-expense')">✕</button>
-    </div>
-    <div class="dbody">
-      <div class="fr2">
-        <div class="fg"><label class="fl">Category</label>
-          <select class="fi" id="ef-cat">
-            <option>Rent</option><option>Utilities</option><option>Salaries</option>
-            <option>Marketing</option><option>Maintenance</option><option>Insurance</option><option>Other</option>
-          </select></div>
-        <div class="fg"><label class="fl">Amount ($) <span class="req">*</span></label>
-          <input class="fi" id="ef-amt" type="number" placeholder="0.00" step="0.01" min="0"></div>
-      </div>
-      <div class="fg"><label class="fl">Description</label>
-        <input class="fi" id="ef-desc" placeholder="Expense description..."></div>
-      <div class="fr2">
-        <div class="fg"><label class="fl">Date</label>
-          <input class="fi" id="ef-date" type="date"></div>
-        <div class="fg"><label class="fl">Recurring?</label>
-          <select class="fi" id="ef-rec"><option value="0">No</option><option value="1">Yes — Monthly</option></select></div>
-      </div>
-    </div>
-    <div class="dfoot">
-      <button class="btn bgh bbl" onclick="Expenses.save('addnew')">💾➕ Save & New</button>
-      <button class="btn bg bbl" onclick="Expenses.save('save')">💾 Save Expense</button>
-    </div>
-  </div>
-</div>
+<!-- Core JS -->
+<script src="assets/js/utils.js"></script>
+<script src="assets/js/database.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/router.js"></script>
+<script src="assets/js/notifications.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/app.js"></script>
 
-<!-- ════ CONFIRM MODAL ════ -->
-<div class="dov" id="d-confirm" style="align-items:center;justify-content:center">
-  <div class="dbox" style="border-radius:var(--r18);max-width:340px;margin:20px">
-    <div class="dh2" style="background:linear-gradient(90deg,var(--er),#dc2626)"></div>
-    <div style="padding:22px 20px;text-align:center">
-      <div style="font-size:36px;margin-bottom:12px" id="conf-icon">⚠️</div>
-      <div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:8px" id="conf-title">Confirm</div>
-      <div style="font-size:13px;color:var(--t3);line-height:1.6" id="conf-msg">Are you sure?</div>
-    </div>
-    <div style="display:flex;gap:10px;padding:0 16px 20px">
-      <button class="btn bgn bbl" onclick="closeD('d-confirm')">Cancel</button>
-      <button class="btn bgr bbl" id="conf-btn">Delete</button>
-    </div>
-  </div>
-</div>
+<!-- Modules -->
+<script src="modules/dashboard/dashboard.js"></script>
+<script src="modules/products/products.js"></script>
+<script src="modules/sales/sales.js"></script>
+<script src="modules/customers/customers.js"></script>
+<script src="modules/suppliers/suppliers.js"></script>
+<script src="modules/expenses/expenses.js"></script>
+<script src="modules/salary/salary.js"></script>
+<script src="modules/finance/finance.js"></script>
+<script src="modules/reports/reports.js"></script>
+<script src="modules/ai/ai.js"></script>
+<script src="modules/settings/settings.js"></script>
+<script src="modules/settings/more.js"></script>
 
-<!-- JS — order matters -->
-<script src="js/config.js"></script>
-<script src="js/utils.js"></script>
-<script src="js/data.js"></script>
-<script src="services/db.js"></script>
-<script src="services/ai-service.js"></script>
-<script src="js/toast.js"></script>
-<script src="js/app.js"></script>
-<script src="js/pages/home.js"></script>
-<script src="js/pages/inventory.js"></script>
-<script src="js/pages/sales.js"></script>
-<script src="js/pages/customers.js"></script>
-<script src="js/pages/reports.js"></script>
-<script src="js/pages/ai.js"></script>
-<script src="js/pages/more.js"></script>
+<!-- Boot -->
 <script>
-  window.addEventListener('load', () => {
-    App.init();
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('pwa/service-worker.js');
-    }
-  });
+window.addEventListener('load', function() {
+  App.boot();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('pwa/service-worker.js').catch(function(){});
+  }
+});
 </script>
 </body>
 </html>

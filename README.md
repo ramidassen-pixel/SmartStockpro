@@ -1,6 +1,6 @@
-# SmartStock Pro v2
+# SmartStock Pro V5
 
-> **Run Your Business Like a Pro** — Mobile-first PWA
+> Complete rebuild — clean architecture, no legacy code
 
 ## Live Site
 ```
@@ -10,46 +10,37 @@ https://ramidassen-pixel.github.io/smart-stock-pro
 ## Structure
 ```
 smartstock-pro/
-├── index.html              ← Single entry point
-├── css/
-│   ├── variables.css       ← All design tokens & CSS variables
-│   ├── layout.css          ← App shell, topbar, bottom nav, sidebar
-│   ├── components.css      ← Cards, buttons, badges, lists
-│   ├── forms.css           ← Drawers, form inputs
-│   └── responsive.css      ← Mobile breakpoints
-├── js/
-│   ├── config.js           ← ⚙️ Edit this — API keys & company info
-│   ├── utils.js            ← Shared helpers
-│   ├── data.js             ← Mock data (replace with DB calls)
-│   ├── toast.js            ← Toast notifications
-│   ├── app.js              ← App shell, navigation, sidebar
-│   └── pages/
-│       ├── home.js         ← Dashboard
-│       ├── inventory.js    ← Products & stock
-│       ├── sales.js        ← Invoices & POS
-│       ├── customers.js    ← Customer management
-│       ├── reports.js      ← P&L, cash flow, expenses
-│       ├── ai.js           ← AI assistant (Claude)
-│       └── more.js         ← More features & settings
-├── services/
-│   ├── db.js               ← Database service (swap MockData for Supabase)
-│   └── ai-service.js       ← Anthropic Claude API
-├── pwa/
-│   ├── manifest.json       ← PWA manifest (installable)
-│   └── service-worker.js   ← Offline support
-└── database/schema.sql     ← PostgreSQL schema for Supabase
+├── index.html              ← Entry point
+├── assets/
+│   ├── css/                ← 6 CSS files (variables, reset, layout, components, pages, responsive)
+│   └── js/                 ← 7 core JS files (utils, database, auth, router, notifs, charts, app)
+├── modules/
+│   ├── dashboard/          ← Dashboard with KPIs, charts, alerts
+│   ├── products/           ← Full product CRUD
+│   ├── sales/              ← POS + invoicing
+│   ├── customers/          ← Customer management
+│   ├── suppliers/          ← Supplier management
+│   ├── expenses/           ← Expense tracking
+│   ├── salary/             ← Payroll system
+│   ├── finance/            ← P&L, Cash Flow, charts
+│   ├── reports/            ← Reports + CSV export
+│   ├── ai/                 ← AI Business Assistant (Claude)
+│   └── settings/           ← App settings + More page
+├── pwa/                    ← PWA manifest + service worker
+└── database/schema.sql     ← Supabase PostgreSQL schema
 ```
 
-## Setup
-1. Edit `js/config.js` — add your company name, currency, API keys
-2. Go to **More → Settings** to enter your Anthropic API key
-3. That's it — the app works with mock data out of the box
+## First Time Setup
+1. Open the app → tap Create Account
+2. Enter your business name and credentials
+3. Start adding products, recording sales!
 
-## Deploy
-Push to GitHub, enable GitHub Pages from main branch root.
-Your live URL: `https://YOUR_USERNAME.github.io/REPO_NAME`
+## AI Assistant
+- Go to More → AI Assistant (or sidebar)
+- Your Anthropic API key is pre-configured
+- Ask anything about your business
 
-## Connect Supabase
-1. Create project at supabase.com
-2. Run `database/schema.sql`
-3. In `services/db.js` replace `MockData.*` with Supabase queries
+## Deploy to GitHub Pages
+1. Upload all files to your GitHub repo
+2. Settings → Pages → Source: main / root
+3. Access at: `https://USERNAME.github.io/REPO-NAME`
