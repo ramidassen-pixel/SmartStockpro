@@ -1,6 +1,6 @@
-const CACHE = 'ssp-v5-1';
-const BASE = '/smart-stock-pro';
-const CORE = [BASE+'/',BASE+'/index.html',
+var CACHE = 'ssp-v5-1';
+var BASE = '/smart-stock-pro';
+var CORE = [BASE+'/',BASE+'/index.html',
   BASE+'/assets/css/variables.css',BASE+'/assets/css/reset.css',BASE+'/assets/css/layout.css',
   BASE+'/assets/css/components.css',BASE+'/assets/css/pages.css',BASE+'/assets/css/responsive.css',
   BASE+'/assets/js/utils.js',BASE+'/assets/js/database.js',BASE+'/assets/js/auth.js',
