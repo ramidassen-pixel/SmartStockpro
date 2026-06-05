@@ -142,22 +142,64 @@
       <div class="sb-biz" id="sb-biz-name">SmartStock Pro</div>
     </div>
     <nav class="sb-nav">
+
       <div class="sb-section">Main</div>
-      <button class="sb-item" onclick="Router.go('dashboard')">🏠 <span>Dashboard</span></button>
-      <button class="sb-item" onclick="Router.go('sales')">🧾 <span>Sales & POS</span></button>
-      <button class="sb-item" onclick="Router.go('products')">📦 <span>Products</span></button>
-      <button class="sb-item" onclick="Router.go('customers')">👥 <span>Customers</span></button>
-      <button class="sb-item" onclick="Router.go('suppliers')">🏭 <span>Suppliers</span></button>
+      <button class="sb-item" onclick="Router.go('dashboard')">
+        <div class="sb-icon" style="background:rgba(212,165,32,0.15)">🏠</div>
+        <span>Dashboard</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('sales')">
+        <div class="sb-icon" style="background:rgba(34,197,94,0.15)">🧾</div>
+        <span>Sales &amp; POS</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('products')">
+        <div class="sb-icon" style="background:rgba(212,165,32,0.15)">📦</div>
+        <span>Products</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('customers')">
+        <div class="sb-icon" style="background:rgba(59,130,246,0.15)">👥</div>
+        <span>Customers</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('suppliers')">
+        <div class="sb-icon" style="background:rgba(245,158,11,0.15)">🏭</div>
+        <span>Suppliers</span>
+      </button>
+
       <div class="sb-section">Finance</div>
-      <button class="sb-item" onclick="Router.go('expenses')">💸 <span>Expenses</span></button>
-      <button class="sb-item" onclick="Router.go('salary')">💰 <span>Salary</span></button>
-      <button class="sb-item" onclick="Router.go('finance')">📊 <span>Finance</span></button>
-      <button class="sb-item" onclick="Router.go('reports')">📋 <span>Reports</span></button>
+      <button class="sb-item" onclick="Router.go('expenses')">
+        <div class="sb-icon" style="background:rgba(239,68,68,0.15)">💸</div>
+        <span>Expenses</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('salary')">
+        <div class="sb-icon" style="background:rgba(34,197,94,0.15)">💰</div>
+        <span>Salary &amp; Payroll</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('finance')">
+        <div class="sb-icon" style="background:rgba(59,130,246,0.15)">📊</div>
+        <span>Finance Overview</span>
+      </button>
+      <button class="sb-item" onclick="Router.go('reports')">
+        <div class="sb-icon" style="background:rgba(168,85,247,0.15)">📋</div>
+        <span>Reports</span>
+      </button>
+
       <div class="sb-section">Intelligence</div>
-      <button class="sb-item sb-ai" onclick="Router.go('ai')">🤖 <span>AI Assistant</span> <em>NEW</em></button>
+      <button class="sb-item sb-ai" onclick="Router.go('ai')">
+        <div class="sb-icon" style="background:rgba(212,165,32,0.2)">🤖</div>
+        <span>AI Assistant</span>
+        <em>AI</em>
+      </button>
+
       <div class="sb-section">System</div>
-      <button class="sb-item" onclick="Router.go('settings')">⚙️ <span>Settings</span></button>
-      <button class="sb-item sb-logout" onclick="Auth.logout()">🚪 <span>Sign Out</span></button>
+      <button class="sb-item" onclick="Router.go('settings')">
+        <div class="sb-icon" style="background:rgba(255,255,255,0.07)">⚙️</div>
+        <span>Settings</span>
+      </button>
+      <button class="sb-item sb-logout" onclick="Auth.logout()">
+        <div class="sb-icon" style="background:rgba(239,68,68,0.15)">🚪</div>
+        <span>Sign Out</span>
+      </button>
+
     </nav>
   </aside>
 
