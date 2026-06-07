@@ -386,7 +386,7 @@ var Sales = {
           + '</div>'
           + paymentsHtml,
       footer: '<button class="btn-ghost" onclick="Modal.close()">Close</button>'
-            + '<button class="btn-ghost" onclick="Sales.printReceipt(\''+id+\')" style="padding:10px 14px">🖨 Print</button>'
+            + '<button class="btn-ghost" onclick="Sales._printById(this)" data-id="'+id+'" style="padding:10px 14px">🖨 Print</button>'
             + footerPayBtn,
     });
   },
