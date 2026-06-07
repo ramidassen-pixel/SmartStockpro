@@ -18,6 +18,7 @@ var DB = {
       payroll: [],
       notifications: [],
       payments: [],
+      allocations: [],
     };
   },
 
@@ -26,7 +27,7 @@ var DB = {
     this._data = raw || this._default();
     // Ensure all arrays exist
     const d = this._data;
-    ['users','products','sales','customers','suppliers','expenses','employees','payroll','notifications']
+    ['users','products','sales','customers','suppliers','expenses','employees','payroll','notifications','payments','allocations']
       .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
     if (!d.settings) d.settings = this._default().settings;
     return this._data;
@@ -97,6 +98,45 @@ var DB = {
     return this.addCustomer({ name: name.trim(), phone: phone||'', email:'', status:'Active', credit:0 });
   },
 
+  // ── Allocations ──────────────────────────────────────────────────────────
+  getAllocations() { return this.get('allocations') || []; },
+
+  addAllocation(a) {
+    a.id = Utils.uid('ALC');
+    a.createdAt = Utils.today();
+    var arr = this.get('allocations');
+    arr.push(a);
+    this.save();
+    return a;
+  },
+
+  updateAllocation(id, data) {
+    var arr = this.get('allocations');
+    var i   = arr.findIndex(function(x){ return x.id===id; });
+    if (i > -1) { arr[i] = Object.assign({}, arr[i], data); this.save(); }
+  },
+
+  deleteAllocation(id) {
+    this._data.allocations = this.getAllocations().filter(function(x){ return x.id!==id; });
+    this.save();
+  },
+
+  // Returns active allocations for today with their daily amounts
+  getAllocatedDaily() {
+    var today  = Utils.today();
+    var allocs = this.getAllocations();
+    return allocs.filter(function(a) {
+      if (!a.startDate || a.startDate > today) return false;
+      if (a.endDate && a.endDate < today) return false;
+      return true;
+    });
+  },
+
+  // Total allocated daily amount
+  getAllocatedDailyTotal() {
+    return this.getAllocatedDaily().reduce(function(sum, a){ return sum + (parseFloat(a.daily)||0); }, 0);
+  },
+
   // Stats helpers
   stats() {
     const sales = this.getSales();
@@ -113,7 +153,9 @@ var DB = {
     const totalCogs = monthSales.reduce((a,s)=>a+(s.items||[]).reduce((b,i)=>b+(parseFloat(i.cost||0)*parseInt(i.qty||1)),0),0);
     const lowStock = products.filter(p=>p.qty<=(p.lowLevel||5)&&p.status!=='inactive');
     const outStock = products.filter(p=>p.qty===0&&p.status!=='inactive');
-    return { totalRev, totalExp, todayRev, netProfit:totalRev-totalExp, totalCogs, grossProfit:totalRev-totalCogs, lowStock, outStock,
+    var allocatedDaily = this.getAllocatedDailyTotal();
+    var trueNetProfit  = totalRev - totalExp - allocatedDaily;
+    return { totalRev, totalExp, todayRev, netProfit:totalRev-totalExp, trueNetProfit, allocatedDaily, totalCogs, grossProfit:totalRev-totalCogs, lowStock, outStock,
       todayCount:todaySales.length, monthCount:monthSales.length };
   },
 };
