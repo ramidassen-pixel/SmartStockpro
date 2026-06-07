@@ -274,8 +274,20 @@ var Sales = {
     const paid    = Math.min(paidRaw, total);
     const balance = Math.max(0, total-paid);
     const method  = Utils.get('s-method')?.value||'Cash';
-    const status  = paid>0&&balance>0 ? 'Partial' : (paid<=0&&method==='Credit') ? 'Credit' : 'Paid';
+    // Status logic:
+    // - No amount entered + Credit method = Credit
+    // - No amount entered + Cash = assume full cash payment on save
+    // - Partial amount entered = Partial
+    // - Full amount entered = Paid
+    const isFullPayment = paidRaw <= 0; // 0 means full cash assumed on save
+    const status  = paid>0&&balance>0 ? 'Partial' : (paidRaw<=0&&method==='Credit') ? 'Credit' : 'Paid';
     const sc      = {Paid:'var(--ok)',Partial:'var(--wa)',Credit:'var(--er)'}[status];
+
+    // When paid=0, assume full cash — show "Full payment on save"
+    const showPartial = paidRaw > 0 && balance > 0;
+    const displayNote = paidRaw <= 0 && method !== 'Credit'
+      ? '<div style="font-size:11px;color:var(--ok);margin-top:8px;font-weight:600">✓ Full payment assumed on save</div>'
+      : '';
 
     if(totEl) totEl.innerHTML=`
       <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">
@@ -291,28 +303,28 @@ var Sales = {
           <span style="font-size:15px;font-weight:800;color:var(--t1)">Total Amount</span>
           <span style="font-size:18px;font-weight:900;color:var(--g);letter-spacing:-.02em;font-family:var(--fm)">${Utils.cur(total,cur)}</span>
         </div>
-        ${paid>0?`
+        ${showPartial?`
         <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd)">
           <span style="font-size:13px;color:var(--ok);font-weight:600">✓ Amount Paid</span>
-          <span style="font-size:14px;font-weight:700;color:var(--ok);font-family:var(--fm)">${Utils.cur(paid,cur)}</span>
-        </div>`:''}
-        ${balance>0?`
+          <span style="font-size:14px;font-weight:700;color:var(--ok);font-family:var(--fm)">${Utils.cur(paidRaw,cur)}</span>
+        </div>
         <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd)">
           <span style="font-size:13px;color:var(--wa);font-weight:600">⏳ Balance Due</span>
           <span style="font-size:14px;font-weight:700;color:var(--wa);font-family:var(--fm)">${Utils.cur(balance,cur)}</span>
         </div>
         <div style="margin-top:10px">
           <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-bottom:5px">
-            <span>Payment progress</span><span>${Math.round((paid/total)*100)}% paid</span>
+            <span>Payment progress</span><span>${Math.round((paidRaw/total)*100)}% paid</span>
           </div>
           <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${Math.round((paid/total)*100)}%;background:linear-gradient(90deg,var(--ok),var(--g));border-radius:3px;transition:width .4s ease"></div>
+            <div style="height:100%;width:${Math.round((paidRaw/total)*100)}%;background:linear-gradient(90deg,var(--ok),var(--g));border-radius:3px;transition:width .4s ease"></div>
           </div>
         </div>`:''}
-        <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
+        <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between">
           <span style="font-size:11px;color:var(--t3)">Invoice status</span>
           <span style="padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;background:${sc}18;border:1px solid ${sc}40;color:${sc}">${status}</span>
         </div>
+        ${displayNote}
       </div>`;
   },
 
@@ -375,9 +387,9 @@ var Sales = {
     Toast.show('Invoice '+sale.id+' saved ✓','ok');
     Notifs.check();
 
-    // Print prompt
+    // Show non-blocking print prompt after save
     if(action!=='new') {
-      setTimeout(()=>{ if(confirm('Print receipt?')) Sales.printReceipt(sale.id); }, 400);
+      setTimeout(()=>{ Sales.showPrintPrompt(sale.id, 'invoice'); }, 300);
     }
 
     if(action==='new'){
@@ -549,8 +561,8 @@ var Sales = {
     Modal.close();
     Toast.show(newStatus==='Paid'?'Invoice fully paid! ✅':'Payment recorded ✓','ok');
 
-    // Print receipt
-    setTimeout(()=>{ if(confirm('Print payment receipt?')) Sales.printPaymentReceipt(id,pmt.id,paying,newBal); }, 400);
+    // Show non-blocking print prompt
+    setTimeout(()=>{ Sales.showPrintPrompt(id, 'payment', pmt.id, paying, newBal); }, 300);
     this.render();
   },
 
@@ -565,6 +577,40 @@ var Sales = {
 
   del(id) {
     confirmDel('Delete this invoice?',()=>{ DB.deleteSale(id); Toast.show('Deleted','warn'); this.render(); });
+  },
+
+
+  // ── PRINT PROMPT (non-blocking — replaces window.confirm) ─────────────────
+  showPrintPrompt(saleId, type, paymentId, amount, newBalance) {
+    const s = DB.getSales().find(x => x.id === saleId);
+    if (!s) return;
+    const settings = DB.getSettings();
+    const cur      = settings.currency || '$';
+
+    Modal.open({
+      title: type === 'payment' ? '✅ Payment Recorded!' : '✅ Invoice Saved!',
+      sub:   type === 'payment'
+        ? 'Payment of ' + Utils.cur(amount||0,cur) + ' recorded for ' + Utils.esc(s.customer||'Customer')
+        : saleId + ' · ' + Utils.esc(s.customer||'Walk-in') + ' · ' + Utils.cur(s.total,cur),
+      barColor: 'var(--ok)',
+      body: `
+        <div style="text-align:center;padding:10px 0 16px">
+          <div style="font-size:48px;margin-bottom:12px">${type==='payment'?'💳':'🧾'}</div>
+          <div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:6px">
+            ${type==='payment'?'Payment receipt ready to print':'Invoice saved successfully'}
+          </div>
+          <div style="font-size:13px;color:var(--t2);line-height:1.6">
+            Would you like to print the ${type==='payment'?'payment receipt':'customer receipt'} now?
+          </div>
+        </div>`,
+      footer: `
+        <button class="btn-ghost" onclick="Modal.close()" style="flex:1">Not Now</button>
+        <button class="btn-primary" style="flex:1" onclick="Modal.close();${
+          type === 'payment'
+            ? 'Sales.printPaymentReceipt(''+saleId+'',''+(paymentId||'')+'','+(amount||0)+','+(newBalance||0)+')'
+            : 'Sales.printReceipt(''+saleId+'')'
+        }">🖨 Print Now</button>`,
+    });
   },
 
   // ── PRINT RECEIPT ──────────────────────────────────────────────────────────
@@ -615,9 +661,24 @@ var Sales = {
   <div class="center sm bold" style="margin-top:4px">${Utils.esc(bizName)}</div>
 </body></html>`;
 
-    const w=window.open('','_blank','width=420,height=680');
-    if(w){ w.document.write(html); w.document.close(); setTimeout(()=>{ w.print(); },500); }
-    else { Toast.show('Allow pop-ups to print','warn'); }
+    // Use hidden iframe to avoid popup blocker on mobile
+    var existing = document.getElementById('print-frame');
+    if (existing) existing.remove();
+    var iframe = document.createElement('iframe');
+    iframe.id = 'print-frame';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    setTimeout(function() {
+      try { iframe.contentWindow.print(); }
+      catch(e) {
+        // Fallback: open in new tab
+        var url = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+        window.open(url, '_blank');
+      }
+    }, 600);
   },
 
   printPaymentReceipt(saleId, paymentId, amount, newBalance) {
@@ -659,8 +720,21 @@ var Sales = {
   <div class="center sm bold">${Utils.esc(bizName)}</div>
 </body></html>`;
 
-    const w=window.open('','_blank','width=420,height=600');
-    if(w){ w.document.write(html); w.document.close(); setTimeout(()=>{ w.print(); },500); }
-    else { Toast.show('Allow pop-ups to print','warn'); }
+    var existing2 = document.getElementById('print-frame-2');
+    if (existing2) existing2.remove();
+    var iframe2 = document.createElement('iframe');
+    iframe2.id = 'print-frame-2';
+    iframe2.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+    document.body.appendChild(iframe2);
+    iframe2.contentDocument.open();
+    iframe2.contentDocument.write(html);
+    iframe2.contentDocument.close();
+    setTimeout(function() {
+      try { iframe2.contentWindow.print(); }
+      catch(e) {
+        var url = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+        window.open(url, '_blank');
+      }
+    }, 600);
   },
 };
