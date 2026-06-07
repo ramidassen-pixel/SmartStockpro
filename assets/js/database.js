@@ -17,6 +17,7 @@ var DB = {
       employees: [],
       payroll: [],
       notifications: [],
+      payments: [],
     };
   },
 
@@ -79,6 +80,22 @@ var DB = {
   // Payroll
   getPayroll() { return this.get('payroll') || []; },
   addPayroll(p) { p.id = Utils.uid('PAY'); p.paidAt = Utils.today(); const arr = this.get('payroll'); arr.unshift(p); this.save(); return p; },
+
+  // Payments (partial payment history)
+  getPayments()      { return this.get('payments') || []; },
+  addPayment(p)      { p.id = Utils.uid('PAY'); p.paidAt = new Date().toISOString(); const arr = this.get('payments'); arr.unshift(p); this.save(); return p; },
+  getPaymentsForSale(saleId) { return this.getPayments().filter(p => p.saleId === saleId); },
+  getPaymentsForCustomer(custId) { return this.getPayments().filter(p => p.customerId === custId); },
+
+  // Auto-create or find customer by name
+  findOrCreateCustomer(name, phone) {
+    if (!name || name.toLowerCase() === 'walk-in customer') return null;
+    const existing = this.getCustomers().find(c =>
+      c.name.toLowerCase().trim() === name.toLowerCase().trim()
+    );
+    if (existing) return existing;
+    return this.addCustomer({ name: name.trim(), phone: phone||'', email:'', status:'Active', credit:0 });
+  },
 
   // Stats helpers
   stats() {
