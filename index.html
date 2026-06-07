@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="description" content="SmartStock Pro V5 — Business Management System">
+<link rel="manifest" href="pwa/manifest.json">
+<title>SmartStock Pro</title>
+
+<!-- Styles -->
+<link rel="stylesheet" href="assets/css/variables.css">
+<link rel="stylesheet" href="assets/css/reset.css">
+<link rel="stylesheet" href="assets/css/layout.css">
+<link rel="stylesheet" href="assets/css/components.css">
+<link rel="stylesheet" href="assets/css/pages.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
+</head>
+<body>
+
+<!-- APP LOADER -->
+<div id="loader" class="loader">
+  <div class="loader-inner">
+    <div class="loader-logo">📦</div>
+    <div class="loader-name">SmartStock Pro</div>
+    <div class="loader-dots">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="login-screen hidden">
+  <div class="login-card">
+    <div class="login-logo">📦</div>
+    <h1 class="login-title">SmartStock Pro</h1>
+    <p class="login-sub">Business Management System</p>
+    <div class="login-tabs">
+      <button class="ltab active" id="ltab-in" onclick="Auth.showTab('in')">Sign In</button>
+      <button class="ltab" id="ltab-up" onclick="Auth.showTab('up')">Create Account</button>
+    </div>
+    <!-- Sign In -->
+    <div id="login-form">
+      <div class="fg"><label class="fl">Username</label>
+        <input class="fi" id="l-user" placeholder="Enter username" autocomplete="username"></div>
+      <div class="fg"><label class="fl">Password</label>
+        <div class="pw-wrap"><input class="fi" id="l-pass" type="password" placeholder="Enter password" autocomplete="current-password">
+        <button class="pw-eye" onclick="Auth.togglePw('l-pass')">👁</button></div></div>
+      <div id="login-err" class="form-err hidden"></div>
+      <button class="btn-primary btn-full" onclick="Auth.login()">Sign In</button>
+    </div>
+    <!-- Sign Up -->
+    <div id="signup-form" class="hidden">
+      <div class="fg"><label class="fl">Business Name</label>
+        <input class="fi" id="s-biz" placeholder="Your store name"></div>
+      <div class="fg"><label class="fl">Full Name</label>
+        <input class="fi" id="s-name" placeholder="Your full name"></div>
+      <div class="fg"><label class="fl">Username</label>
+        <input class="fi" id="s-user" placeholder="Choose a username"></div>
+      <div class="fg"><label class="fl">Password</label>
+        <div class="pw-wrap"><input class="fi" id="s-pass" type="password" placeholder="Min 6 characters">
+        <button class="pw-eye" onclick="Auth.togglePw('s-pass')">👁</button></div></div>
+      <div id="signup-err" class="form-err hidden"></div>
+      <button class="btn-primary btn-full" onclick="Auth.signup()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP SHELL -->
+<div id="app-shell" class="app-shell hidden">
+
+  <!-- TOPBAR -->
+  <header class="topbar" id="topbar">
+    <div class="tb-brand" onclick="Router.go('dashboard')">
+      <div class="tb-logo">📦</div>
+      <div class="tb-brand-text">
+        <div class="tb-name" id="tb-biz-name">SmartStock Pro</div>
+        <div class="tb-sub">Business Manager</div>
+      </div>
+    </div>
+    <div class="tb-actions">
+      <button class="tb-btn" id="notif-btn" onclick="UI.toggleNotifPanel()" title="Notifications">
+        🔔<span class="notif-badge hidden" id="notif-badge"></span>
+      </button>
+      <div class="tb-avatar" id="tb-avatar" onclick="Router.go('settings')" title="Settings">A</div>
+    </div>
+  </header>
+
+  <!-- PAGES CONTAINER -->
+  <main class="pages-container" id="pages-container">
+
+    <div class="page" id="pg-dashboard"></div>
+    <div class="page" id="pg-products"></div>
+    <div class="page" id="pg-sales"></div>
+    <div class="page" id="pg-customers"></div>
+    <div class="page" id="pg-suppliers"></div>
+    <div class="page" id="pg-expenses"></div>
+    <div class="page" id="pg-salary"></div>
+    <div class="page" id="pg-finance"></div>
+    <div class="page" id="pg-reports"></div>
+    <div class="page" id="pg-ai"></div>
+    <div class="page" id="pg-settings"></div>
+    <div class="page" id="pg-more"></div>
+
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bnav-item active" id="bn-dashboard" onclick="Router.go('dashboard')">
+      <span class="bnav-icon">🏠</span><span class="bnav-label">Home</span>
+    </button>
+    <button class="bnav-item" id="bn-sales" onclick="Router.go('sales')">
+      <span class="bnav-icon">🧾</span><span class="bnav-label">Sales</span>
+    </button>
+    <button class="bnav-item" id="bn-products" onclick="Router.go('products')">
+      <span class="bnav-icon">📦</span><span class="bnav-label">Products</span>
+    </button>
+    <button class="bnav-item" id="bn-customers" onclick="Router.go('customers')">
+      <span class="bnav-icon">👥</span><span class="bnav-label">Clients</span>
+    </button>
+    <button class="bnav-item" id="bn-more" onclick="Router.go('more')">
+      <span class="bnav-icon">⋯</span><span class="bnav-label">More</span>
+    </button>
+  </nav>
+
+  <!-- NOTIFICATION PANEL -->
+  <div class="notif-panel hidden" id="notif-panel">
+    <div class="notif-head">
+      <span>Notifications</span>
+      <button onclick="UI.toggleNotifPanel()">✕</button>
+    </div>
+    <div id="notif-list" class="notif-list"></div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- MODAL OVERLAY -->
+  <div class="modal-overlay hidden" id="modal-overlay"></div>
+
+</div><!-- end app-shell -->
+
+<!-- Core JS -->
+<script src="assets/js/utils.js"></script>
+<script src="assets/js/database.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/router.js"></script>
+<script src="assets/js/notifications.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/app.js"></script>
+
+<!-- Modules -->
+<script src="modules/dashboard/dashboard.js"></script>
+<script src="modules/products/products.js"></script>
+<script src="modules/sales/sales.js"></script>
+<script src="modules/customers/customers.js"></script>
+<script src="modules/suppliers/suppliers.js"></script>
+<script src="modules/expenses/expenses.js"></script>
+<script src="modules/salary/salary.js"></script>
+<script src="modules/finance/finance.js"></script>
+<script src="modules/reports/reports.js"></script>
+<script src="modules/ai/ai.js"></script>
+<script src="modules/settings/settings.js"></script>
+<script src="modules/settings/more.js"></script>
+
+<!-- Boot -->
+<script>
+window.addEventListener('load', function() {
+  App.boot();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('pwa/service-worker.js').catch(function(){});
+  }
+});
+</script>
+</body>
+</html>
