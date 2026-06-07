@@ -580,37 +580,46 @@ var Sales = {
   },
 
 
-  // ── PRINT PROMPT (non-blocking — replaces window.confirm) ─────────────────
+  // ── PRINT PROMPT (non-blocking) ───────────────────────────────────────────
   showPrintPrompt(saleId, type, paymentId, amount, newBalance) {
-    const s = DB.getSales().find(x => x.id === saleId);
+    var s = DB.getSales().find(function(x){ return x.id === saleId; });
     if (!s) return;
-    const settings = DB.getSettings();
-    const cur      = settings.currency || '$';
+    var settings = DB.getSettings();
+    var cur = settings.currency || '$';
+    var isPayment = type === 'payment';
+
+    // Store args for the print button to use — avoids nested quote issues
+    window._printArgs = { saleId: saleId, type: type, paymentId: paymentId, amount: amount, newBalance: newBalance };
 
     Modal.open({
-      title: type === 'payment' ? '✅ Payment Recorded!' : '✅ Invoice Saved!',
-      sub:   type === 'payment'
-        ? 'Payment of ' + Utils.cur(amount||0,cur) + ' recorded for ' + Utils.esc(s.customer||'Customer')
-        : saleId + ' · ' + Utils.esc(s.customer||'Walk-in') + ' · ' + Utils.cur(s.total,cur),
+      title:    isPayment ? '✅ Payment Recorded!' : '✅ Invoice Saved!',
+      sub:      isPayment
+                ? 'Paid ' + Utils.cur(amount||0,cur) + ' — ' + Utils.esc(s.customer||'Customer')
+                : saleId + ' · ' + Utils.esc(s.customer||'Walk-in') + ' · ' + Utils.cur(s.total,cur),
       barColor: 'var(--ok)',
-      body: `
-        <div style="text-align:center;padding:10px 0 16px">
-          <div style="font-size:48px;margin-bottom:12px">${type==='payment'?'💳':'🧾'}</div>
-          <div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:6px">
-            ${type==='payment'?'Payment receipt ready to print':'Invoice saved successfully'}
-          </div>
-          <div style="font-size:13px;color:var(--t2);line-height:1.6">
-            Would you like to print the ${type==='payment'?'payment receipt':'customer receipt'} now?
-          </div>
-        </div>`,
-      footer: `
-        <button class="btn-ghost" onclick="Modal.close()" style="flex:1">Not Now</button>
-        <button class="btn-primary" style="flex:1" onclick="Modal.close();${
-          type === 'payment'
-            ? 'Sales.printPaymentReceipt(''+saleId+'',''+(paymentId||'')+'','+(amount||0)+','+(newBalance||0)+')'
-            : 'Sales.printReceipt(''+saleId+'')'
-        }">🖨 Print Now</button>`,
+      body: '<div style="text-align:center;padding:16px 0 20px">'
+          + '<div style="font-size:52px;margin-bottom:14px">' + (isPayment ? '💳' : '🧾') + '</div>'
+          + '<div style="font-size:16px;font-weight:700;color:var(--t1);margin-bottom:8px">'
+          + (isPayment ? 'Payment receipt ready' : 'Invoice saved successfully') + '</div>'
+          + '<div style="font-size:13px;color:var(--t2);line-height:1.6">'
+          + 'Would you like to print the ' + (isPayment ? 'payment receipt' : 'customer receipt') + ' now?'
+          + '</div></div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()" style="flex:1">Not Now</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Sales._doPrint()">🖨 Print Now</button>',
     });
+  },
+
+  // Called by the Print Now button — reads args stored by showPrintPrompt
+  _doPrint() {
+    Modal.close();
+    var args = window._printArgs;
+    if (!args) return;
+    if (args.type === 'payment') {
+      Sales.printPaymentReceipt(args.saleId, args.paymentId, args.amount, args.newBalance);
+    } else {
+      Sales.printReceipt(args.saleId);
+    }
+    window._printArgs = null;
   },
 
   // ── PRINT RECEIPT ──────────────────────────────────────────────────────────
