@@ -355,50 +355,14 @@ var Dashboard = {
     });
   },
 
-  // ── Print Daily Report ────────────────────────────────────────────────────
+  // ── Print Daily Report ──────────────────────────────────────────────────
   printDailyReport: function() {
-    var settings = DB.getSettings();
-    var cur      = settings.currency || '$';
-    var bizName  = settings.bizName || 'SmartStock Pro';
-    var now      = new Date();
-    var today    = Utils.today();
-    var sales    = DB.getSales();
-    var todaySales = sales.filter(function(s){ return s.date === today; });
-    var todayRev = todaySales.reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
-    var todayExp = DB.getExpenses().filter(function(e){ return e.date===today; })
-                     .reduce(function(a,e){ return a+(parseFloat(e.amount)||0); }, 0);
-    var alloc    = DB.getAllocatedDailyTotal ? DB.getAllocatedDailyTotal() : 0;
-    var net      = todayRev - todayExp - alloc;
-
-    var rows = todaySales.map(function(s) {
-      return '<tr><td>'+s.id+'</td><td>'+Utils.esc(s.customer||'Walk-in')+'</td>'
-        +'<td>'+Utils.cur(s.total,cur)+'</td><td>'+(s.status||'Paid')+'</td></tr>';
-    }).join('');
-
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Report</title>'
-      + '<style>body{font-family:Arial,sans-serif;font-size:13px;padding:20px;max-width:700px;margin:0 auto}'
-      + 'h1{font-size:20px;margin-bottom:4px}h2{font-size:14px;border-bottom:2px solid #000;padding-bottom:4px;margin-top:20px}'
-      + 'table{width:100%;border-collapse:collapse;margin-top:8px}'
-      + 'th{background:#f5f5f5;padding:7px;text-align:left;border:1px solid #ddd}'
-      + 'td{padding:7px;border:1px solid #ddd}.summary{background:#f9f9f9;padding:12px;border-radius:4px;margin-top:10px}'
-      + '.row{display:flex;justify-content:space-between;padding:4px 0}.bold{font-weight:bold}'
-      + '@media print{@page{margin:10mm}}</style></head><body>'
-      + '<h1>' + bizName + '</h1>'
-      + '<div style="color:#666">Daily Report — ' + now.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + '</div>'
-      + '<div style="color:#666;font-size:11px">Generated: ' + now.toLocaleString() + '</div>'
-      + '<h2>Summary</h2>'
-      + '<div class="summary">'
-      + '<div class="row"><span>Gross Sales</span><span class="bold">'+Utils.cur(todayRev,cur)+'</span></div>'
-      + '<div class="row"><span>Manual Expenses</span><span style="color:red">-'+Utils.cur(todayExp,cur)+'</span></div>'
-      + (alloc>0?'<div class="row"><span>Allocated Expenses</span><span style="color:orange">-'+Utils.cur(alloc,cur)+'</span></div>':'')
-      + '<div class="row bold" style="border-top:1px solid #ccc;margin-top:6px;padding-top:8px"><span>Net Profit</span><span style="color:' + (net>=0?'green':'red') + '">' + Utils.cur(net,cur) + '</span></div>'
-      + '</div>'
-      + '<h2>Transactions ('+ todaySales.length +')</h2>'
-      + '<table><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr>' + rows + '</table>'
-      + '</body></html>';
-
-    Sales._printHtml(html, 'daily-report-frame');
+    // Open the daily report view in Reports module
+    Reports.dailyDate = Utils.today();
+    Reports.view = 'daily';
+    Router.go('reports');
   },
+
 };
 
 // Weekly chart helper (called inline from render)
