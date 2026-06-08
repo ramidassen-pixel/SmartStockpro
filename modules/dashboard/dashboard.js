@@ -107,31 +107,42 @@ var Dashboard = {
       ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--er);margin-left:6px;animation:pulse 1.5s ease-in-out infinite"></span>'
       : '';
 
+    // ── Cash & Profit Calculations for Hero Cards ──────────────────────────
+    var _allS   = DB.getSales();
+    var _allE   = DB.getExpenses();
+    var _allPay = DB.getPayroll();
+    var _totSal = _allS.reduce(function(a,s){ return a+(parseFloat(s.total)||0); },0);
+    var _totCog = _allS.reduce(function(a,s){ return a+(_s=s,(s.items||[]).reduce(function(b,i){ return b+(parseFloat(i.cost)||0)*(parseInt(i.qty)||1); },0)); },0);
+    var _gross  = _totSal - _totCog;
+    var _manE   = _allE.reduce(function(a,e){ return a+(parseFloat(e.amount)||0); },0);
+    var _net    = _gross - _manE - (s.allocatedDaily||0);
+    var _cashIn = _allS.filter(function(x){ return x.status==='Paid'; }).reduce(function(a,x){ return a+(parseFloat(x.total)||0); },0)
+                + _allS.filter(function(x){ return x.status==='Partial'; }).reduce(function(a,x){ return a+(parseFloat(x.amountPaid)||0); },0);
+    var _cashOut= _manE + _allPay.reduce(function(a,p){ return a+(parseFloat(p.amount)||0); },0);
+    var _cash   = _cashIn - _cashOut;
+
+    var grossC  = _gross>=0 ? 'var(--ok)' : 'var(--er)';
+    var grossBg = _gross>=0 ? 'var(--okb)' : 'var(--erb)';
+    var netC    = _net>=0   ? 'var(--ok)' : 'var(--er)';
+    var netBg   = _net>=0   ? 'var(--okb)' : 'var(--erb)';
+
     var statCards = '<div class="kpi-grid" style="grid-template-columns:1fr 1fr;gap:10px;padding:0 14px;margin-bottom:14px">'
-      // Sales Today
-      + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)" onclick="Router.go(\'sales\')">'
-      + '<div class="kpi-icon">🧾</div>'
-      + '<div class="kpi-label">Sales Today</div>'
-      + '<div class="kpi-value" style="font-size:26px">' + todaySales.length + '</div>'
-      + '<div class="kpi-sub">' + showMoney(todayRev) + '</div></div>'
-      // Low Stock
-      + '<div class="kpi" style="--kc:var(--er);--kibg:var(--erb)" onclick="Router.go(\'products\')">'
-      + '<div class="kpi-icon">📦' + lowPulse + '</div>'
-      + '<div class="kpi-label">Low Stock</div>'
-      + '<div class="kpi-value" style="font-size:26px">' + lowStockCount + '</div>'
-      + '<div class="kpi-sub">' + (lowStockCount > 0 ? 'Need reorder' : 'All stocked ✓') + '</div></div>'
-      // Outstanding Debt
-      + '<div class="kpi" style="--kc:var(--wa);--kibg:var(--wab)" onclick="Router.go(\'customers\')">'
-      + '<div class="kpi-icon">💳</div>'
-      + '<div class="kpi-label">Customer Debt</div>'
-      + '<div class="kpi-value" style="font-size:canSeeMoney?\'22px\':\'26px\'">' + showMoney(totalDebt) + '</div>'
-      + '<div class="kpi-sub">' + debtCusts + ' customer' + (debtCusts!==1?'s':'') + '</div></div>'
-      // Month Revenue
-      + '<div class="kpi" style="--kc:var(--ok);--kibg:var(--okb)" onclick="Router.go(\'finance\')">'
-      + '<div class="kpi-icon">📈</div>'
-      + '<div class="kpi-label">Month Revenue</div>'
-      + '<div class="kpi-value" style="font-size:22px">' + showMoney(monthRev) + '</div>'
-      + '<div class="kpi-sub">' + now.toLocaleString('default',{month:'long'}) + ' ' + now.getFullYear() + '</div></div>'
+      + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)">'
+      + '<div class="kpi-icon">💰</div><div class="kpi-label">Total Sales</div>'
+      + '<div class="kpi-value" style="font-size:20px">' + showMoney(_totSal) + '</div>'
+      + '<div class="kpi-sub">' + _allS.length + ' invoices</div></div>'
+      + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)">'
+      + '<div class="kpi-icon">💵' + lowPulse + '</div><div class="kpi-label">Cash Available</div>'
+      + '<div class="kpi-value" style="font-size:20px">' + showMoney(_cash) + '</div>'
+      + '<div class="kpi-sub">Actual cash on hand</div></div>'
+      + '<div class="kpi" style="--kc:' + grossC + ';--kibg:' + grossBg + '">'
+      + '<div class="kpi-icon">📈</div><div class="kpi-label">Gross Profit</div>'
+      + '<div class="kpi-value" style="font-size:20px">' + showMoney(_gross) + '</div>'
+      + '<div class="kpi-sub">Sales minus COGS</div></div>'
+      + '<div class="kpi" style="--kc:' + netC + ';--kibg:' + netBg + '">'
+      + '<div class="kpi-icon">' + (_net>=0?'✅':'📉') + '</div><div class="kpi-label">Net Profit</div>'
+      + '<div class="kpi-value" style="font-size:20px">' + showMoney(_net) + '</div>'
+      + '<div class="kpi-sub">After all expenses</div></div>'
       + '</div>';
 
     // ── AREA 4: Recent Sales (last 10) ────────────────────────────────────
