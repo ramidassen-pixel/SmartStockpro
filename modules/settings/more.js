@@ -16,7 +16,8 @@ var MorePage = {
         label: 'Finance',
         items: [
           { icon:'📊', label:'Finance Overview',    desc:'P&L, Cash Flow, margins',           bg:'var(--inb)',  action:"Router.go('finance')"    },
-          { icon:'📋', label:'Reports',             desc:'Daily, weekly, monthly reports',    bg:'var(--wab)',  action:"Router.go('reports')"    },
+          { icon:'📋', label:'Reports',             desc:'Financial performance reports',     bg:'var(--wab)',  action:"Router.go('reports')"    },
+          { icon:'📅', label:'Daily Report',         desc:'Print today\'s daily report',       bg:'var(--gb)',   action:"Reports.switchToDaily();Router.go('reports')"},
           { icon:'📅', label:'Expense Allocations', desc:'Set up recurring cost allocations', bg:'rgba(245,158,11,.12)', action:"Allocations.render()", badge:'NEW', badgeColor:'var(--wa)' },
         ]
       },
