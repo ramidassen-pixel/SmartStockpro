@@ -19,9 +19,6 @@ var DB = {
       notifications: [],
       payments: [],
       allocations: [],
-      purchaseOrders: [],
-      grns: [],
-      supplierBills: [],
     };
   },
 
@@ -30,7 +27,7 @@ var DB = {
     this._data = raw || this._default();
     // Ensure all arrays exist
     const d = this._data;
-    ['users','products','sales','customers','suppliers','expenses','employees','payroll','notifications','payments','allocations','purchaseOrders','grns','supplierBills']
+    ['users','products','sales','customers','suppliers','expenses','employees','payroll','notifications','payments','allocations']
       .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
     if (!d.settings) d.settings = this._default().settings;
     return this._data;
@@ -141,22 +138,11 @@ var DB = {
   },
 
 
-  // ── Purchase Orders ────────────────────────────────────────────────────────
-  getPurchaseOrders() { return this.get('purchaseOrders') || []; },
-  addPurchaseOrder(p) { p.id = Utils.uid('PO'); p.createdAt = Utils.today(); var arr = this.get('purchaseOrders'); arr.unshift(p); this.save(); return p; },
-  updatePurchaseOrder(id, data) { var arr = this.get('purchaseOrders'); var i = arr.findIndex(function(x){ return x.id===id; }); if(i>-1){ arr[i]=Object.assign({},arr[i],data); this.save(); } },
-  deletePurchaseOrder(id) { this._data.purchaseOrders = this.getPurchaseOrders().filter(function(x){ return x.id!==id; }); this.save(); },
-
-  // ── Goods Received Notes ───────────────────────────────────────────────────
-  getGRNs() { return this.get('grns') || []; },
-  addGRN(g) { g.id = Utils.uid('GRN'); g.createdAt = Utils.today(); var arr = this.get('grns'); arr.unshift(g); this.save(); return g; },
-  updateGRN(id, data) { var arr = this.get('grns'); var i = arr.findIndex(function(x){ return x.id===id; }); if(i>-1){ arr[i]=Object.assign({},arr[i],data); this.save(); } },
-
-  // ── Supplier Bills ─────────────────────────────────────────────────────────
-  getSupplierBills() { return this.get('supplierBills') || []; },
-  addSupplierBill(b) { b.id = Utils.uid('BILL'); b.createdAt = Utils.today(); var arr = this.get('supplierBills'); arr.unshift(b); this.save(); return b; },
-  updateSupplierBill(id, data) { var arr = this.get('supplierBills'); var i = arr.findIndex(function(x){ return x.id===id; }); if(i>-1){ arr[i]=Object.assign({},arr[i],data); this.save(); } },
-  deleteSupplierBill(id) { this._data.supplierBills = this.getSupplierBills().filter(function(x){ return x.id!==id; }); this.save(); },
+  // ── Quotations ─────────────────────────────────────────────────────────────
+  getQuotations() { return this.get('quotations') || []; },
+  addQuotation(q) { q.id = 'QT-'+new Date().getFullYear()+'-'+String((this.getQuotations().length+1)).padStart(4,'0'); q.createdAt = Utils.today(); var arr = this.get('quotations'); arr.unshift(q); this.save(); return q; },
+  updateQuotation(id, data) { var arr = this.get('quotations'); var i = arr.findIndex(function(x){ return x.id===id; }); if(i>-1){ arr[i]=Object.assign({},arr[i],data); this.save(); } },
+  deleteQuotation(id) { this._data.quotations = this.getQuotations().filter(function(x){ return x.id!==id; }); this.save(); },
 
   // Stats helpers
   stats() {
