@@ -35,8 +35,12 @@ var Dashboard = {
     var monthRev    = monthSales.reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
     var todayManExp = DB.getExpenses().filter(function(e){ return e.date===today; })
                         .reduce(function(a,e){ return a+(parseFloat(e.amount)||0); }, 0);
-    var todayAlloc  = s.allocatedDaily || 0;
-    var todayNet    = todayRev - todayManExp - todayAlloc;
+    // Read ON/OFF toggle (default ON if not set)
+    var allocEnabled = DB.getSettings().allocEnabled !== false;
+    var rawAllocDay  = s.allocatedDaily || 0;
+    var dayOfWeek    = now.getDay(); // 0=Sun
+    var todayAlloc   = (allocEnabled && dayOfWeek !== 0) ? rawAllocDay : 0;
+    var todayNet     = todayRev - todayManExp - todayAlloc;
 
     // Yesterday comparison
     var yest       = new Date(now); yest.setDate(yest.getDate()-1);
@@ -45,7 +49,8 @@ var Dashboard = {
     var yesterdayRev   = yesterdaySales.reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
     var yesterdayExp   = DB.getExpenses().filter(function(e){ return e.date===yesterdayStr; })
                            .reduce(function(a,e){ return a+(parseFloat(e.amount)||0); }, 0);
-    var yesterdayNet   = yesterdayRev - yesterdayExp - todayAlloc;
+    var yestAlloc    = (allocEnabled && yest.getDay() !== 0) ? rawAllocDay : 0;
+    var yesterdayNet   = yesterdayRev - yesterdayExp - yestAlloc;
     var netDiff        = todayNet - yesterdayNet;
     var compHtml = '';
     if (canSeeProfit) {
@@ -131,10 +136,16 @@ var Dashboard = {
       + '<div class="kpi-icon">💰</div><div class="kpi-label">Total Sales</div>'
       + '<div class="kpi-value" style="font-size:20px">' + showMoney(_totSal) + '</div>'
       + '<div class="kpi-sub">' + _allS.length + ' invoices</div></div>'
-      + '<div class="kpi" style="--kc:var(--wa);--kibg:var(--wab);cursor:pointer" onclick="Allocations.render()">'
-      + '<div class="kpi-icon">📅</div><div class="kpi-label">Allocated Expenses</div>'
-      + '<div class="kpi-value" style="font-size:20px">' + showMoney(todayAlloc) + '</div>'
-      + '<div class="kpi-sub">' + (todayAlloc > 0 ? Utils.cur(todayAlloc,cur) + '/day · tap to manage' : 'None set · tap to add') + '</div></div>'
+      + '<div class="kpi" style="--kc:var(--wa);--kibg:' + (allocEnabled?'var(--wab)':'var(--bg3)') + ';opacity:' + (allocEnabled?'1':'.6') + '">'
+      + '<div class="kpi-icon">📅</div>'
+      + '<div class="kpi-label" style="display:flex;align-items:center;justify-content:space-between">'
+      + 'Allocated'
+      + '<div onclick="Dashboard.toggleAlloc()" title="Toggle allocated expenses" style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:2px 0">'
+      + '<div style="width:28px;height:16px;border-radius:8px;background:' + (allocEnabled?'var(--ok)':'var(--bd2)') + ';position:relative;transition:background .2s;flex-shrink:0">'
+      + '<div style="width:12px;height:12px;border-radius:50%;background:#fff;position:absolute;top:2px;left:' + (allocEnabled?'14':'2') + 'px;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.3)"></div>'
+      + '</div></div></div>'
+      + '<div class="kpi-value" style="font-size:20px;color:' + (allocEnabled?'var(--wa)':'var(--t3)') + '">' + showMoney(todayAlloc) + '</div>'
+      + '<div class="kpi-sub">' + (allocEnabled ? Utils.cur(rawAllocDay,cur)+'/day · ON' : 'Paused · OFF') + '</div></div>'
       + '<div class="kpi" style="--kc:' + grossC + ';--kibg:' + grossBg + '">'
       + '<div class="kpi-icon">📈</div><div class="kpi-label">Gross Profit</div>'
       + '<div class="kpi-value" style="font-size:20px">' + showMoney(_gross) + '</div>'
@@ -336,6 +347,19 @@ var Dashboard = {
 
   // ── Week bar chart ────────────────────────────────────────────────────────
   // (defined as inline call to avoid variable capture issues)
+
+  // ── Toggle Allocated Expenses ON/OFF ─────────────────────────────────────
+  toggleAlloc: function() {
+    var current = DB.getSettings().allocEnabled !== false; // true = ON
+    DB.saveSettings({ allocEnabled: !current });
+    // Show feedback toast
+    var next = !current;
+    Toast.show(
+      next ? '📅 Allocated expenses ON — deducted from profit' : '📅 Allocated expenses OFF — not counted',
+      next ? 'ok' : 'warn'
+    );
+    Dashboard.render();
+  },
 
   // ── Count-up animation ────────────────────────────────────────────────────
   animateCountUp: function() {
