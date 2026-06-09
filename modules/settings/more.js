@@ -7,8 +7,8 @@ var MorePage = {
       {
         label: 'Business',
         items: [
+          { icon:'📄', label:'Quotations',          desc:'Create &amp; manage client quotations', bg:'var(--inb)',  action:"Router.go('quotations')", badge:'NEW', badgeColor:'var(--in)' },
           { icon:'🤖', label:'AI Assistant',         desc:'Ask Claude about your business',    bg:'var(--gb)',   action:"Router.go('ai')",          badge:'AI' },
-          { icon:'🚚', label:'Supply Management',    desc:'POs, GRN, bills &amp; reorder',     bg:'var(--inb)',  action:"Router.go('supply')",    badge:'NEW' },
           { icon:'🏭', label:'Suppliers',            desc:'Manage your suppliers',             bg:'var(--wab)',  action:"Router.go('suppliers')"  },
           { icon:'💰', label:'Salary & Payroll',     desc:'Manage employee salaries',          bg:'var(--okb)',  action:"Router.go('salary')"     },
         ]
