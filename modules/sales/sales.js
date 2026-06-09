@@ -517,8 +517,8 @@ var Sales = {
 
     var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt '+s.id+'</title>'
       +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;font-size:13px;color:#000;background:#fff;padding:12px;max-width:360px;margin:0 auto}.center{text-align:center}.bold{font-weight:bold}.lg{font-size:16px}.sm{font-size:11px}.line{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;padding:3px 0}.paid{color:#16a34a}.bal{color:#d97706}@media print{@page{margin:5mm}body{max-width:100%}}</style></head><body>'
-      +'<div class="center bold lg">'+bizName+'</div>'
-      +'<div class="center sm">Business Receipt</div>'
+      + Settings._buildReceiptHeader(settings)
+      + '<div class="center sm" style="margin-bottom:4px">Business Receipt</div>'
       +'<div class="center sm">'+now.toLocaleString()+'</div>'
       +'<div class="line"></div>'
       +'<div class="row"><span>Customer:</span><span class="bold">'+Utils.esc(s.customer||'Walk-in')+'</span></div>'
@@ -558,8 +558,8 @@ var Sales = {
 
     var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Payment Receipt</title>'
       +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;font-size:13px;color:#000;background:#fff;padding:12px;max-width:360px;margin:0 auto}.center{text-align:center}.bold{font-weight:bold}.lg{font-size:16px}.sm{font-size:11px}.line{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;padding:3px 0}.paid{color:#16a34a}.bal{color:#d97706}@media print{@page{margin:5mm}body{max-width:100%}}</style></head><body>'
-      +'<div class="center bold lg">'+bizName+'</div>'
-      +'<div class="center bold sm">PAYMENT RECEIPT</div>'
+      + Settings._buildReceiptHeader(settings)
+      + '<div class="center bold sm" style="margin-bottom:4px">PAYMENT RECEIPT</div>'
       +'<div class="center sm">'+now.toLocaleString()+'</div>'
       +'<div class="line"></div>'
       +'<div class="row"><span>Customer:</span><span class="bold">'+Utils.esc(s.customer||'Walk-in')+'</span></div>'
