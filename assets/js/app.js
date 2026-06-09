@@ -39,6 +39,22 @@ var App = {
     Utils.hide('login-screen');
     Utils.show('app-shell');
     Utils.get('app-shell').classList.remove('hidden');
+    // Restore profile pictures from saved data
+    var _s = DB.getSettings();
+    if (_s.bizLogo && typeof Settings !== 'undefined') {
+      Settings._applyBizLogo(_s.bizLogo);
+    }
+    var _u = Auth.currentUser;
+    if (_u && _u.photo && typeof Settings !== 'undefined') {
+      Settings._applyUserPhoto(_u.photo, _u);
+    } else if (_u) {
+      // Set initial from name
+      var _el = Utils.get('tb-avatar');
+      if (_el && !_el.querySelector('img')) {
+        var _init = _u.name ? _u.name[0].toUpperCase() : (_u.username ? _u.username[0].toUpperCase() : 'U');
+        _el.textContent = _init;
+      }
+    };
     const user = Auth.currentUser;
     const s = DB.getSettings();
     UI.applyTheme(s.theme || 'dark');
