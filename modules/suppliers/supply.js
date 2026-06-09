@@ -155,18 +155,15 @@ var Supply = {
     if (!suppliers.length) { Toast.show('Add a supplier first','warn'); return; }
     Supply._poCart = [];
 
-    var suppOpts = suppliers.map(function(s){ return '<option value="'+s.id+'">'+Utils.esc(s.name)+'</option>'; }).join('');
-    var prodOpts = products.map(function(p){ return '<option value="'+p.id+'">'+Utils.esc(p.name)+' (stock: '+p.qty+')</option>'; }).join('');
-
     Modal.open({
       title:'New Purchase Order', sub:'Order stock from a supplier', barColor:'var(--in)',
       body:'<div class="form-row">'
           +'<div class="fg"><label class="fl">Supplier *</label>'
-          +'<select class="fi" id="po-supp"><option value="">— select supplier —</option>'+suppOpts+'</select></div>'
+          +'<select class="fi" id="po-supp" onchange="Supply._onPOSuppChange(this)">'+QuickCreate.supplierOptions()+'</select></div>'
           +'<div class="fg"><label class="fl">Expected Delivery</label>'
           +'<input class="fi" id="po-exp" type="date" value="'+Utils.today()+'"></div></div>'
           +'<div class="fg"><label class="fl">Add Products</label>'
-          +'<select class="fi" id="po-prod-sel" onchange="Supply.addToPOCart(this)"><option value="">— tap to add product —</option>'+prodOpts+'</select></div>'
+          +'<select class="fi" id="po-prod-sel" onchange="Supply.addToPOCart(this)">'+QuickCreate.productOptions()+'</select></div>'
           +'<div id="po-cart-wrap"><div style="text-align:center;padding:14px;color:var(--t3);font-size:13px">No items added yet</div></div>'
           +'<div id="po-total-wrap"></div>'
           +'<div class="fg"><label class="fl">Notes</label><input class="fi" id="po-notes" placeholder="Any instructions..."></div>',
@@ -176,12 +173,30 @@ var Supply = {
   },
 
   addToPOCart: function(sel) {
+    // Intercept "+ Add New Product"
+    if (QuickCreate.onProductChange(sel, function(newProd) {
+      // Refresh dropdown and add new product to cart
+      var poSel = Utils.get('po-prod-sel');
+      if (poSel) poSel.innerHTML = QuickCreate.productOptions();
+      Supply._poCart.push({id:newProd.id,name:newProd.name,qty:1,costPrice:parseFloat(newProd.cost)||0});
+      Supply._renderPOCart();
+    })) return;
     var id=sel.value; if(!id) return;
     var p=DB.getProducts().find(function(x){ return x.id===id; }); if(!p) return;
     sel.value='';
     if (Supply._poCart.find(function(i){ return i.id===id; })) return;
     Supply._poCart.push({id:id,name:p.name,qty:1,costPrice:parseFloat(p.cost)||0});
     Supply._renderPOCart();
+  },
+
+  _onPOSuppChange: function(sel) {
+    QuickCreate.onSupplierChange(sel, function(newSupp) {
+      var poSuppSel = Utils.get('po-supp');
+      if (poSuppSel) {
+        poSuppSel.innerHTML = QuickCreate.supplierOptions(newSupp.id);
+        poSuppSel.value = newSupp.id;
+      }
+    });
   },
 
   _renderPOCart: function() {
@@ -303,20 +318,18 @@ var Supply = {
   _openGRNForm: function(supplierName, supplierId) {
     var suppliers=DB.getSuppliers();
     var products=DB.getProducts().filter(function(p){ return p.status!=='inactive'; });
-    var suppOpts=suppliers.map(function(s){ return '<option value="'+s.id+'"'+(s.id===supplierId?' selected':'')+'>'+Utils.esc(s.name)+'</option>'; }).join('');
-    var prodOpts=products.map(function(p){ return '<option value="'+p.id+'">'+Utils.esc(p.name)+'</option>'; }).join('');
     var cur=DB.getSettings().currency||'$';
 
     Modal.open({
       title:'Receive Stock', sub:Supply._grnPoRef?'Receiving against '+Supply._grnPoRef:'Manual stock receipt', barColor:'var(--ok)',
       body:'<div class="form-row">'
           +'<div class="fg"><label class="fl">Supplier</label>'
-          +'<select class="fi" id="grn-supp"><option value="">— select —</option>'+suppOpts+'</select></div>'
+          +'<select class="fi" id="grn-supp" onchange="Supply._onGRNSuppChange(this)">'+QuickCreate.supplierOptions(supplierId)+'</select></div>'
           +'<div class="fg"><label class="fl">Received Date</label>'
           +'<input class="fi" id="grn-date" type="date" value="'+Utils.today()+'"></div></div>'
           +(Supply._grnCart.length?'':
               '<div class="fg"><label class="fl">Add Product</label>'
-              +'<select class="fi" id="grn-prod-sel" onchange="Supply.addToGRNCart(this)"><option value="">— tap to add —</option>'+prodOpts+'</select></div>'
+              +'<select class="fi" id="grn-prod-sel" onchange="Supply.addToGRNCart(this)">'+QuickCreate.productOptions()+'</select></div>'
           )
           +'<div id="grn-cart-wrap"></div>'
           +'<div class="fg" style="margin-top:8px"><label class="fl">Delivery Note / Reference</label><input class="fi" id="grn-ref" placeholder="e.g. DN-1234"></div>',
@@ -329,12 +342,28 @@ var Supply = {
   },
 
   addToGRNCart: function(sel) {
+    if (QuickCreate.onProductChange(sel, function(newProd) {
+      var grnSel = Utils.get('grn-prod-sel');
+      if (grnSel) grnSel.innerHTML = QuickCreate.productOptions();
+      Supply._grnCart.push({id:newProd.id,name:newProd.name,orderedQty:0,receivedQty:1,costPrice:parseFloat(newProd.cost)||0,condition:'Good'});
+      Supply._renderGRNCart();
+    })) return;
     var id=sel.value; if(!id) return;
     var p=DB.getProducts().find(function(x){ return x.id===id; }); if(!p) return;
     sel.value='';
     if (Supply._grnCart.find(function(i){ return i.id===id; })) return;
     Supply._grnCart.push({id:id,name:p.name,orderedQty:0,receivedQty:1,costPrice:parseFloat(p.cost)||0,condition:'Good'});
     Supply._renderGRNCart();
+  },
+
+  _onGRNSuppChange: function(sel) {
+    QuickCreate.onSupplierChange(sel, function(newSupp) {
+      var grnSuppSel = Utils.get('grn-supp');
+      if (grnSuppSel) {
+        grnSuppSel.innerHTML = QuickCreate.supplierOptions(newSupp.id);
+        grnSuppSel.value = newSupp.id;
+      }
+    });
   },
 
   _renderGRNCart: function() {
@@ -453,11 +482,10 @@ var Supply = {
 
   openNewBill: function() {
     var suppliers=DB.getSuppliers();
-    var suppOpts=suppliers.map(function(s){ return '<option value="'+s.id+'">'+Utils.esc(s.name)+'</option>'; }).join('');
     Modal.open({
       title:'Add Supplier Bill', sub:'Record an invoice from a supplier', barColor:'var(--wa)',
       body:'<div class="fg"><label class="fl">Supplier *</label>'
-          +'<select class="fi" id="bill-supp"><option value="">— select —</option>'+suppOpts+'</select></div>'
+          +'<select class="fi" id="bill-supp" onchange="Supply._onBillSuppChange(this)">'+QuickCreate.supplierOptions()+'</select></div>'
           +'<div class="fg"><label class="fl">Supplier Invoice Number</label>'
           +'<input class="fi" id="bill-ref" placeholder="e.g. INV-789"></div>'
           +'<div class="form-row">'
@@ -471,6 +499,16 @@ var Supply = {
           +'<input class="fi" id="bill-notes" placeholder="What was this for?"></div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
             +'<button class="btn-primary" style="flex:1" onclick="Supply.saveBill()">💾 Save Bill</button>',
+    });
+  },
+
+  _onBillSuppChange: function(sel) {
+    QuickCreate.onSupplierChange(sel, function(newSupp) {
+      var billSel = Utils.get('bill-supp');
+      if (billSel) {
+        billSel.innerHTML = QuickCreate.supplierOptions(newSupp.id);
+        billSel.value = newSupp.id;
+      }
     });
   },
 
@@ -600,7 +638,7 @@ var Supply = {
   createAutoPO: function(productId) {
     var p=DB.getProducts().find(function(x){ return x.id===productId; }); if(!p) return;
     var suppliers=DB.getSuppliers();
-    var suppOpts=suppliers.map(function(s){ return '<option value="'+s.id+'"'+(s.id===p.defaultSupplierId?' selected':'')+'>'+Utils.esc(s.name)+'</option>'; }).join('');
+    // suppOpts built via QuickCreate for auto-PO
     var cur=DB.getSettings().currency||'$';
     var orderQty=p.reorderQty||20;
     var total=orderQty*(parseFloat(p.cost)||0);
@@ -612,7 +650,7 @@ var Supply = {
           +'<div style="font-size:11px;color:var(--t2);margin-top:4px">Current stock: <strong style="color:var(--er)">'+p.qty+'</strong> · Reorder qty: <strong>'+orderQty+'</strong></div>'
           +'</div>'
           +'<div class="fg"><label class="fl">Supplier *</label>'
-          +'<select class="fi" id="auto-po-supp">'+suppOpts+'</select></div>'
+          +'<select class="fi" id="auto-po-supp" onchange="Supply._onAutoPOSuppChange(this)">'+QuickCreate.supplierOptions(p.defaultSupplierId)+'</select></div>'
           +'<div class="form-row">'
           +'<div class="fg"><label class="fl">Order Quantity</label>'
           +'<input class="fi" id="auto-po-qty" type="number" value="'+orderQty+'" min="1" oninput="Supply._updateAutoPOTotal(\''+productId+'\',this.value)"></div>'
@@ -631,6 +669,16 @@ var Supply = {
     var cur  = DB.getSettings().currency||'$';
     var el   = Utils.get('auto-po-total');
     if (el) el.textContent = 'PO Total: '+Utils.cur(qty*cost,cur);
+  },
+
+  _onAutoPOSuppChange: function(sel) {
+    QuickCreate.onSupplierChange(sel, function(newSupp) {
+      var autoSel = Utils.get('auto-po-supp');
+      if (autoSel) {
+        autoSel.innerHTML = QuickCreate.supplierOptions(newSupp.id);
+        autoSel.value = newSupp.id;
+      }
+    });
   },
 
   saveAutoPO: function(productId) {
@@ -660,7 +708,7 @@ var Supply = {
   openSetReorderLevels: function(id) {
     var p=DB.getProducts().find(function(x){ return x.id===id; }); if(!p) return;
     var suppliers=DB.getSuppliers();
-    var suppOpts='<option value="">— none —</option>'+suppliers.map(function(s){ return '<option value="'+s.id+'"'+(s.id===p.defaultSupplierId?' selected':'')+'>'+Utils.esc(s.name)+'</option>'; }).join('');
+    // suppOpts via QuickCreate
     Modal.open({
       title:'Reorder Settings', sub:Utils.esc(p.name), barColor:'var(--in)',
       body:'<div class="form-row">'
@@ -672,9 +720,19 @@ var Supply = {
           +'<div style="font-size:10px;color:var(--t3);margin-top:3px">How many to order each time</div></div>'
           +'</div>'
           +'<div class="fg"><label class="fl">Default Supplier</label>'
-          +'<select class="fi" id="rl-supp">'+suppOpts+'</select></div>',
+          +'<select class="fi" id="rl-supp" onchange="Supply._onRLSuppChange(this)">'+QuickCreate.supplierOptions(p.defaultSupplierId,'— none —')+'</select></div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
             +'<button class="btn-primary" style="flex:1" onclick="Supply.saveReorderSettings(\''+id+'\')">💾 Save</button>',
+    });
+  },
+
+  _onRLSuppChange: function(sel) {
+    QuickCreate.onSupplierChange(sel, function(newSupp) {
+      var rlSel = Utils.get('rl-supp');
+      if (rlSel) {
+        rlSel.innerHTML = QuickCreate.supplierOptions(newSupp.id, '— none —');
+        rlSel.value = newSupp.id;
+      }
     });
   },
 
