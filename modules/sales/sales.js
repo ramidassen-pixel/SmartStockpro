@@ -95,7 +95,7 @@ var Sales = {
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
           + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📦 Products</div>'
           + '<div class="fg" style="margin-bottom:10px"><label class="fl">Add Product</label>'
-          + '<select class="fi" id="s-prod-sel" onchange="Sales.addToCart(this)"><option value="">— tap to select product —</option>'+custOpts+'</select></div>'
+          + '<select class="fi" id="s-prod-sel" onchange="Sales.addToCart(this)">'+QuickCreate.productOptions()+'</select></div>'
           + '<div id="s-cart-wrap"><div style="text-align:center;padding:14px 0;color:var(--t3);font-size:13px">No items added yet</div></div>'
           + '</div>'
           + '<div id="s-totals"></div>'
@@ -172,6 +172,13 @@ var Sales = {
 
   // ── CART ───────────────────────────────────────────────────────────────────
   addToCart: function(sel) {
+    // Intercept "+ Add New Product"
+    if (QuickCreate.onProductChange(sel, function(newProd) {
+      var prodSel = Utils.get('s-prod-sel');
+      if (prodSel) prodSel.innerHTML = QuickCreate.productOptions();
+      Sales.cart.push({id:newProd.id,name:newProd.name,price:newProd.price,cost:newProd.cost||0,qty:1,maxQty:newProd.qty||0});
+      Sales.renderCart();
+    })) return;
     var id=sel.value; if(!id) return;
     var p=DB.getProducts().find(function(x){ return x.id===id; }); if(!p) return;
     sel.value='';
@@ -517,8 +524,8 @@ var Sales = {
 
     var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt '+s.id+'</title>'
       +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;font-size:13px;color:#000;background:#fff;padding:12px;max-width:360px;margin:0 auto}.center{text-align:center}.bold{font-weight:bold}.lg{font-size:16px}.sm{font-size:11px}.line{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;padding:3px 0}.paid{color:#16a34a}.bal{color:#d97706}@media print{@page{margin:5mm}body{max-width:100%}}</style></head><body>'
-      + Settings._buildReceiptHeader(settings)
-      + '<div class="center sm" style="margin-bottom:4px">Business Receipt</div>'
+      +'<div class="center bold lg">'+bizName+'</div>'
+      +'<div class="center sm">Business Receipt</div>'
       +'<div class="center sm">'+now.toLocaleString()+'</div>'
       +'<div class="line"></div>'
       +'<div class="row"><span>Customer:</span><span class="bold">'+Utils.esc(s.customer||'Walk-in')+'</span></div>'
@@ -558,8 +565,8 @@ var Sales = {
 
     var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Payment Receipt</title>'
       +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;font-size:13px;color:#000;background:#fff;padding:12px;max-width:360px;margin:0 auto}.center{text-align:center}.bold{font-weight:bold}.lg{font-size:16px}.sm{font-size:11px}.line{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;padding:3px 0}.paid{color:#16a34a}.bal{color:#d97706}@media print{@page{margin:5mm}body{max-width:100%}}</style></head><body>'
-      + Settings._buildReceiptHeader(settings)
-      + '<div class="center bold sm" style="margin-bottom:4px">PAYMENT RECEIPT</div>'
+      +'<div class="center bold lg">'+bizName+'</div>'
+      +'<div class="center bold sm">PAYMENT RECEIPT</div>'
       +'<div class="center sm">'+now.toLocaleString()+'</div>'
       +'<div class="line"></div>'
       +'<div class="row"><span>Customer:</span><span class="bold">'+Utils.esc(s.customer||'Walk-in')+'</span></div>'
