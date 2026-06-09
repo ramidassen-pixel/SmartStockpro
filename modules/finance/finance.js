@@ -312,8 +312,13 @@ var Finance = {
       + '@media print{@page{size:A4;margin:12mm}}';
 
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Finance Summary</title><style>'+css+'</style></head><body>'
-      + '<h1>'+Utils.esc(bizName)+'</h1>'
-      + '<div style="color:#666;font-size:12px">Cash &amp; Profit Summary</div>'
+      + '<div style="text-align:center;margin-bottom:10px">'
+      + (settings.bizLogo?'<img src="'+settings.bizLogo+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #ddd;margin-bottom:6px"><br>':'')
+      + '<strong style="font-size:20px">'+Utils.esc(bizName)+'</strong><br>'
+      + (settings.bizAddress?'<span style="font-size:11px;color:#555">'+Utils.esc(settings.bizAddress)+'</span><br>':'')
+      + (settings.bizPhone?'<span style="font-size:11px;color:#555">Tel: '+Utils.esc(settings.bizPhone)+'</span><br>':'')
+      + '</div>'
+      + '<div style="text-align:center;color:#555;font-size:12px">Cash &amp; Profit Summary</div>'
       + '<div style="color:#666;font-size:11px">Generated: '+now.toLocaleString()+'</div>'
       + '<h2>Key Numbers</h2>'
       + '<div class="summary">'
