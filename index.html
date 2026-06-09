@@ -76,17 +76,22 @@
   <!-- TOPBAR -->
   <header class="topbar" id="topbar">
     <div class="tb-brand" onclick="Router.go('dashboard')">
-      <div class="tb-logo"><span id="tb-logo-emoji">📦</span><img id="tb-logo-img" src="" alt="" style="display:none;width:32px;height:32px;border-radius:6px;object-fit:cover"></div>
+      <!-- Business logo: emoji shown by default, img shown when logo is uploaded -->
+      <div class="tb-logo" id="tb-logo-wrap">
+        <span id="tb-logo-emoji">📦</span>
+        <img id="tb-logo-img" src="" alt="" style="display:none;width:34px;height:34px;border-radius:8px;object-fit:cover;border:1.5px solid rgba(201,168,76,.3)">
+      </div>
       <div class="tb-brand-text">
         <div class="tb-name" id="tb-biz-name">SmartStock Pro</div>
-        <div class="tb-sub">Business Manager</div>
+        <div class="tb-sub" id="tb-biz-sub">Business Manager</div>
       </div>
     </div>
     <div class="tb-actions">
       <button class="tb-btn" id="notif-btn" onclick="UI.toggleNotifPanel()" title="Notifications">
         🔔<span class="notif-badge hidden" id="notif-badge"></span>
       </button>
-      <div class="tb-avatar" id="tb-avatar" onclick="Router.go('settings')" title="Settings">A</div>
+      <!-- Profile photo: shows user photo if set, otherwise initials -->
+      <div class="tb-avatar" id="tb-avatar" onclick="Router.go('settings')" title="My Profile & Settings">R</div>
     </div>
   </header>
 
