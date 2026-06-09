@@ -35,26 +35,29 @@ var App = {
   },
 
   showShell() {
+    // Restore business logo and user photo on every boot
+    setTimeout(function() {
+      var _s  = DB.getSettings();
+      var _u  = Auth.currentUser;
+      if (typeof Settings !== 'undefined') {
+        if (_s.bizLogo) Settings._applyBizLogo(_s.bizLogo);
+        if (_u && _u.photo) Settings._applyUserPhoto(_u.photo, _u);
+        else if (_u) {
+          var _av = Utils.get('tb-avatar');
+          if (_av) {
+            var _in = _u.name ? _u.name[0].toUpperCase() : (_u.username ? _u.username[0].toUpperCase() : 'U');
+            _av.innerHTML = _in;
+          }
+        }
+        // Update topbar sub text
+        var _sub = Utils.get('tb-biz-sub');
+        if (_sub && (_s.bizPhone||_s.bizAddress)) _sub.textContent = _s.bizPhone||_s.bizAddress;
+      }
+    }, 100);
     Utils.hide('loader');
     Utils.hide('login-screen');
     Utils.show('app-shell');
     Utils.get('app-shell').classList.remove('hidden');
-    // Restore profile pictures from saved data
-    var _s = DB.getSettings();
-    if (_s.bizLogo && typeof Settings !== 'undefined') {
-      Settings._applyBizLogo(_s.bizLogo);
-    }
-    var _u = Auth.currentUser;
-    if (_u && _u.photo && typeof Settings !== 'undefined') {
-      Settings._applyUserPhoto(_u.photo, _u);
-    } else if (_u) {
-      // Set initial from name
-      var _el = Utils.get('tb-avatar');
-      if (_el && !_el.querySelector('img')) {
-        var _init = _u.name ? _u.name[0].toUpperCase() : (_u.username ? _u.username[0].toUpperCase() : 'U');
-        _el.textContent = _init;
-      }
-    };
     const user = Auth.currentUser;
     const s = DB.getSettings();
     UI.applyTheme(s.theme || 'dark');
