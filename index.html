@@ -19,15 +19,6 @@
 <link rel="stylesheet" href="assets/css/components.css">
 <link rel="stylesheet" href="assets/css/pages.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/SmartStockpro/sw.js')
-      .catch(function() {});
-  });
-}
-</script>
 </head>
 <body>
 
@@ -170,5 +161,11 @@ window.addEventListener('load', function() {
 </script>
 
 <script src="assets/js/bundle.js"></script>
+<script>
+window.addEventListener('load', function() {
+  App.boot();
+});
+</script>
+
 </body>
 </html>
