@@ -1,28 +1,47 @@
-@media (max-width: 768px) {
-  .login-card {
-    max-width: 100%;
-  }
+/* ════════════════════════════════════════════════
+   RESPONSIVE — Tablet / Desktop enhancements
+════════════════════════════════════════════════ */
 
-  .form-row {
-    grid-template-columns: 1fr;
-  }
+@media (min-width: 480px) {
+  .kpi-grid { gap:12px; }
+  .kpi-value { font-size:26px; }
+  .qa-grid { grid-template-columns:repeat(4,1fr); }
+}
 
-  .modal {
-    border-radius: 12px;
-    max-height: 80vh;
-  }
+@media (min-width: 640px) {
+  .modal { border-radius:var(--r20); max-width:520px; margin-bottom:40px; }
+  .modal-overlay { align-items:center; }
+  .bottom-nav { display:none; }
+  .pages-container { margin-bottom:0; }
+  .page-title { font-size:27px; }
+  .login-card { padding:40px 32px 34px; }
+}
 
-  .notif-panel {
-    width: calc(100% - 40px);
-    left: 20px;
-    right: 20px;
-  }
+@media (min-width: 768px) {
+  .kpi-grid { grid-template-columns:repeat(4,1fr); }
+  .qa-grid { grid-template-columns:repeat(6,1fr); }
+  .form-row { grid-template-columns:1fr 1fr; }
+}
 
-  .topbar {
-    padding: 8px 12px;
-  }
+/* ── Safe area for iPhone notch & home bar ────── */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .topbar { padding-top:env(safe-area-inset-top); height:calc(var(--topH) + env(safe-area-inset-top)); }
+  .pages-container { margin-top:calc(var(--topH) + env(safe-area-inset-top)); }
+}
 
-  .tb-brand-text {
-    display: none;
+/* ── Reduced motion ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
   }
+}
+
+/* ── Print ──────────────────────────────────────── */
+@media print {
+  .topbar, .bottom-nav, .btn-primary, .btn-ghost, .btn-danger,
+  .btn-ok, .page-actions, .toast-container, .modal-overlay { display:none !important; }
+  body { background:#fff !important; color:#000 !important; }
+  .pages-container { margin:0 !important; }
 }
