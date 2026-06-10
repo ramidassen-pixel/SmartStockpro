@@ -19,6 +19,15 @@
 <link rel="stylesheet" href="assets/css/components.css">
 <link rel="stylesheet" href="assets/css/pages.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/SmartStockpro/sw.js')
+      .catch(function() {});
+  });
+}
+</script>
 </head>
 <body>
 
@@ -147,31 +156,8 @@
 </div><!-- end app-shell -->
 
 <!-- Core JS -->
-<script src="assets/js/utils.js"></script>
-<script src="assets/js/database.js"></script>
-<script src="assets/js/quickcreate.js"></script>
-<script src="assets/js/auth.js"></script>
-<script src="assets/js/router.js"></script>
-<script src="assets/js/notifications.js"></script>
-<script src="assets/js/charts.js"></script>
-<script src="assets/js/app.js"></script>
 
 <!-- Modules -->
-<script src="modules/dashboard/dashboard.js"></script>
-<script src="modules/products/products.js"></script>
-<script src="modules/sales/sales.js"></script>
-<script src="modules/customers/customers.js"></script>
-<script src="modules/suppliers/suppliers.js"></script>
-<script src="modules/suppliers/supply.js"></script>
-<script src="modules/quotations/quotations.js"></script>
-<script src="modules/expenses/expenses.js"></script>
-<script src="modules/expenses/allocations.js"></script>
-<script src="modules/salary/salary.js"></script>
-<script src="modules/finance/finance.js"></script>
-<script src="modules/reports/reports.js"></script>
-<script src="modules/ai/ai.js"></script>
-<script src="modules/settings/settings.js"></script>
-<script src="modules/settings/more.js"></script>
 
 <!-- Boot -->
 <script>
@@ -182,5 +168,7 @@ window.addEventListener('load', function() {
   }
 });
 </script>
+
+<script src="assets/js/bundle.js"></script>
 </body>
 </html>
