@@ -1,12 +1,30 @@
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{height:100%;-webkit-text-size-adjust:none;-webkit-tap-highlight-color:transparent;scroll-behavior:smooth}
-body{font-family:var(--ff);background:var(--bg);color:var(--t1);min-height:100%;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;overscroll-behavior:none}
-button{font-family:var(--ff);cursor:pointer;border:none;background:none;outline:none;-webkit-tap-highlight-color:transparent}
-input,select,textarea{font-family:var(--ff);border:none;outline:none;-webkit-appearance:none}
-img{display:block;max-width:100%}
-a{color:var(--g);text-decoration:none}
-::-webkit-scrollbar{width:2px;height:2px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--bg5);border-radius:2px}
-::selection{background:var(--gb2);color:var(--g)}
-.hidden{display:none!important}
+* {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  padding: 8px;
+  border-radius: 4px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

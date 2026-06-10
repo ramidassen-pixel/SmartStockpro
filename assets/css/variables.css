@@ -1,78 +1,33 @@
-/* ═══════════════════════════════════════════════
-   SMARTSTOCK PRO V5 — Premium Design System
-   Luxury dark theme · Gold accents · Sharp edges
-═══════════════════════════════════════════════ */
 :root {
-  /* Backgrounds — deep layered darks */
-  --bg:    #07080D;
-  --bg2:   #0D0F18;
-  --bg3:   #12151F;
-  --bg4:   #181C28;
-  --bg5:   #1E2233;
-
-  /* Borders */
-  --bd:    rgba(255,255,255,0.06);
-  --bd2:   rgba(255,255,255,0.10);
-  --bd3:   rgba(255,255,255,0.16);
-
-  /* Gold — the signature accent */
-  --g:     #C9A84C;
-  --g2:    #E2C06A;
-  --g3:    #8B6914;
-  --gb:    rgba(201,168,76,0.10);
-  --gb2:   rgba(201,168,76,0.18);
-  --gb3:   rgba(201,168,76,0.05);
-
-  /* Semantic colors */
-  --ok:  #10B981; --okb:  rgba(16,185,129,0.10); --okbd: rgba(16,185,129,0.25);
-  --er:  #F43F5E; --erb:  rgba(244,63,94,0.10);  --erbd: rgba(244,63,94,0.25);
-  --wa:  #F59E0B; --wab:  rgba(245,158,11,0.10); --wabd: rgba(245,158,11,0.25);
-  --in:  #6366F1; --inb:  rgba(99,102,241,0.10); --inbd: rgba(99,102,241,0.25);
-  --pu:  #A855F7; --pub:  rgba(168,85,247,0.10);
-
-  /* Text */
-  --t1: #EEF0F7;
-  --t2: #8890A8;
-  --t3: #454D65;
-  --t4: #262D42;
-
-  /* Typography */
-  --ff: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-  --fm: 'SF Mono', 'Fira Code', 'Courier New', monospace;
-
-  /* Radii */
-  --r4:4px; --r6:6px; --r8:8px; --r10:10px;
-  --r12:12px; --r14:14px; --r16:16px; --r20:20px;
-
-  /* Shadows */
-  --sh:  0 1px 6px rgba(0,0,0,0.5);
-  --sh2: 0 4px 24px rgba(0,0,0,0.6);
-  --sh3: 0 16px 48px rgba(0,0,0,0.7);
-  --gsh: 0 4px 20px rgba(201,168,76,0.20);
-
-  /* Layout */
-  --topH: 58px;
-  --botH: 66px;
-  --sb:   env(safe-area-inset-bottom, 0px);
+  --bg: #0a0a0a;
+  --bg2: #1a1a1a;
+  --text: #ffffff;
+  --text2: #999999;
+  --border: #333333;
+  --ok: #4CAF50;
+  --err: #f44336;
+  --warn: #ff9800;
+  --gold: #D4A520;
+  --wa: #ffc107;
+  --info: #2196F3;
 }
 
-/* Light theme */
-[data-theme="light"] {
-  --bg:#F2F3F8; --bg2:#FFFFFF; --bg3:#EBEDF5; --bg4:#E2E4EE; --bg5:#D9DCE8;
-  --bd:rgba(30,34,60,0.07); --bd2:rgba(30,34,60,0.12); --bd3:rgba(30,34,60,0.18);
-  --t1:#0D0F18; --t2:#4A5068; --t3:#8890A8; --t4:#BCC0D0;
-  --g:#9A7420; --g2:#C9A84C; --g3:#705210;
-  --gb:rgba(154,116,32,0.10); --gb2:rgba(154,116,32,0.16); --gb3:rgba(154,116,32,0.05);
-  --sh:0 1px 6px rgba(0,0,0,0.06); --sh2:0 4px 20px rgba(0,0,0,0.08); --sh3:0 12px 40px rgba(0,0,0,0.12);
+html[data-theme="light"] {
+  --bg: #ffffff;
+  --bg2: #f5f5f5;
+  --text: #0a0a0a;
+  --text2: #666666;
+  --border: #cccccc;
 }
 
-/* Animations */
-@keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-@keyframes fadeIn   { from{opacity:0} to{opacity:1} }
-@keyframes slideUp  { from{transform:translateY(100%)} to{transform:translateY(0)} }
-@keyframes toastIn  { from{transform:translateY(8px) scale(.96);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
-@keyframes spin     { to{transform:rotate(360deg)} }
-@keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.35} }
-@keyframes bounce   { 0%,80%,100%{transform:scale(.6);opacity:.35} 40%{transform:scale(1);opacity:1} }
-@keyframes shimmer  { from{background-position:-200% 0} to{background-position:200% 0} }
-@keyframes glow     { 0%,100%{box-shadow:0 0 8px rgba(201,168,76,.3)} 50%{box-shadow:0 0 20px rgba(201,168,76,.6)} }
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}

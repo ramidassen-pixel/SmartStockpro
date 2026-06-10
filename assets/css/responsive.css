@@ -1,8 +1,28 @@
-@media(min-width:480px){.qa-grid{grid-template-columns:repeat(4,1fr)}}
-@media(min-width:600px){
-  .modal{border-radius:var(--r20);margin:20px auto;max-height:88vh;border-bottom:1px solid var(--bd2)}
-  .kpi-grid{grid-template-columns:repeat(4,1fr)}
-  .qa-grid{grid-template-columns:repeat(6,1fr)}
+@media (max-width: 768px) {
+  .login-card {
+    max-width: 100%;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal {
+    border-radius: 12px;
+    max-height: 80vh;
+  }
+
+  .notif-panel {
+    width: calc(100% - 40px);
+    left: 20px;
+    right: 20px;
+  }
+
+  .topbar {
+    padding: 8px 12px;
+  }
+
+  .tb-brand-text {
+    display: none;
+  }
 }
-@media(max-width:380px){.form-row,.form-row-3{grid-template-columns:1fr}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
