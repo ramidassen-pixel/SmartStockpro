@@ -1,6 +1,6 @@
-/* SmartStock Pro V5 — Bundled JS — all modules */
+/* SmartStock Pro V5 — Bundle */
 
-/* === assets/js/utils.js === */
+/* === utils.js === */
 var Utils = {
   cur(v, sym) {
     sym = sym || DB.getSettings().currency || '$';
@@ -93,7 +93,7 @@ function confirmDel(msg, onConfirm) {
 }
 
 
-/* === assets/js/database.js === */
+/* === database.js === */
 // SmartStock Pro V5 — Local Database (localStorage)
 // Replace methods with Supabase calls when ready
 var DB = {
@@ -285,9 +285,28 @@ var DB = {
 };
 
 
-/* === assets/js/auth.js === */
+/* === auth.js === */
 var Auth = {
   currentUser: null,
+
+  // Synchronous version of boot - used by App.boot()
+  bootSync: function() {
+    try {
+      var session = Utils.storage.get('ssp_session');
+      if (session && session.uid) {
+        var users = DB.get('users') || [];
+        var user  = null;
+        for (var i = 0; i < users.length; i++) {
+          if (users[i].id === session.uid) { user = users[i]; break; }
+        }
+        if (user && user.status !== 'pending') {
+          this.currentUser = user;
+          return true;
+        }
+      }
+    } catch(e) { console.error('bootSync error:', e); }
+    return false;
+  },
 
   async boot() {
     DB.load();
@@ -394,7 +413,7 @@ var Auth = {
 };
 
 
-/* === assets/js/quickcreate.js === */
+/* === quickcreate.js === */
 // ══════════════════════════════════════════════════════════════════════════
 // QUICKCREATE — Inline Supplier & Product creation from any transaction screen
 // Called from: Supply (PO, GRN, Bills, Reorder), Sales
@@ -594,7 +613,7 @@ var QuickCreate = {
 };
 
 
-/* === assets/js/router.js === */
+/* === router.js === */
 var PAGES = ['dashboard','products','sales','customers','suppliers','supply','expenses','salary','finance','reports','quotations','ai','settings','more'];
 var BN_PAGES = ['dashboard','sales','products','customers','more'];
 
@@ -649,7 +668,7 @@ var Router = {
 };
 
 
-/* === assets/js/notifications.js === */
+/* === notifications.js === */
 var Notifs = {
   check() {
     const list = [];
@@ -677,7 +696,7 @@ var Notifs = {
 };
 
 
-/* === assets/js/charts.js === */
+/* === charts.js === */
 var Charts = {
   bar(data, labels, color) {
     color = color || 'gold';
@@ -718,85 +737,91 @@ var Charts = {
 };
 
 
-/* === assets/js/app.js === */
+/* === app.js === */
 var UI = {
-  toggleNotifPanel() {
-    const p = Utils.get('notif-panel');
+  toggleNotifPanel: function() {
+    var p = Utils.get('notif-panel');
     if (!p) return;
-    const hidden = p.classList.contains('hidden');
-    if (hidden) { Notifs.check(); p.classList.remove('hidden'); }
+    if (p.classList.contains('hidden')) { Notifs.check(); p.classList.remove('hidden'); }
     else p.classList.add('hidden');
   },
-  applyTheme(theme) {
+  applyTheme: function(theme) {
     document.documentElement.setAttribute('data-theme', theme || 'dark');
-    const mc = document.querySelector('meta[name="theme-color"]');
-    if (mc) mc.content = theme === 'light' ? '#f5f5f5' : '#0a0a0a';
+    var mc = document.querySelector('meta[name="theme-color"]');
+    if (mc) mc.content = theme === 'light' ? '#f2f3f8' : '#070A12';
   },
-  closeSidebar() {},  // kept for compatibility, sidebar removed
+  closeSidebar: function() {},
 };
 
 var App = {
-  async boot() {
-    DB.load();
-    const loggedIn = await Auth.boot();
-    setTimeout(() => {
-      const loader = Utils.get('loader');
-      if (loader) loader.classList.add('hidden');
-      if (loggedIn) this.showShell();
-      else this.showLogin();
-    }, 800);
+  boot: function() {
+    // Step 1: Load data
+    try { DB.load(); } catch(e) { console.error('DB.load failed:', e); }
+
+    // Step 2: Check login
+    var loggedIn = false;
+    try { loggedIn = Auth.bootSync(); } catch(e) { console.error('Auth.bootSync failed:', e); }
+
+    // Step 3: Show correct screen after short delay (allows CSS to render loader)
+    var self = this;
+    setTimeout(function() {
+      try {
+        var loader = Utils.get('loader');
+        if (loader) loader.classList.add('hidden');
+        if (loggedIn) self.showShell();
+        else self.showLogin();
+      } catch(e) {
+        console.error('Boot show failed:', e);
+        // Force show login as fallback
+        var loader2 = Utils.get('loader');
+        if (loader2) loader2.classList.add('hidden');
+        var login = Utils.get('login-screen');
+        if (login) { login.style.display = 'flex'; login.classList.remove('hidden'); }
+      }
+    }, 600);
   },
 
-  showLogin() {
+  showLogin: function() {
     Utils.hide('loader');
     Utils.hide('app-shell');
-    Utils.show('login-screen');
-    const s = DB.getSettings();
-    UI.applyTheme(s.theme || 'dark');
+    var login = Utils.get('login-screen');
+    if (login) { login.style.display = 'flex'; login.classList.remove('hidden'); }
+    try { var s = DB.getSettings(); UI.applyTheme(s.theme || 'dark'); } catch(e) {}
   },
 
-  showShell() {
-    // Restore business logo and user photo on every boot
-    setTimeout(function() {
-      var _s  = DB.getSettings();
-      var _u  = Auth.currentUser;
-      if (typeof Settings !== 'undefined') {
-        if (_s.bizLogo) Settings._applyBizLogo(_s.bizLogo);
-        if (_u && _u.photo) Settings._applyUserPhoto(_u.photo, _u);
-        else if (_u) {
-          var _av = Utils.get('tb-avatar');
-          if (_av) {
-            var _in = _u.name ? _u.name[0].toUpperCase() : (_u.username ? _u.username[0].toUpperCase() : 'U');
-            _av.innerHTML = _in;
-          }
-        }
-        // Update topbar sub text
-        var _sub = Utils.get('tb-biz-sub');
-        if (_sub && (_s.bizPhone||_s.bizAddress)) _sub.textContent = _s.bizPhone||_s.bizAddress;
-      }
-    }, 100);
+  showShell: function() {
     Utils.hide('loader');
     Utils.hide('login-screen');
-    Utils.show('app-shell');
-    Utils.get('app-shell').classList.remove('hidden');
-    const user = Auth.currentUser;
-    const s = DB.getSettings();
-    UI.applyTheme(s.theme || 'dark');
-    // Update topbar/sidebar
-    if (user) {
-      const av = user.name ? user.name[0].toUpperCase() : 'U';
-      Utils.set('tb-biz-name', Utils.esc(s.bizName || 'SmartStock Pro'));
-    const subEl = document.querySelector('.tb-sub');
-    if (subEl) subEl.textContent = user.role ? user.role.charAt(0).toUpperCase()+user.role.slice(1) : 'Business Manager';
-      const tav=Utils.get('tb-avatar'); if(tav) tav.textContent=av;
+    var shell = Utils.get('app-shell');
+    if (shell) { shell.style.display = 'flex'; shell.classList.remove('hidden'); }
+    try {
+      var user = Auth.currentUser || {};
+      var s    = DB.getSettings();
+      UI.applyTheme(s.theme || 'dark');
+      var nameEl = Utils.get('tb-biz-name');
+      if (nameEl) nameEl.textContent = s.bizName || 'SmartStock Pro';
+      var subEl = Utils.get('tb-biz-sub');
+      if (subEl) subEl.textContent = s.bizPhone || s.bizAddress || 'Business Manager';
+      var av = Utils.get('tb-avatar');
+      if (av && user.name) av.textContent = user.name[0].toUpperCase();
+      // Restore logo/photo
+      if (s.bizLogo && typeof Settings !== 'undefined' && Settings._applyBizLogo) {
+        Settings._applyBizLogo(s.bizLogo);
+      }
+      if (user.photo && typeof Settings !== 'undefined' && Settings._applyUserPhoto) {
+        Settings._applyUserPhoto(user.photo, user);
+      }
+      try { Notifs.check(); } catch(e) {}
+      Router.go('dashboard');
+    } catch(e) {
+      console.error('showShell error:', e);
+      Router.go('dashboard');
     }
-    Notifs.check();
-    Router.go('dashboard');
   },
 };
 
 
-/* === modules/dashboard/dashboard.js === */
+/* === dashboard.js === */
 var Dashboard = {
 
   render: function() {
@@ -1313,7 +1338,7 @@ function weekChart() {
 }
 
 
-/* === modules/products/products.js === */
+/* === products.js === */
 var Products = {
   filter: 'All', search: '', editId: null,
 
@@ -1476,7 +1501,7 @@ var Products = {
 };
 
 
-/* === modules/sales/sales.js === */
+/* === sales.js === */
 var Sales = {
   filter: 'All',
   cart: [],
@@ -2091,7 +2116,7 @@ var Sales = {
 };
 
 
-/* === modules/customers/customers.js === */
+/* === customers.js === */
 var Customers = {
   editId: null,
   search: '',
@@ -2396,7 +2421,7 @@ var Customers = {
 };
 
 
-/* === modules/suppliers/suppliers.js === */
+/* === suppliers.js === */
 var Suppliers = {
   editId: null,
   render() {
@@ -2477,7 +2502,7 @@ var Suppliers = {
 };
 
 
-/* === modules/suppliers/supply.js === */
+/* === supply.js === */
 var Supply = {
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -3229,7 +3254,7 @@ var Supply = {
 };
 
 
-/* === modules/expenses/expenses.js === */
+/* === expenses.js === */
 var Expenses = {
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
@@ -3362,7 +3387,7 @@ var Expenses = {
 };
 
 
-/* === modules/expenses/allocations.js === */
+/* === allocations.js === */
 // ── EXPENSE ALLOCATIONS MODULE ─────────────────────────────────────────────
 // Daily amount = Total Amount ÷ Days between Start Date and End Date
 // If no end date is set, uses 30 days as the default span
@@ -3593,7 +3618,7 @@ var Allocations = {
 };
 
 
-/* === modules/salary/salary.js === */
+/* === salary.js === */
 var Salary = {
   render() {
     const pg = Utils.get('pg-salary');
@@ -3678,7 +3703,7 @@ var Salary = {
 };
 
 
-/* === modules/finance/finance.js === */
+/* === finance.js === */
 var Finance = {
   render: function() {
     var pg = Utils.get('pg-finance');
@@ -4045,7 +4070,7 @@ var Finance = {
 };
 
 
-/* === modules/reports/reports.js === */
+/* === reports.js === */
 var Reports = {
   period: 'month',
   dailyDate: '',
@@ -4767,7 +4792,7 @@ var Reports = {
 };
 
 
-/* === modules/quotations/quotations.js === */
+/* === quotations.js === */
 var Quotations = {
   filter: 'All',
 
@@ -5342,7 +5367,7 @@ var Quotations = {
 };
 
 
-/* === modules/ai/ai.js === */
+/* === ai.js === */
 var AI = {
   history: [],
   busy: false,
@@ -5852,7 +5877,7 @@ var AI = {
 };
 
 
-/* === modules/settings/settings.js === */
+/* === settings.js === */
 var Settings = {
 
 
@@ -6274,7 +6299,7 @@ var Settings = {
 };
 
 
-/* === modules/settings/more.js === */
+/* === more.js === */
 var MorePage = {
   render: function() {
     var pg = Utils.get('pg-more');
