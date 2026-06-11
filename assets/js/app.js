@@ -1,75 +1,71 @@
 var UI = {
-  toggleNotifPanel() {
-    const p = Utils.get('notif-panel');
+  toggleNotifPanel: function() {
+    var p = Utils.get('notif-panel');
     if (!p) return;
-    const hidden = p.classList.contains('hidden');
-    if (hidden) { Notifs.check(); p.classList.remove('hidden'); }
+    if (p.classList.contains('hidden')) { Notifs.check(); p.classList.remove('hidden'); }
     else p.classList.add('hidden');
   },
-  applyTheme(theme) {
+  applyTheme: function(theme) {
     document.documentElement.setAttribute('data-theme', theme || 'dark');
-    const mc = document.querySelector('meta[name="theme-color"]');
-    if (mc) mc.content = theme === 'light' ? '#f5f5f5' : '#0a0a0a';
+    var mc = document.querySelector('meta[name="theme-color"]');
+    if (mc) mc.content = theme === 'light' ? '#f2f3f8' : '#070A12';
   },
-  closeSidebar() {},  // kept for compatibility, sidebar removed
+  closeSidebar: function() {},
 };
 
 var App = {
-  async boot() {
-    DB.load();
-    const loggedIn = await Auth.boot();
-    setTimeout(() => {
-      const loader = Utils.get('loader');
-      if (loader) loader.classList.add('hidden');
-      if (loggedIn) this.showShell();
-      else this.showLogin();
-    }, 800);
+  _hide: function(id) {
+    var el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.classList.add('hidden'); }
+  },
+  _show: function(id, disp) {
+    var el = document.getElementById(id);
+    if (el) { el.style.display = disp || 'block'; el.classList.remove('hidden'); }
   },
 
-  showLogin() {
-    Utils.hide('loader');
-    Utils.hide('app-shell');
-    Utils.show('login-screen');
-    const s = DB.getSettings();
-    UI.applyTheme(s.theme || 'dark');
+  showLogin: function() {
+    App._hide('loader');
+    App._hide('app-shell');
+    App._show('login-screen', 'flex');
+    try { UI.applyTheme(DB.getSettings().theme || 'dark'); } catch(e) {}
   },
 
-  showShell() {
-    // Restore business logo and user photo on every boot
-    setTimeout(function() {
-      var _s  = DB.getSettings();
-      var _u  = Auth.currentUser;
-      if (typeof Settings !== 'undefined') {
-        if (_s.bizLogo) Settings._applyBizLogo(_s.bizLogo);
-        if (_u && _u.photo) Settings._applyUserPhoto(_u.photo, _u);
-        else if (_u) {
-          var _av = Utils.get('tb-avatar');
-          if (_av) {
-            var _in = _u.name ? _u.name[0].toUpperCase() : (_u.username ? _u.username[0].toUpperCase() : 'U');
-            _av.innerHTML = _in;
+  showShell: function() {
+    App._hide('loader');
+    App._hide('login-screen');
+    App._show('app-shell', 'flex');
+    try {
+      var user = Auth.currentUser || {};
+      var s    = DB.getSettings();
+      UI.applyTheme(s.theme || 'dark');
+      var bn = document.getElementById('tb-biz-name');
+      if (bn) bn.textContent = s.bizName || 'SmartStock Pro';
+      var bs = document.getElementById('tb-biz-sub');
+      if (bs) bs.textContent = s.bizPhone || s.bizAddress || 'Business Manager';
+      var av = document.getElementById('tb-avatar');
+      if (av && user.name) av.textContent = user.name[0].toUpperCase();
+      if (s.bizLogo && typeof Settings !== 'undefined') Settings._applyBizLogo(s.bizLogo);
+      if (user.photo && typeof Settings !== 'undefined') Settings._applyUserPhoto(user.photo, user);
+      try { Notifs.check(); } catch(e2) {}
+      Router.go('dashboard');
+    } catch(e) { console.error('showShell:', e); Router.go('dashboard'); }
+  },
+
+  boot: function() {
+    try { DB.load(); } catch(e) { console.error('DB:', e); }
+    var loggedIn = false;
+    try {
+      var sess = Utils.storage.get('ssp_session');
+      if (sess && sess.uid) {
+        var users = DB.get('users') || [];
+        for (var i = 0; i < users.length; i++) {
+          if (users[i].id === sess.uid && users[i].status !== 'pending') {
+            Auth.currentUser = users[i]; loggedIn = true; break;
           }
         }
-        // Update topbar sub text
-        var _sub = Utils.get('tb-biz-sub');
-        if (_sub && (_s.bizPhone||_s.bizAddress)) _sub.textContent = _s.bizPhone||_s.bizAddress;
       }
-    }, 100);
-    Utils.hide('loader');
-    Utils.hide('login-screen');
-    Utils.show('app-shell');
-    Utils.get('app-shell').classList.remove('hidden');
-    const user = Auth.currentUser;
-    const s = DB.getSettings();
-    UI.applyTheme(s.theme || 'dark');
-    // Update topbar/sidebar
-    if (user) {
-      const av = user.name ? user.name[0].toUpperCase() : 'U';
-      Utils.set('tb-biz-name', Utils.esc(s.bizName || 'SmartStock Pro'));
-    const subEl = document.querySelector('.tb-sub');
-    if (subEl) subEl.textContent = user.role ? user.role.charAt(0).toUpperCase()+user.role.slice(1) : 'Business Manager';
-      const tav=Utils.get('tb-avatar'); if(tav) tav.textContent=av;
-    }
-    Notifs.check();
-    Router.go('dashboard');
+    } catch(e) { console.error('session:', e); }
+    if (loggedIn) App.showShell();
+    else App.showLogin();
   },
 };
