@@ -51,6 +51,12 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
 }
 .splash-txt { font-size:11px;font-weight:600;color:rgba(255,255,255,.35);letter-spacing:.18em;text-transform:uppercase; }
 </style>
+<!-- PWA -->
+<link rel="manifest" href="pwa/manifest.json">
+<link rel="apple-touch-icon" href="pwa/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock">
 </head>
 <body>
 
@@ -181,7 +187,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
 
 <!-- ── ALL JAVASCRIPT ─────────────────────────────── -->
 <script>
-/* SmartStock Pro V5 — All Modules */
+/* SmartStock Pro V5 */
 
 /* === utils.js === */
 var Utils = {
@@ -274,7 +280,6 @@ function confirmDel(msg, onConfirm) {
     if (btn) btn.onclick = () => { Modal.close(); onConfirm(); };
   }, 50);
 }
-
 
 /* === database.js === */
 // SmartStock Pro V5 — Local Database (localStorage)
@@ -466,7 +471,6 @@ var DB = {
       todayCount:todaySales.length, monthCount:monthSales.length };
   },
 };
-
 
 /* === auth.js === */
 var Auth = {
@@ -678,7 +682,6 @@ var Auth = {
   },
 };
 
-
 /* === quickcreate.js === */
 // ══════════════════════════════════════════════════════════════════════════
 // QUICKCREATE — Inline Supplier & Product creation from any transaction screen
@@ -878,7 +881,6 @@ var QuickCreate = {
   },
 };
 
-
 /* === router.js === */
 var PAGES = ['dashboard','products','sales','customers','suppliers','supply','expenses','salary','finance','reports','quotations','ai','settings','more'];
 var BN_PAGES = ['dashboard','sales','products','customers','more'];
@@ -886,29 +888,29 @@ var BN_PAGES = ['dashboard','sales','products','customers','more'];
 var Router = {
   current: 'dashboard',
 
-  go(page) {
+  go: function(page){
     if (!PAGES.includes(page)) page = 'dashboard';
     this.current = page;
     // Hide all pages
-    PAGES.forEach(p => {
-      const el = Utils.get('pg-' + p);
+    PAGES.forEach(function(p){
+      var el = Utils.get('pg-' + p);
       if (el) el.classList.remove('active');
     });
     // Show target
-    const target = Utils.get('pg-' + page);
+    var target = Utils.get('pg-' + page);
     if (target) target.classList.add('active');
     // Update bottom nav
-    BN_PAGES.forEach(p => {
-      const btn = Utils.get('bn-' + p);
+    BN_PAGES.forEach(function(p){
+      var btn = Utils.get('bn-' + p);
       if (btn) btn.classList.toggle('active', p === page || (p==='more' && !BN_PAGES.includes(page)));
     });
     // Close sidebar
     UI.closeSidebar();
     // Scroll to top
-    const pc = Utils.get('pages-container');
+    var pc = Utils.get('pages-container');
     if (pc) pc.scrollTop = 0;
     // Render page
-    const renders = {
+    var renders = {
       dashboard: () => Dashboard.render(),
       products:  () => Products.render(),
       sales:     () => Sales.render(),
@@ -927,12 +929,11 @@ var Router = {
     try {
       if (renders[page]) renders[page]();
     } catch(e) {
-      const el = Utils.get('pg-' + page);
-      if (el) el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-title">Error loading page</div><div class="empty-sub">${e.message}</div></div>`;
+      var el = Utils.get('pg-' + page);
+      if (el) el.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-title">Error loading page</div><div class="empty-sub">' + (e.message) + '</div></div>';
     }
   },
 };
-
 
 /* === notifications.js === */
 var Notifs = {
@@ -960,7 +961,6 @@ var Notifs = {
     return list;
   },
 };
-
 
 /* === charts.js === */
 var Charts = {
@@ -1001,7 +1001,6 @@ var Charts = {
     return this.bar(data, lbls, type||'gold');
   },
 };
-
 
 /* === app.js === */
 var UI = {
@@ -1075,7 +1074,6 @@ var App = {
     else App.showLogin();
   },
 };
-
 
 /* === dashboard.js === */
 var Dashboard = {
@@ -1380,7 +1378,7 @@ var Dashboard = {
       var items = (sale.items||[]).map(function(i){ return i.name; }).join(', ');
       if (items.length>40) items=items.slice(0,38)+'…';
       var bc = sale.status==='Paid'?'var(--ok)':sale.status==='Partial'?'var(--wa)':'var(--er)';
-      return '<div class="list-item" onclick="Sales.viewInvoice(''+sale.id+'')">'
+      return '<div class="list-item" onclick="Sales.viewInvoice(\''+sale.id+'\')">'
         + '<div class="list-icon" style="background:var(--gb3);font-size:18px">🧾</div>'
         + '<div class="list-info">'
         + '<div class="list-name">'+Utils.esc(sale.customer||'Walk-in')+'</div>'
@@ -1395,7 +1393,7 @@ var Dashboard = {
     }).join('');
 
     var recentHtml = '<div class="sec">'
-      + '<div class="sec-title">Recent Sales <span class="sec-link" onclick="Router.go('sales')">View All →</span></div>'
+      + '<div class="sec-title">Recent Sales <span class="sec-link" onclick="Router.go(\'sales\')">View All →</span></div>'
       + (sales.length>0 ? '<div class="card">'+recentRows+'</div>'
         : '<div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">No sales yet</div><div class="empty-sub">Tap "+ New Sale" to get started</div></div>')
       + '</div>';
@@ -1412,7 +1410,7 @@ var Dashboard = {
         var lc = isOut||isCrit?'var(--er)':'var(--wa)';
         var lb = isOut||isCrit?'var(--erb)':'var(--wab)';
         var pct = Math.min(100,Math.max(2,Math.round((p.qty/Math.max(p.lowLevel||5,1))*100)));
-        return '<div class="list-item" onclick="Router.go('products')">'
+        return '<div class="list-item" onclick="Router.go(\'products\')">'
           + '<div class="list-icon" style="background:'+lb+'">'+(isOut?'🚫':isCrit?'🔴':'⚠️')+'</div>'
           + '<div class="list-info"><div class="list-name">'+Utils.esc(p.name)+'</div>'
           + '<div class="list-meta">Qty: <strong>'+p.qty+'</strong> · Min: '+(p.lowLevel||5)+'</div>'
@@ -1424,9 +1422,9 @@ var Dashboard = {
       alertsHtml = '<div class="sec">'
         + '<div class="sec-title">⚠️ Low Stock Alert '
         + '<span style="background:var(--er);color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:99px;margin-left:4px">'+allAlerts.length+'</span>'
-        + '<span class="sec-link" onclick="Router.go('products')">View All</span></div>'
+        + '<span class="sec-link" onclick="Router.go(\'products\')">View All</span></div>'
         + '<div class="card">'+alertRows+'</div>'
-        + '<div style="padding:10px 14px 0"><button class="btn-ghost" style="width:100%;font-size:12px" onclick="Router.go('products')">📋 View All Stock</button></div>'
+        + '<div style="padding:10px 14px 0"><button class="btn-ghost" style="width:100%;font-size:12px" onclick="Router.go(\'products\')">📋 View All Stock</button></div>'
         + '</div>';
     }
 
@@ -1480,7 +1478,7 @@ var Dashboard = {
             +'<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:800;background:'+sb+';border:1px solid '+sc+'40;color:'+sc+'">'+st+'</span>'
             +'</div></div>';
         }).join('');
-        suppHtml = '<div class="sec"><div class="sec-title">🏭 Supplier Payments Due <span class="sec-link" onclick="Router.go('suppliers')">View All →</span></div>'
+        suppHtml = '<div class="sec"><div class="sec-title">🏭 Supplier Payments Due <span class="sec-link" onclick="Router.go(\'suppliers\')">View All →</span></div>'
           + '<div class="card">'+suppRows+'</div></div>';
       } else {
         suppHtml = '<div class="sec"><div class="sec-title">🏭 Supplier Payments</div>'
@@ -1496,9 +1494,9 @@ var Dashboard = {
       + '<div class="qa-btn" onclick="Sales.openNewSale()"><div class="qa-icon" style="background:var(--okb)">💵</div><div class="qa-label">New Sale</div></div>'
       + '<div class="qa-btn" onclick="Products.openAddModal()"><div class="qa-icon" style="background:var(--gb)">📦</div><div class="qa-label">Add Stock</div></div>'
       + '<div class="qa-btn" onclick="Expenses.openAddModal()"><div class="qa-icon" style="background:var(--erb)">💸</div><div class="qa-label">Add Expense</div></div>'
-      + '<div class="qa-btn" onclick="Router.go('suppliers')"><div class="qa-icon" style="background:var(--wab)">🚛</div><div class="qa-label">Suppliers</div></div>'
-      + '<div class="qa-btn" onclick="Router.go('reports')"><div class="qa-icon" style="background:var(--inb)">📊</div><div class="qa-label">Reports</div></div>'
-      + '<div class="qa-btn" onclick="Router.go('ai')"><div class="qa-icon" style="background:var(--gb)">🤖</div><div class="qa-label">AI Assistant</div></div>'
+      + '<div class="qa-btn" onclick="Router.go(\'suppliers\')"><div class="qa-icon" style="background:var(--wab)">🚛</div><div class="qa-label">Suppliers</div></div>'
+      + '<div class="qa-btn" onclick="Router.go(\'reports\')"><div class="qa-icon" style="background:var(--inb)">📊</div><div class="qa-label">Reports</div></div>'
+      + '<div class="qa-btn" onclick="Router.go(\'ai\')"><div class="qa-icon" style="background:var(--gb)">🤖</div><div class="qa-label">AI Assistant</div></div>'
       + '</div></div>';
 
     // ════════════════════════════════════════════════════════════════════
@@ -1782,9 +1780,9 @@ var Sales = {
           + '<div style="font-size:10px;color:var(--wa);margin-top:3px;font-family:var(--fm)">Paid '+Utils.cur(s.amountPaid||0,cur)+' · Bal '+Utils.cur(s.balance||0,cur)+'</div></div>'
         : '';
       var payBtn = s.status!=='Paid'
-        ? '<button class="btn-ok btn-sm" onclick="event.stopPropagation();Sales.openPayBalance(''+s.id+'')">💳 Pay</button>'
+        ? '<button class="btn-ok btn-sm" onclick="event.stopPropagation();Sales.openPayBalance(\''+s.id+'\')">💳 Pay</button>'
         : '';
-      return '<div class="list-item" onclick="Sales.viewInvoice(''+s.id+'') ">'
+      return '<div class="list-item" onclick="Sales.viewInvoice(\''+s.id+'\') ">'
         + '<div class="list-icon" style="background:var(--gb3);border-color:rgba(201,168,76,.15);font-size:20px">🧾</div>'
         + '<div class="list-info">'
         + '<div class="list-name">'+Utils.esc(s.customer||'Walk-in')+'</div>'
@@ -1795,9 +1793,9 @@ var Sales = {
         + '<div class="list-val">'+Utils.cur(s.total,cur)+'</div>'
         + '<div style="margin-top:4px">'+Utils.statusBadge(s.status||'Paid')+'</div>'
         + '<div class="list-actions">'
-        + '<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Sales.printReceipt(''+s.id+'')" title="Print">🖨</button>'
+        + '<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Sales.printReceipt(\''+s.id+'\')" title="Print">🖨</button>'
         + payBtn
-        + '<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Sales.del(''+s.id+'')">🗑</button>'
+        + '<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Sales.del(\''+s.id+'\')">🗑</button>'
         + '</div></div></div>';
     }).join('');
 
@@ -1808,7 +1806,7 @@ var Sales = {
 
     var chips = ['All','Paid','Partial','Credit'].map(function(f){
       var cnt = f==='All' ? all.length : all.filter(function(s){ return s.status===f; }).length;
-      return '<div class="chip'+(Sales.filter===f?' active':'')+'" onclick="Sales.setFilter(''+f+'')">'+f+' ('+cnt+')</div>';
+      return '<div class="chip'+(Sales.filter===f?' active':'')+'" onclick="Sales.setFilter(\''+f+'\')">'+f+' ('+cnt+')</div>';
     }).join('');
 
     pg.innerHTML = '<div class="page-header">'
@@ -1870,8 +1868,8 @@ var Sales = {
           + '</div>'
           + '<div class="fg"><label class="fl">Notes (optional)</label><input class="fi" id="s-notes" placeholder="Any extra information..."></div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-ghost" onclick="Sales.saveSale('new')" style="color:var(--g);border-color:rgba(201,168,76,.3)">💾 Save &amp; New</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Sales.saveSale('close')">🧾 Save Invoice</button>',
+            + '<button class="btn-ghost" onclick="Sales.saveSale(\'new\')" style="color:var(--g);border-color:rgba(201,168,76,.3)">💾 Save &amp; New</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Sales.saveSale(\'close\')">🧾 Save Invoice</button>',
     });
     var nameEl=Utils.get('s-cust-name');
     if(nameEl) nameEl.value='Walk-in Customer';
@@ -1891,9 +1889,9 @@ var Sales = {
     box.innerHTML = custs.map(function(c){
       var allSales = DB.getSales().filter(function(s){ return s.customerId===c.id||s.customer===c.name; });
       var openBal  = allSales.filter(function(s){ return s.status!=='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.balance)||0); },0);
-      return '<div onclick="Sales.selectCust(''+c.id+'',''+Utils.esc(c.name)+'')" '
+      return '<div onclick="Sales.selectCust(\''+c.id+'\',\''+Utils.esc(c.name)+'\')" '
         + 'style="padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:var(--t1);border-bottom:1px solid var(--bd)" '
-        + 'onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">'
+        + 'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
         + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
         + '<span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--g3));display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#07080D;flex-shrink:0">'+c.name[0].toUpperCase()+'</span>'
         + '<span style="flex:1">'+Utils.esc(c.name)+'</span>'
@@ -2126,14 +2124,14 @@ var Sales = {
               + '</div>'
               + '<div style="text-align:right">'
               + '<div style="font-size:14px;font-weight:800;color:var(--ok);font-family:var(--fm)">'+Utils.cur(p.amount,cur)+'</div>'
-              + '<button onclick="Sales.printPaymentReceipt(''+id+'',''+p.id+'','+p.amount+',0)" style="font-size:10px;color:var(--g);background:var(--gb);border:1px solid rgba(201,168,76,.2);border-radius:4px;padding:2px 7px;cursor:pointer;margin-top:3px">🖨 Print</button>'
+              + '<button onclick="Sales.printPaymentReceipt(\''+id+'\',\''+p.id+'\','+p.amount+',0)" style="font-size:10px;color:var(--g);background:var(--gb);border:1px solid rgba(201,168,76,.2);border-radius:4px;padding:2px 7px;cursor:pointer;margin-top:3px">🖨 Print</button>'
               + '</div></div>';
           }).join('')
         + '</div>' : '';
 
     var barColor = s.status==='Paid'?'var(--ok)':s.status==='Partial'?'var(--wa)':'var(--er)';
     var footerPayBtn = s.status!=='Paid'
-      ? '<button class="btn-primary" style="flex:1" onclick="Modal.close();Sales.openPayBalance(''+id+'')">💳 Pay Balance</button>'
+      ? '<button class="btn-primary" style="flex:1" onclick="Modal.close();Sales.openPayBalance(\''+id+'\')">💳 Pay Balance</button>'
       : '<button class="btn-ok" style="flex:1" disabled>✅ Fully Paid</button>';
 
     Modal.open({
@@ -2184,12 +2182,12 @@ var Sales = {
           + '<div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid rgba(201,168,76,.2)"><span style="font-size:15px;font-weight:800;color:var(--wa)">Outstanding Balance</span><span style="font-size:18px;font-weight:900;color:var(--wa);font-family:var(--fm)">'+Utils.cur(bal,cur)+'</span></div>'
           + '</div>'
           + '<div class="fg"><label class="fl">Amount Paying Now *</label>'
-          + '<input class="fi" id="pb-amount" type="number" value="'+bal.toFixed(2)+'" min="0.01" max="'+bal.toFixed(2)+'" step="0.01" style="font-size:18px;font-weight:800;color:var(--ok)" oninput="Sales.updateBalancePreview(''+id+'',this.value)"></div>'
+          + '<input class="fi" id="pb-amount" type="number" value="'+bal.toFixed(2)+'" min="0.01" max="'+bal.toFixed(2)+'" step="0.01" style="font-size:18px;font-weight:800;color:var(--ok)" oninput="Sales.updateBalancePreview(\''+id+'\',this.value)"></div>'
           + '<div class="fg"><label class="fl">Payment Method</label><select class="fi" id="pb-method"><option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option></select></div>'
           + '<div class="fg"><label class="fl">Note (optional)</label><input class="fi" id="pb-note" placeholder="e.g. Balance payment"></div>'
           + '<div id="pb-preview"></div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Sales.saveBalancePayment(''+id+'')">💳 Record Payment</button>',
+            + '<button class="btn-primary" style="flex:1" onclick="Sales.saveBalancePayment(\''+id+'\')">💳 Record Payment</button>',
     });
     this.updateBalancePreview(id, bal.toFixed(2));
   },
@@ -2778,7 +2776,7 @@ var Supply = {
     ];
     var chipHtml = '<div class="chips" style="padding:0 14px 0">'
       + tabs.map(function(t){
-          return '<div class="chip'+(Supply.tab===t[0]?' active':'')+'" onclick="Supply.setTab(''+t[0]+'')">'+t[1]+'</div>';
+          return '<div class="chip'+(Supply.tab===t[0]?' active':'')+'" onclick="Supply.setTab(\''+t[0]+'\')">'+t[1]+'</div>';
         }).join('') + '</div>';
 
     pg.innerHTML = '<div class="page-header">'
@@ -2852,7 +2850,7 @@ var Supply = {
     // Recent POs
     var recentPORows = pos.slice(0,5).map(function(po) {
       var sc = {Draft:'var(--t3)',Sent:'var(--in)',Confirmed:'var(--wa)',Received:'var(--ok)',Cancelled:'var(--er)'}[po.status]||'var(--t3)';
-      return '<div class="list-item" onclick="Supply.viewPO(''+po.id+'') ">'
+      return '<div class="list-item" onclick="Supply.viewPO(\''+po.id+'\') ">'
         + '<div class="list-icon" style="background:var(--inb)">📋</div>'
         + '<div class="list-info"><div class="list-name">'+Utils.esc(po.supplier)+'</div>'
         + '<div class="list-meta">'+po.id+' · '+Utils.date(po.date)+'</div></div>'
@@ -2865,7 +2863,7 @@ var Supply = {
     var overdueRows = bills.filter(function(b){ return b.status!=='Paid' && b.dueDate && b.dueDate < Utils.today(); })
       .slice(0,5).map(function(b) {
         var days = Math.round((new Date()-new Date(b.dueDate))/86400000);
-        return '<div class="list-item" onclick="Supply.viewBill(''+b.id+'') ">'
+        return '<div class="list-item" onclick="Supply.viewBill(\''+b.id+'\') ">'
           + '<div class="list-icon" style="background:var(--erb)">🧾</div>'
           + '<div class="list-info"><div class="list-name">'+Utils.esc(b.supplier)+'</div>'
           + '<div class="list-meta">'+b.id+' · Due: '+Utils.date(b.dueDate)+' ('+days+'d overdue)</div></div>'
@@ -2875,9 +2873,9 @@ var Supply = {
       }).join('');
 
     el.innerHTML = kpis
-      + (pos.length ? '<div class="sec"><div class="sec-title">Recent Purchase Orders <span class="sec-link" onclick="Supply.setTab('po')">View All →</span></div><div class="card">'+recentPORows+'</div></div>' : '')
-      + (overdueRows ? '<div class="sec"><div class="sec-title">⚠️ Overdue Bills <span class="sec-link" onclick="Supply.setTab('invoices')">View All →</span></div><div class="card">'+overdueRows+'</div></div>' : '')
-      + (pos.length===0&&bills.length===0 ? '<div class="sec"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-title">No supply activity yet</div><div class="empty-sub">Create a Purchase Order to get started</div><div class="empty-action"><button class="btn-primary btn-sm" onclick="Supply.setTab('po')">＋ New Purchase Order</button></div></div></div>' : '');
+      + (pos.length ? '<div class="sec"><div class="sec-title">Recent Purchase Orders <span class="sec-link" onclick="Supply.setTab(\'po\')">View All →</span></div><div class="card">'+recentPORows+'</div></div>' : '')
+      + (overdueRows ? '<div class="sec"><div class="sec-title">⚠️ Overdue Bills <span class="sec-link" onclick="Supply.setTab(\'invoices\')">View All →</span></div><div class="card">'+overdueRows+'</div></div>' : '')
+      + (pos.length===0&&bills.length===0 ? '<div class="sec"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-title">No supply activity yet</div><div class="empty-sub">Create a Purchase Order to get started</div><div class="empty-action"><button class="btn-primary btn-sm" onclick="Supply.setTab(\'po\')">＋ New Purchase Order</button></div></div></div>' : '');
   },
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -2890,7 +2888,7 @@ var Supply = {
 
     var rows = pos.map(function(po) {
       var sc = statusColors[po.status]||'var(--t3)';
-      return '<div class="list-item" onclick="Supply.viewPO(''+po.id+'')">'
+      return '<div class="list-item" onclick="Supply.viewPO(\''+po.id+'\')">'
         + '<div class="list-icon" style="background:var(--inb)">📋</div>'
         + '<div class="list-info"><div class="list-name">'+Utils.esc(po.supplier)+'</div>'
         + '<div class="list-meta">'+po.id+' · '+Utils.date(po.date)+'</div>'
@@ -2899,8 +2897,8 @@ var Supply = {
         + '<div class="list-right"><div class="list-val">'+Utils.cur(po.total,cur)+'</div>'
         + '<span style="font-size:9px;padding:2px 8px;border-radius:99px;background:'+sc+'18;color:'+sc+';border:1px solid '+sc+'40;font-weight:700">'+po.status+'</span>'
         + '<div class="list-actions">'
-        + (po.status!=='Received'&&po.status!=='Cancelled'?'<button class="btn-ok btn-sm" onclick="event.stopPropagation();Supply.openReceiveGRN(''+po.id+'')">📦 Receive</button>':'')
-        + '<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Supply.deletePO(''+po.id+'')">🗑</button>'
+        + (po.status!=='Received'&&po.status!=='Cancelled'?'<button class="btn-ok btn-sm" onclick="event.stopPropagation();Supply.openReceiveGRN(\''+po.id+'\')">📦 Receive</button>':'')
+        + '<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Supply.deletePO(\''+po.id+'\')">🗑</button>'
         + '</div></div></div>';
     }).join('');
 
@@ -3013,7 +3011,7 @@ var Supply = {
       body:'<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px;margin-bottom:12px">'
           +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
           +'<span style="font-size:12px;color:var(--t2)">Status</span>'
-          +'<select onchange="Supply.updatePOStatus(''+id+'',this.value)" style="background:var(--bg2);border:1px solid var(--bd2);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--t1)">'+statusOpts+'</select>'
+          +'<select onchange="Supply.updatePOStatus(\''+id+'\',this.value)" style="background:var(--bg2);border:1px solid var(--bd2);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--t1)">'+statusOpts+'</select>'
           +'</div>'
           +'<div class="report-row"><span class="report-label">Expected Delivery</span><span class="report-val">'+(po.expectedDate?Utils.date(po.expectedDate):'Not set')+'</span></div>'
           +'<div class="report-row"><span class="report-label">PO Total</span><span class="report-val gold">'+Utils.cur(po.total,cur)+'</span></div>'
@@ -3026,7 +3024,7 @@ var Supply = {
             }).join('')
           +'</div>'+(po.notes?'<div style="font-size:12px;color:var(--t2);margin-top:10px;padding:10px;background:var(--bg3);border-radius:var(--r8)">'+Utils.esc(po.notes)+'</div>':''),
       footer:'<button class="btn-ghost" onclick="Modal.close()">Close</button>'
-            +(po.status!=='Received'&&po.status!=='Cancelled'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Supply.openReceiveGRN(''+id+'')">📦 Receive Stock</button>':''),
+            +(po.status!=='Received'&&po.status!=='Cancelled'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Supply.openReceiveGRN(\''+id+'\')">📦 Receive Stock</button>':''),
     });
   },
 
@@ -3048,7 +3046,7 @@ var Supply = {
     var grns=DB.getGRNs();
     var rows=grns.map(function(g){
       var sc=g.status==='Confirmed'?'var(--ok)':'var(--wa)';
-      return '<div class="list-item" onclick="Supply.viewGRN(''+g.id+'')">'
+      return '<div class="list-item" onclick="Supply.viewGRN(\''+g.id+'\')">'
         +'<div class="list-icon" style="background:var(--gb3)">📦</div>'
         +'<div class="list-info"><div class="list-name">'+Utils.esc(g.supplier)+'</div>'
         +'<div class="list-meta">'+g.id+' · '+Utils.date(g.date)+'</div>'
@@ -3224,7 +3222,7 @@ var Supply = {
       var isOverdue=b.status!=='Paid'&&b.dueDate&&b.dueDate<today;
       var sc=b.status==='Paid'?'var(--ok)':isOverdue?'var(--er)':'var(--wa)';
       var label=b.status==='Paid'?'PAID':isOverdue?'OVERDUE':'UNPAID';
-      return '<div class="list-item" onclick="Supply.viewBill(''+b.id+'')">'
+      return '<div class="list-item" onclick="Supply.viewBill(\''+b.id+'\')">'
         +'<div class="list-icon" style="background:var(--wab)">🧾</div>'
         +'<div class="list-info"><div class="list-name">'+Utils.esc(b.supplier)+'</div>'
         +'<div class="list-meta">'+b.id+' · '+Utils.date(b.date)+'</div>'
@@ -3232,7 +3230,7 @@ var Supply = {
         +'<div class="list-right"><div class="list-val">'+Utils.cur(b.total,cur)+'</div>'
         +(b.balance>0?'<div style="font-size:10px;color:var(--wa);margin-top:2px">Bal: '+Utils.cur(b.balance,cur)+'</div>':'')
         +'<span style="font-size:9px;padding:2px 8px;border-radius:99px;background:'+sc+'18;color:'+sc+';border:1px solid '+sc+'40;font-weight:700">'+label+'</span>'
-        +(b.status!=='Paid'?'<button class="btn-ok btn-sm" style="margin-top:4px" onclick="event.stopPropagation();Supply.openPayBill(''+b.id+'')">💳 Pay</button>':'')
+        +(b.status!=='Paid'?'<button class="btn-ok btn-sm" style="margin-top:4px" onclick="event.stopPropagation();Supply.openPayBill(\''+b.id+'\')">💳 Pay</button>':'')
         +'</div></div>';
     }).join('');
 
@@ -3314,7 +3312,7 @@ var Supply = {
           +(b.notes?'<div style="font-size:12px;color:var(--t2);margin-top:8px;padding-top:8px;border-top:1px solid var(--bd)">'+Utils.esc(b.notes)+'</div>':'')
           +'</div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Close</button>'
-            +(b.status!=='Paid'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Supply.openPayBill(''+id+'')">💳 Pay Bill</button>':''),
+            +(b.status!=='Paid'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Supply.openPayBill(\''+id+'\')">💳 Pay Bill</button>':''),
     });
   },
 
@@ -3332,7 +3330,7 @@ var Supply = {
           +'<div class="fg"><label class="fl">Payment Method</label>'
           +'<select class="fi" id="pb2-method"><option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option></select></div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            +'<button class="btn-primary" style="flex:1" onclick="Supply.payBill(''+id+'')">💳 Record Payment</button>',
+            +'<button class="btn-primary" style="flex:1" onclick="Supply.payBill(\''+id+'\')">💳 Record Payment</button>',
     });
   },
 
@@ -3380,8 +3378,8 @@ var Supply = {
         +'<div class="progress" style="height:5px;margin-bottom:10px"><div class="progress-fill" style="width:'+pct+'%;background:'+lc+'"></div></div>'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         +(defaultSupp?'<span style="font-size:11px;color:var(--t2)">Supplier: <strong>'+Utils.esc(defaultSupp.name)+'</strong></span>':'<span style="font-size:11px;color:var(--t3)">No default supplier set</span>')
-        +'<button class="btn-primary btn-sm" style="margin-left:auto" onclick="Supply.createAutoPO(''+p.id+'')">📋 Create PO</button>'
-        +'<button class="btn-ghost btn-sm" onclick="Supply.openSetReorderLevels(''+p.id+'')">⚙️ Settings</button>'
+        +'<button class="btn-primary btn-sm" style="margin-left:auto" onclick="Supply.createAutoPO(\''+p.id+'\')">📋 Create PO</button>'
+        +'<button class="btn-ghost btn-sm" onclick="Supply.openSetReorderLevels(\''+p.id+'\')">⚙️ Settings</button>'
         +'</div></div>';
     }).join('');
 
@@ -3414,13 +3412,13 @@ var Supply = {
           +'<select class="fi" id="auto-po-supp" onchange="Supply._onAutoPOSuppChange(this)">'+QuickCreate.supplierOptions(p.defaultSupplierId)+'</select></div>'
           +'<div class="form-row">'
           +'<div class="fg"><label class="fl">Order Quantity</label>'
-          +'<input class="fi" id="auto-po-qty" type="number" value="'+orderQty+'" min="1" oninput="Supply._updateAutoPOTotal(''+productId+'',this.value)"></div>'
+          +'<input class="fi" id="auto-po-qty" type="number" value="'+orderQty+'" min="1" oninput="Supply._updateAutoPOTotal(\''+productId+'\',this.value)"></div>'
           +'<div class="fg"><label class="fl">Cost Price</label>'
-          +'<input class="fi" id="auto-po-cost" type="number" value="'+(parseFloat(p.cost)||0).toFixed(2)+'" step="0.01" oninput="Supply._updateAutoPOTotal(''+productId+'',null)"></div>'
+          +'<input class="fi" id="auto-po-cost" type="number" value="'+(parseFloat(p.cost)||0).toFixed(2)+'" step="0.01" oninput="Supply._updateAutoPOTotal(\''+productId+'\',null)"></div>'
           +'</div>'
           +'<div id="auto-po-total" style="font-size:16px;font-weight:800;color:var(--g);text-align:right;padding:8px 0">PO Total: '+Utils.cur(total,cur)+'</div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            +'<button class="btn-primary" style="flex:1" onclick="Supply.saveAutoPO(''+productId+'')">💾 Create PO</button>',
+            +'<button class="btn-primary" style="flex:1" onclick="Supply.saveAutoPO(\''+productId+'\')">💾 Create PO</button>',
     });
   },
 
@@ -3483,7 +3481,7 @@ var Supply = {
           +'<div class="fg"><label class="fl">Default Supplier</label>'
           +'<select class="fi" id="rl-supp" onchange="Supply._onRLSuppChange(this)">'+QuickCreate.supplierOptions(p.defaultSupplierId,'— none —')+'</select></div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            +'<button class="btn-primary" style="flex:1" onclick="Supply.saveReorderSettings(''+id+'')">💾 Save</button>',
+            +'<button class="btn-primary" style="flex:1" onclick="Supply.saveReorderSettings(\''+id+'\')">💾 Save</button>',
     });
   },
 
@@ -3543,7 +3541,7 @@ var Expenses = {
         + '</div>'
         + '<div class="list-right">'
         + '<div class="list-val" style="color:var(--er)">'+Utils.cur(e.amount,cur)+'</div>'
-        + '<div class="list-actions"><button class="btn-danger btn-sm btn-icon" onclick="Expenses.del(''+e.id+'')">🗑</button></div>'
+        + '<div class="list-actions"><button class="btn-danger btn-sm btn-icon" onclick="Expenses.del(\''+e.id+'\')">🗑</button></div>'
         + '</div></div>';
     }).join('') : '<div class="empty" style="padding:20px"><div class="empty-icon">💸</div><div class="empty-title">No manual expenses yet</div></div>';
 
@@ -3686,8 +3684,8 @@ var Allocations = {
         + '<div style="font-size:9px;color:var(--t3);font-family:var(--fm)">'+Utils.esc(a.category||'')+'</div>'
         + '<div style="margin-top:4px;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;background:'+statusBg+';color:'+statusCl+'">'+statusTx+'</div>'
         + '<div style="display:flex;gap:5px;margin-top:6px;justify-content:flex-end">'
-        + '<button class="btn-ghost btn-sm btn-icon" onclick="Allocations.openEdit(''+a.id+'')">✏️</button>'
-        + '<button class="btn-danger btn-sm btn-icon" onclick="Allocations.del(''+a.id+'',''+Utils.esc(a.name)+'')">🗑</button>'
+        + '<button class="btn-ghost btn-sm btn-icon" onclick="Allocations.openEdit(\''+a.id+'\')">✏️</button>'
+        + '<button class="btn-danger btn-sm btn-icon" onclick="Allocations.del(\''+a.id+'\',\''+Utils.esc(a.name)+'\')">🗑</button>'
         + '</div></div></div>';
     }).join('')
     : '<div class="empty"><div class="empty-icon">📅</div><div class="empty-title">No allocations yet</div>'
@@ -3767,9 +3765,9 @@ var Allocations = {
           + 'font-size:13px;color:var(--wa);font-weight:600;line-height:1.6'
           + '">Enter amount and dates to see the daily rate</div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + (isEdit ? '' : '<button class="btn-ghost" onclick="Allocations.save('new')" style="color:var(--wa);border-color:rgba(245,158,11,.3)">💾 Save &amp; Add New</button>')
+            + (isEdit ? '' : '<button class="btn-ghost" onclick="Allocations.save(\'new\')" style="color:var(--wa);border-color:rgba(245,158,11,.3)">💾 Save &amp; Add New</button>')
             + '<button class="btn-primary" style="flex:1;background:linear-gradient(135deg,var(--wa),#b45309);color:#fff"'
-            + ' onclick="Allocations.save('close''+(isEdit?',''+a.id+''':'')+')">💾 Save</button>',
+            + ' onclick="Allocations.save(\'close\''+(isEdit?',\''+a.id+'\'':'')+')">💾 Save</button>',
     });
     setTimeout(function(){ Allocations.previewDaily(); }, 60);
   },
@@ -4458,7 +4456,7 @@ var Reports = {
     // ── Period chips ──
     var periods = [['today','Today'],['week','This Week'],['month','This Month'],['year','This Year']];
     var chips = periods.map(function(p){
-      return '<div class="chip'+(Reports.period===p[0]?' active':'')+'" onclick="Reports.setPeriod(''+p[0]+'')">' + p[1] + '</div>';
+      return '<div class="chip'+(Reports.period===p[0]?' active':'')+'" onclick="Reports.setPeriod(\''+p[0]+'\')">' + p[1] + '</div>';
     }).join('');
 
     // ── P&L Table ──
@@ -4784,7 +4782,7 @@ var Reports = {
     var lowSec = lowStock.length ? '<div class="sec">'
       + '<div style="padding:12px 14px;background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r10);font-size:13px;color:var(--wa);font-weight:600">'
       + '⚠️ '+lowStock.length+' product'+(lowStock.length!==1?'s':'')+' need reordering — '
-      + '<span style="cursor:pointer;text-decoration:underline" onclick="Router.go('products')">view stock list</span>'
+      + '<span style="cursor:pointer;text-decoration:underline" onclick="Router.go(\'products\')">view stock list</span>'
       + '</div></div>' : '';
 
     // ── Action buttons ──
@@ -5081,14 +5079,14 @@ var Quotations = {
 
     var chips = filters.map(function(f){
       var cnt = f==='All' ? list.length : list.filter(function(q){ return q.status===f; }).length;
-      return '<div class="chip'+(Quotations.filter===f?' active':'')+'" onclick="Quotations.setFilter(''+f+'')">'
+      return '<div class="chip'+(Quotations.filter===f?' active':'')+'" onclick="Quotations.setFilter(\''+f+'\')">'
         +f+' ('+cnt+')</div>';
     }).join('');
 
     var rows = filtered.map(function(q) {
       var sc = {Draft:'var(--t3)',Sent:'var(--in)',Approved:'var(--ok)',Declined:'var(--er)',Expired:'var(--wa)'}[q.status]||'var(--t3)';
       var expired = q.expiryDate && q.expiryDate < today && q.status !== 'Declined';
-      return '<div class="list-item" onclick="Quotations.viewQuotation(''+q.id+'')">'
+      return '<div class="list-item" onclick="Quotations.viewQuotation(\''+q.id+'\')">'
         +'<div class="list-icon" style="background:var(--inb);font-size:18px">📄</div>'
         +'<div class="list-info">'
         +'<div class="list-name">'+Utils.esc(q.clientName||'No client')+'</div>'
@@ -5099,9 +5097,9 @@ var Quotations = {
         +'<div class="list-val">'+Utils.cur(q.total||0,cur)+'</div>'
         +'<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:800;background:'+sc+'18;color:'+sc+';border:1px solid '+sc+'40">'+q.status+'</span>'
         +'<div class="list-actions">'
-        +'<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Quotations.printQuotation(''+q.id+'')" title="Print">🖨</button>'
-        +(q.status!=='Approved'&&q.status!=='Declined'?'<button class="btn-ok btn-sm" onclick="event.stopPropagation();Quotations.convertToInvoice(''+q.id+'')">→ Invoice</button>':'')
-        +'<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Quotations.del(''+q.id+'')">🗑</button>'
+        +'<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Quotations.printQuotation(\''+q.id+'\')" title="Print">🖨</button>'
+        +(q.status!=='Approved'&&q.status!=='Declined'?'<button class="btn-ok btn-sm" onclick="event.stopPropagation();Quotations.convertToInvoice(\''+q.id+'\')">→ Invoice</button>':'')
+        +'<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Quotations.del(\''+q.id+'\')">🗑</button>'
         +'</div></div></div>';
     }).join('');
 
@@ -5196,8 +5194,8 @@ var Quotations = {
         +'<input class="fi" id="qt-terms" placeholder="e.g. Prices valid for 30 days. Delivery not included."></div>'
         +'</div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-ghost" onclick="Quotations.saveQuotation('draft')" style="color:var(--t2)">💾 Save Draft</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Quotations.saveQuotation('sent')">📤 Save &amp; Print</button>',
+            + '<button class="btn-ghost" onclick="Quotations.saveQuotation(\'draft\')" style="color:var(--t2)">💾 Save Draft</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Quotations.saveQuotation(\'sent\')">📤 Save &amp; Print</button>',
     });
     this._renderItems();
     this._renderTotals();
@@ -5356,7 +5354,7 @@ var Quotations = {
       body: '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px;margin-bottom:12px">'
           +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
           +'<span style="font-size:12px;color:var(--t2)">Status</span>'
-          +'<select onchange="Quotations.updateStatus(''+id+'',this.value)" style="background:var(--bg2);border:1px solid var(--bd2);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--t1)">'+statusOpts+'</select>'
+          +'<select onchange="Quotations.updateStatus(\''+id+'\',this.value)" style="background:var(--bg2);border:1px solid var(--bd2);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--t1)">'+statusOpts+'</select>'
           +'</div>'
           +'<div class="report-row"><span class="report-label">Client</span><span class="report-val">'+Utils.esc(q.clientName)+'</span></div>'
           +(q.clientPhone?'<div class="report-row"><span class="report-label">Phone</span><span class="report-val">'+Utils.esc(q.clientPhone)+'</span></div>':'')
@@ -5371,8 +5369,8 @@ var Quotations = {
           +'</div>'
           +(q.notes?'<div style="background:var(--bg3);border-radius:var(--r8);padding:10px 12px;margin-top:10px;font-size:12px;color:var(--t2)">📝 '+Utils.esc(q.notes)+'</div>':''),
       footer: '<button class="btn-ghost" onclick="Modal.close()">Close</button>'
-            + '<button class="btn-ghost btn-icon" onclick="Quotations.printQuotation(''+id+'')">🖨 Print</button>'
-            + (q.status!=='Approved'&&q.status!=='Declined'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Quotations.convertToInvoice(''+id+'')">→ Convert to Invoice</button>':''),
+            + '<button class="btn-ghost btn-icon" onclick="Quotations.printQuotation(\''+id+'\')">🖨 Print</button>'
+            + (q.status!=='Approved'&&q.status!=='Declined'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Quotations.convertToInvoice(\''+id+'\')">→ Convert to Invoice</button>':''),
     });
   },
 
@@ -5403,7 +5401,7 @@ var Quotations = {
           +'<div class="fg"><label class="fl">Amount Paid Now</label>'
           +'<input class="fi" id="cv-paid" type="number" value="'+q.total.toFixed(2)+'" min="0" step="0.01" style="font-size:16px;font-weight:700;color:var(--ok)"></div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Quotations._doConvert(''+id+'')">✅ Create Invoice</button>',
+            + '<button class="btn-primary" style="flex:1" onclick="Quotations._doConvert(\''+id+'\')">✅ Create Invoice</button>',
     });
   },
 
@@ -5484,7 +5482,7 @@ var Quotations = {
     var total    = q.total || subtotal + taxAmt;
 
     var logoHtml = bizLogo
-      ? '<img src="'+bizLogo+'" alt="Logo" onerror="this.style.display='none'" style="width:80px;height:80px;object-fit:contain;object-position:center">'
+      ? '<img src="'+bizLogo+'" alt="Logo" onerror="this.style.display=\'none\'" style="width:80px;height:80px;object-fit:contain;object-position:center">'
       : '<div style="width:80px;height:80px;background:#f0f0f0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px">📦</div>';
 
     var statusColors = {Draft:'#6b7280',Sent:'#2563eb',Approved:'#16a34a',Declined:'#dc2626',Expired:'#d97706'};
@@ -5648,21 +5646,21 @@ var AI = {
       // Quick chips
       + '<div class="ai-chips">'
       + '<div class="ai-chip ai-chip-report" onclick="AI.generateFullReport()" style="background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.05));border:1px solid rgba(201,168,76,.3);color:var(--g);font-weight:700">📋 Full Business Report</div>'
-      + '<div class="ai-chip" onclick="AI.ask('What products are low in stock?')">📦 Low stock?</div>'
-      + '<div class="ai-chip" onclick="AI.ask('Give me a full business summary')">📊 Summary</div>'
-      + '<div class="ai-chip" onclick="AI.ask('How much did I earn today?')">💰 Today?</div>'
-      + '<div class="ai-chip" onclick="AI.ask('Which products sell the most?')">🏆 Top sellers?</div>'
-      + '<div class="ai-chip" onclick="AI.ask('Who owes me money?')">💸 Debtors?</div>'
-      + '<div class="ai-chip" onclick="AI.ask('Am I making a profit?')">📈 Profitable?</div>'
-      + '<div class="ai-chip" onclick="AI.ask('What should I restock urgently?')">🚨 Restock?</div>'
-      + '<div class="ai-chip" onclick="AI.ask('Analyze my expenses this month')">💡 Expenses?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'What products are low in stock?\')">📦 Low stock?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'Give me a full business summary\')">📊 Summary</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'How much did I earn today?\')">💰 Today?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'Which products sell the most?\')">🏆 Top sellers?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'Who owes me money?\')">💸 Debtors?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'Am I making a profit?\')">📈 Profitable?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'What should I restock urgently?\')">🚨 Restock?</div>'
+      + '<div class="ai-chip" onclick="AI.ask(\'Analyze my expenses this month\')">💡 Expenses?</div>'
       + '</div>'
       + '</div>'
       + '<div class="ai-msgs" id="ai-msgs"></div>'
       + '<div class="ai-input-row">'
       + '<textarea class="ai-input" id="ai-inp" placeholder="Ask anything about your business..." rows="1"'
       + ' onkeydown="if(event.keyCode===13&&!event.shiftKey){event.preventDefault();AI.send();}"'
-      + ' oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>'
+      + ' oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,100)+\'px\'"></textarea>'
       + '<button class="ai-send" id="ai-send-btn" onclick="AI.send()">➤</button>'
       + '</div>'
       + '</div>';
@@ -6612,21 +6610,22 @@ var MorePage = {
 
 
 </script>
-
-<!-- ── BOOT ──────────────────────────────────────── -->
 <script>
 (function() {
   var msgs = ['Loading modules...','Starting database...','Preparing dashboard...','Almost ready...','Welcome to SmartStock Pro!'];
-  var txtEl = document.getElementById('splash-txt');
-  msgs.forEach(function(m, i) {
-    setTimeout(function() { if (txtEl) txtEl.textContent = m; }, i * 900 + 300);
-  });
+  var el = document.getElementById('splash-txt');
+  msgs.forEach(function(m,i){ setTimeout(function(){ if(el) el.textContent=m; }, i*900+300); });
   setTimeout(function() {
-    try { DB.load(); } catch(e) {}
+    try { DB.load(); } catch(e) { console.error('DB:',e); }
     App.boot();
   }, 5000);
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./pwa/service-worker.js')
+        .catch(function(e){ console.log('SW:',e); });
+    });
+  }
 })();
 </script>
-
 </body>
 </html>
