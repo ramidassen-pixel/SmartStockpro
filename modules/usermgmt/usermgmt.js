@@ -52,6 +52,33 @@ var UserMgmt = {
   _renderUsers: function(el) {
     var users   = DB.get('users') || [];
     var current = Auth.currentUser || {};
+    var pending = users.filter(function(u){ return u.status === 'pending'; });
+
+    // Show pending approvals at top if Primary Admin
+    var pendingHtml = '';
+    if (pending.length && current.role === 'primary_admin') {
+      var roleOpts = Object.keys(ROLE_PRESETS).filter(function(k){ return k !== 'primary_admin'; }).map(function(k){
+        return '<option value="' + k + '">' + ROLE_PRESETS[k].icon + ' ' + ROLE_PRESETS[k].label + '</option>';
+      }).join('');
+      pendingHtml = '<div style="background:rgba(255,173,31,.06);border:1px solid var(--wabd);border-radius:var(--r14);padding:14px;margin:0 14px 14px">'
+        + '<div style="font-size:11px;font-weight:800;color:var(--wa);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">⏳ Pending Approvals (' + pending.length + ')</div>'
+        + pending.map(function(u) {
+            return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r10);padding:12px;margin-bottom:8px">'
+              + '<div style="display:flex;align-items:flex-start;gap:10px">'
+              + '<div style="flex:1">'
+              + '<div style="font-size:13px;font-weight:700;color:var(--t1)">' + Utils.esc(u.name) + '</div>'
+              + '<div style="font-size:11px;color:var(--t2);margin-top:2px">' + Utils.esc(u.email||u.username) + '</div>'
+              + '<div style="font-size:10px;color:var(--t3);margin-top:2px">📱 ' + (u.phone||'No phone') + ' · Requested: ' + Utils.date(u.createdAt) + '</div>'
+              + '</div></div>'
+              + '<div style="margin-top:10px;display:flex;gap:7px;align-items:center">'
+              + '<select id="apr-role-' + u.id + '" style="flex:1;background:var(--bg3);border:1px solid var(--bd2);border-radius:6px;padding:6px;font-size:12px;color:var(--t1)">' + roleOpts + '</select>'
+              + '<button class="btn-ok btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.approveUser(this.dataset.uid)">✓ Approve</button>'
+              + '<button class="btn-danger btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.rejectUser(this.dataset.uid)">✕ Reject</button>'
+              + '</div></div>';
+          }).join('')
+        + '</div>';
+    }
+    var current = Auth.currentUser || {};
 
     var rows = users.map(function(u) {
       var isSelf  = u.id === current.id;
@@ -74,7 +101,7 @@ var UserMgmt = {
         + '</div></div></div>';
     }).join('');
 
-    el.innerHTML = '<div class="sec"><div class="card">' + (rows || '<div class="empty" style="padding:30px"><div class="empty-icon">👥</div><div class="empty-title">No users yet</div></div>') + '</div></div>';
+    el.innerHTML = pendingHtml + '<div class="sec"><div class="card">' + (rows || '<div class="empty" style="padding:30px"><div class="empty-icon">👥</div><div class="empty-title">No users yet</div></div>') + '</div></div>';
   },
 
   openAddUser: function() {
