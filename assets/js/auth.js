@@ -34,6 +34,7 @@ var Auth = {
   _doLogin: function(user) {
     Auth.currentUser = user;
     Utils.storage.set('ssp_session', { uid: user.id });
+    try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
     App.showShell();
   },
 
@@ -52,12 +53,13 @@ var Auth = {
         Auth._err('signup-err', 'Username already taken'); return;
       }
     }
-    // Save with plain password first (works immediately, no async hash issues)
+    // First user becomes Primary Admin
+    var assignedRole = users.length === 0 ? 'primary_admin' : 'sales_employee';
     var user = {
       id: Utils.uid('U'),
       username: uname,
       name: name,
-      role: 'owner',
+      role: assignedRole,
       status: 'active',
       createdAt: Utils.today(),
       password: pw,
@@ -67,10 +69,12 @@ var Auth = {
     DB.saveSettings({ bizName: biz, currency: '$' });
     Auth.currentUser = user;
     Utils.storage.set('ssp_session', { uid: user.id });
+    try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
     App.showShell();
   },
 
   logout: function() {
+    try { if (typeof Activity !== 'undefined') Activity.endSession(); } catch(e) {}
     Auth.currentUser = null;
     Utils.storage.del('ssp_session');
     location.reload();
