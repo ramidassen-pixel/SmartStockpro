@@ -81,10 +81,15 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
     <div id="login-form">
       <div id="login-err" class="form-err hidden"></div>
       <div class="fg"><label class="fl">Username</label><input class="fi" id="l-user" type="text" placeholder="Your username" autocomplete="username"></div>
-      <div class="fg"><label class="fl">Password</label>
+      <div class="fg">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+          <label class="fl" style="margin-bottom:0">Password</label>
+          <span onclick="Auth.forgotPassword()" style="font-size:11px;color:var(--g);font-weight:600;cursor:pointer">Forgot password?</span>
+        </div>
         <div class="pw-wrap"><input class="fi" id="l-pass" type="password" placeholder="Your password" autocomplete="current-password"
           onkeydown="if(event.key==='Enter')Auth.login()">
-          <span class="pw-eye" onclick="Auth.togglePw('l-pass')">👁</span></div></div>
+          <span class="pw-eye" onclick="Auth.togglePw('l-pass')">👁</span></div>
+      </div>
       <button class="btn-primary btn-full" onclick="Auth.login()">Sign In</button>
     </div>
     <!-- Sign Up -->
@@ -569,6 +574,78 @@ var Auth = {
     const hashed = await this._hashPw(pw);
     return hashed === stored || btoa(pw) === stored || pw === stored;
   },
+
+  forgotPassword: function() {
+    var uname = Utils.val('l-user') || '';
+    if (!uname) {
+      Modal.open({
+        title: 'Reset Password', barColor: 'var(--wa)',
+        body: '<div class="fg"><label class="fl">Enter your Username</label>'
+            + '<input class="fi" id="fp-user" placeholder="Your username"></div>',
+        footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+              + '<button class="btn-primary" style="flex:1" onclick="Auth.doReset()">Find Account</button>',
+      });
+      return;
+    }
+    Auth._showResetFor(uname);
+  },
+
+  _showResetFor: function(uname) {
+    var users = DB.get('users') || [];
+    var user = null;
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].username === uname) { user = users[i]; break; }
+    }
+    if (!user) {
+      Modal.open({
+        title: 'Account Not Found',
+        body: '<div style="text-align:center;padding:20px 10px"><div style="font-size:44px;margin-bottom:12px">🔍</div>'
+            + '<div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:8px">Username not found</div>'
+            + '<div style="font-size:13px;color:var(--t2)">No account named <strong>' + Utils.esc(uname) + '</strong>.</div></div>',
+        footer: '<button class="btn-primary btn-full" onclick="Modal.close()">OK</button>',
+      });
+      return;
+    }
+    Auth._resetUser = uname;
+    Modal.open({
+      title: 'Reset Password', sub: 'Account: ' + uname, barColor: 'var(--wa)',
+      body: '<div class="fg"><label class="fl">New Password (min 6 chars)</label>'
+          + '<input class="fi" id="fp-new" type="password" placeholder="New password"></div>'
+          + '<div class="fg"><label class="fl">Confirm Password</label>'
+          + '<input class="fi" id="fp-conf" type="password" placeholder="Confirm password"></div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Auth.saveReset()">Reset Password</button>',
+    });
+  },
+
+  doReset: function() {
+    var fpUser = Utils.get('fp-user');
+    if (!fpUser) return;
+    var uname = fpUser.value.trim();
+    if (!uname) { Toast.show('Enter your username', 'err'); return; }
+    Modal.close();
+    setTimeout(function() { Auth._showResetFor(uname); }, 250);
+  },
+
+  saveReset: function() {
+    var newPw = Utils.val('fp-new');
+    var conf  = Utils.val('fp-conf');
+    if (!newPw || newPw.length < 6) { Toast.show('Min 6 characters', 'err'); return; }
+    if (newPw !== conf) { Toast.show('Passwords do not match', 'err'); return; }
+    var users = DB.get('users') || [];
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].username === Auth._resetUser) {
+        users[i].password = newPw;
+        DB.set('users', users);
+        Modal.close();
+        Toast.show('Password reset! You can now sign in.', 'ok');
+        return;
+      }
+    }
+    Toast.show('Account not found', 'err');
+  },
+
+  _resetUser: '',
 };
 
 
