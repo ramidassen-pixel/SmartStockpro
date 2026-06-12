@@ -537,6 +537,8 @@ var DB = {
 
 /* === auth.js === */
 /* SmartStock Pro V5 — Complete Authentication System */
+var SUPABASE_EMAIL_URL = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/functions/v1/send-email';
+
 var Auth = {
   currentUser: null,
   _failedAttempts: {},  // track failed logins per username
@@ -739,7 +741,21 @@ var Auth = {
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
 
     // Show verification screen instead of logging in
-    Auth._showEmailVerification(user, verifyCode);
+    // Send real email via Supabase Edge Function
+    Auth._sendEmail({
+      to: email,
+      type: 'verification',
+      code: verifyCode,
+      name: name,
+      bizName: bizName,
+    }, verifyCode).then(function(result) {
+      if (result.sent) {
+        Auth._showEmailVerification(user, null); // hide code on screen
+        Toast.show('Verification email sent to ' + email, 'ok');
+      } else {
+        Auth._showEmailVerification(user, result.code); // show code as fallback
+      }
+    });
   },
 
   /* ═══════════════════════════════════════════════════════
@@ -806,7 +822,22 @@ var Auth = {
 
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + bizName); } catch(e) {}
 
-    Auth._showEmailVerification(user, verifyCode);
+    // Send real email
+    var joinBizName = biz.name;
+    Auth._sendEmail({
+      to: email,
+      type: 'verification',
+      code: verifyCode,
+      name: name,
+      bizName: joinBizName,
+    }, verifyCode).then(function(result) {
+      if (result.sent) {
+        Auth._showEmailVerification(user, null);
+        Toast.show('Verification email sent to ' + email, 'ok');
+      } else {
+        Auth._showEmailVerification(user, result.code);
+      }
+    });
   },
 
   /* ═══════════════════════════════════════════════════════
@@ -938,13 +969,21 @@ var Auth = {
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('PASSWORD_RESET_REQUEST', 'Reset code sent to: ' + email); } catch(e) {}
     Modal.close();
 
-    // Show code entry form
-    setTimeout(function() {
+    // Send real email
+    Auth._sendEmail({
+      to: email,
+      type: 'password_reset',
+      code: code,
+      name: user.name || user.username,
+    }, code).then(function(result) {
+      var codeLine = result.sent
+        ? '<div style="background:var(--okb);border:1px solid var(--okbd);border-radius:var(--r10);padding:12px;margin-bottom:14px;font-size:12px;color:var(--ok)">✅ Reset code sent to your email.</div>'
+        : '<div style="background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r10);padding:12px;margin-bottom:14px;font-size:12px;color:var(--wa)">📧 Your reset code is: <strong style="font-size:16px;letter-spacing:4px">' + (result.code||code) + '</strong></div>';
+
       Modal.open({
         title: 'Enter Reset Code', barColor: 'var(--wa)',
         sub: 'Code sent to ' + email + ' (expires in 15 min)',
-        body: '<div style="background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r10);padding:12px;margin-bottom:14px;font-size:12px;color:var(--wa)">'
-            + '📧 For demo, your reset code is: <strong style="font-size:16px;letter-spacing:4px">' + code + '</strong></div>'
+        body: codeLine
             + '<div class="fg"><label class="fl">6-Digit Reset Code</label>'
             + '<input class="fi" id="rc-code" type="text" maxlength="6" placeholder="000000" style="text-align:center;font-size:20px;font-weight:700;letter-spacing:6px"></div>'
             + '<div class="fg"><label class="fl">New Password (min 8 chars)</label>'
@@ -954,7 +993,7 @@ var Auth = {
         footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
               + '<button class="btn-primary" style="flex:1" onclick="Auth.confirmReset(\'' + user.id + '\')">✓ Reset Password</button>',
       });
-    }, 300);
+    });
   },
 
   confirmReset: function(userId) {
@@ -1011,6 +1050,16 @@ var Auth = {
     if (role) users[idx].role = role;
     DB.set('users', users);
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('USER_APPROVED', 'Approved: ' + users[idx].name + ' as ' + (role||users[idx].role)); } catch(e) {}
+    // Send approval email
+    var approvedUser = users[idx];
+    var bizArr = DB.get('businesses') || [];
+    var biz = bizArr.find(function(b){ return b.id === (approvedUser.businessIds||[])[0]; });
+    Auth._sendEmail({
+      to: approvedUser.email,
+      type: 'approved',
+      name: approvedUser.name,
+      bizName: biz ? biz.name : 'SmartStock Pro',
+    }, null);
     Toast.show(users[idx].name + ' approved ✓', 'ok');
   },
 
@@ -1083,6 +1132,32 @@ var Auth = {
           resolve(Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join(''));
         }).catch(function() { resolve(btoa(pw)); });
       } catch(e) { resolve(btoa(pw)); }
+    });
+  },
+
+  /* ═══════════════════════════════════════════════════════
+     SEND EMAIL via Supabase Edge Function
+  ═══════════════════════════════════════════════════════ */
+  _sendEmail: function(payload, fallbackCode) {
+    return fetch(SUPABASE_EMAIL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        console.log('Email sent:', data.id);
+        return { sent: true };
+      } else {
+        console.warn('Email API issue:', data.error);
+        // Fallback: show code on screen
+        return { sent: false, code: fallbackCode };
+      }
+    })
+    .catch(function(err) {
+      console.warn('Email send failed:', err.message);
+      return { sent: false, code: fallbackCode };
     });
   },
 
