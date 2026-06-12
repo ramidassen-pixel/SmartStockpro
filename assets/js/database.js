@@ -23,6 +23,7 @@ var DB = {
       grns: [],
       supplierBills: [],
       quotations: [],
+      employeeLoans: [],
       businesses: [],
       branches: [],
       customRoles: [],
@@ -36,7 +37,7 @@ var DB = {
     this._data = raw || this._default();
     // Ensure all arrays exist
     const d = this._data;
-    ['users','products','sales','customers','suppliers','expenses','employees','payroll','notifications','payments','allocations','purchaseOrders','grns','supplierBills','quotations','businesses','branches','customRoles','auditLogs','activityLogs']
+    ['users','products','sales','customers','suppliers','expenses','employees','payroll','notifications','payments','allocations','purchaseOrders','grns','supplierBills','quotations','employeeLoans','businesses','branches','customRoles','auditLogs','activityLogs']
       .forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
     if (!d.settings) d.settings = this._default().settings;
     return this._data;
