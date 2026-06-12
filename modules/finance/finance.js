@@ -4,6 +4,12 @@ var Finance = {
     if (!pg) return;
     var settings  = DB.getSettings();
     var cur       = settings.currency || '$';
+    var user        = Auth.currentUser || {};
+    var role        = (user.role || 'owner').toLowerCase();
+    var canSeeMoney = (role==='owner'||role==='admin'||role==='primary_admin'||role==='primary admin'||role==='manager'||role==='store_manager'||role==='accountant');
+    var mask        = '— — —';
+    function showM(v) { return canSeeMoney ? Utils.cur(v, cur) : mask; }
+    function showPct(v) { return canSeeMoney ? (parseFloat(v)||0).toFixed(1)+'%' : mask; }
     var sales     = DB.getSales();
     var expenses  = DB.getExpenses();
     var payroll   = DB.getPayroll();
