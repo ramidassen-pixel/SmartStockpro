@@ -85,7 +85,12 @@ var Sales = {
           + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">👤 Customer</div>'
           + '<div class="form-row" style="margin-bottom:8px">'
           + '<div class="fg" style="margin:0"><label class="fl">Customer Name</label>'
-          + '<input class="fi" id="s-cust-name" placeholder="Type name or Walk-in..." oninput="Sales.onCustNameInput(this.value)" style="font-weight:600"></div>'
+          + '<div style="position:relative">'
+          + '<input class="fi" id="s-cust-name" placeholder="Type name, phone or walk-in..." oninput="Sales.onCustNameInput(this.value)" autocomplete="off" style="font-weight:600">'
+          + '<div id="s-cust-suggestions" style="position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);z-index:99;max-height:200px;overflow-y:auto;display:none"></div>'
+          + '</div>'
+          + '<div id="s-cust-info" style="display:none;margin-top:6px;font-size:11px;color:var(--ok);font-weight:600"></div>'
+          + '</div>'
           + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
           + '<input class="fi" id="s-date" type="date" value="'+Utils.today()+'"></div></div>'
           + '<input type="hidden" id="s-cust-id" value="">'
@@ -94,8 +99,11 @@ var Sales = {
           + '</div>'
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
           + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📦 Products</div>'
-          + '<div class="fg" style="margin-bottom:10px"><label class="fl">Add Product</label>'
-          + '<select class="fi" id="s-prod-sel" onchange="Sales.addToCart(this)">'+QuickCreate.productOptions()+'</select></div>'
+          + '<div class="fg" style="margin-bottom:10px"><label class="fl">Search & Add Product</label>'
+          + '<div style="position:relative">'
+          + '<input class="fi" id="s-prod-search" placeholder="Type product name, SKU or barcode..." oninput="Sales.onProdSearch(this.value)" autocomplete="off">'
+          + '<div id="s-prod-suggestions" style="position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);z-index:99;max-height:220px;overflow-y:auto;display:none"></div>'
+          + '</div></div>'
           + '<div id="s-cart-wrap"><div style="text-align:center;padding:14px 0;color:var(--t3);font-size:13px">No items added yet</div></div>'
           + '</div>'
           + '<div id="s-totals"></div>'
@@ -120,36 +128,59 @@ var Sales = {
 
   // ── CUSTOMER AUTO-SUGGEST + INFO PANEL ────────────────────────────────────
   onCustNameInput: function(val) {
-    Utils.get('s-cust-id').value='';
-    Utils.get('s-cust-tag').style.display='none';
-    if (!val.trim()) { Utils.get('s-cust-suggestions').style.display='none'; return; }
-    var custs = DB.getCustomers().filter(function(c){ return c.name.toLowerCase().indexOf(val.toLowerCase())!==-1; }).slice(0,6);
-    var box = Utils.get('s-cust-suggestions');
-    if (!custs.length) { box.style.display='none'; return; }
-    box.style.display='block';
-    var cur = DB.getSettings().currency||'$';
-    box.innerHTML = custs.map(function(c){
-      var allSales = DB.getSales().filter(function(s){ return s.customerId===c.id||s.customer===c.name; });
-      var openBal  = allSales.filter(function(s){ return s.status!=='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.balance)||0); },0);
-      return '<div onclick="Sales.selectCust(\''+c.id+'\',\''+Utils.esc(c.name)+'\')" '
-        + 'style="padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:var(--t1);border-bottom:1px solid var(--bd)" '
-        + 'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
-        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
-        + '<span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--g3));display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#07080D;flex-shrink:0">'+c.name[0].toUpperCase()+'</span>'
-        + '<span style="flex:1">'+Utils.esc(c.name)+'</span>'
-        + (openBal>0?'<span style="font-size:10px;color:var(--wa);font-weight:700">Owes '+Utils.cur(openBal,cur)+'</span>':'<span style="font-size:10px;color:var(--ok)">Clear</span>')
-        + '</div>'
-        + '<div style="font-size:10px;color:var(--t2);padding-left:36px">'
-        + allSales.length+' invoices · Total spent: '+Utils.cur(c.totalSpent||0,cur)
-        + (c.phone?' · '+c.phone:'')
-        + '</div></div>';
-    }).join('');
+    var sugg = Utils.get('s-cust-suggestions');
+    var info = Utils.get('s-cust-info');
+    if (!sugg) return;
+    var q = (val||'').toLowerCase().trim();
+    if (!q) { sugg.style.display='none'; if(info) info.style.display='none'; return; }
+    var custs = DB.getCustomers();
+    var matches = custs.filter(function(c){
+      return c.name.toLowerCase().includes(q)
+          || (c.phone && c.phone.includes(q))
+          || (c.email && c.email.toLowerCase().includes(q));
+    }).slice(0, 8);
+    if (!matches.length) {
+      sugg.innerHTML = '<div style="padding:10px 14px;font-size:12px;color:var(--t3)">No customer found</div>'
+        + '<div onclick="Sales.selectWalkin()" style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use as walk-in</div>';
+        + 'style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use "'+Utils.esc(val)+'" as walk-in</div>';
+      sugg.style.display = 'block';
+    } else {
+      sugg.innerHTML = matches.map(function(c){
+        var debt = '';
+        try { if (c.balance>0) debt = ' · Owes: '+Utils.cur(c.balance, DB.getSettings().currency||'$'); } catch(e){}
+        var div = document.createElement('div');
+        div.style.cssText = 'padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bd)';
+        div.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--t1)">'+Utils.esc(c.name)+'</div>'
+          + '<div style="font-size:11px;color:var(--t2)">'+(c.phone||'')+debt+'</div>';
+        div.setAttribute('data-cid', c.id||'');
+        div.setAttribute('data-cname', c.name||'');
+        div.addEventListener('click', function(){
+          Sales.selectCust(this.getAttribute('data-cid'), this.getAttribute('data-cname'));
+        });
+        return div.outerHTML;
+      }).join('');
+      sugg.style.display = 'block';
+    }
   },
 
-  selectCust: function(id, name) {
-    Utils.get('s-cust-name').value=name;
-    Utils.get('s-cust-id').value=id;
-    Utils.get('s-cust-suggestions').style.display='none';
+
+  selectCust: function(custOrId, name) {
+    // Accept either object {name,phone,address,email,id} or (id, name)
+    var c_id, c_name, c_phone, c_addr, c_email;
+    if (custOrId && typeof custOrId === 'object') {
+      c_id = custOrId.id; c_name = custOrId.name;
+      c_phone = custOrId.phone; c_addr = custOrId.address; c_email = custOrId.email;
+    } else {
+      c_id = custOrId; c_name = name;
+      var found = DB.getCustomers().find(function(x){ return x.id===c_id; });
+      if (found) { c_phone=found.phone; c_addr=found.address; c_email=found.email; }
+    }
+    var nameEl = Utils.get('s-cust-name');
+    var idEl   = Utils.get('s-cust-id');
+    var sugg   = Utils.get('s-cust-suggestions');
+    if (nameEl) nameEl.value = c_name || '';
+    if (idEl)   idEl.value   = c_id   || '';
+    if (sugg)   sugg.style.display = 'none';
     var tag=Utils.get('s-cust-tag');
     // Show customer info panel
     var c = DB.getCustomers().find(function(x){ return x.id===id; });
@@ -171,6 +202,18 @@ var Sales = {
   },
 
   // ── CART ───────────────────────────────────────────────────────────────────
+
+  addToCartById: function(id) {
+    var p = DB.getProducts().find(function(x){ return x.id===id; });
+    if (!p) return;
+    var existing = this.cart.find(function(i){ return i.id===id; });
+    if (existing) { existing.qty++; }
+    else { this.cart.push({ id:p.id, name:p.name, qty:1, price:p.price, cost:p.cost||0, unit:p.unit||'Pcs', discount:0 }); }
+    this.renderCart();
+    this.updateTotals();
+    Toast.show(p.name + ' added ✓', 'ok');
+  },
+
   addToCart: function(sel) {
     // Intercept "+ Add New Product"
     if (QuickCreate.onProductChange(sel, function(newProd) {
