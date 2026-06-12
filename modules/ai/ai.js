@@ -259,7 +259,11 @@ var AI = {
         self._setStatus('Report ready ✓', 'var(--ok)');
         Toast.show('Full business report generated ✓','ok');
       } else {
-        self._addBot('⚠️ ' + (data.error ? data.error.message : 'Could not generate report. Please try again.'));
+        var errMsg = data.error ? data.error.message : 'Could not generate report.';
+        if (errMsg.toLowerCase().includes('api-key') || errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('auth')) {
+          errMsg = '🔑 API key issue. Please check your Anthropic API key in ai.js';
+        }
+        self._addBot('⚠️ ' + errMsg);
         self._setStatus('Ready', 'var(--ok)');
       }
     }).catch(function(err) {
@@ -449,7 +453,11 @@ var AI = {
         this.history.push({role:'assistant', content:ans});
         if (this.history.length > 20) this.history = this.history.slice(-20);
       } else {
-        this._addBot('⚠️ ' + (data.error ? data.error.message : 'No response. Please try again.'));
+        var errMsg2 = data.error ? data.error.message : 'No response.';
+        if (errMsg2.toLowerCase().includes('api-key') || errMsg2.toLowerCase().includes('auth')) {
+          errMsg2 = '🔑 API key invalid. Update the KEY in ai.js with a valid Anthropic API key.';
+        }
+        this._addBot('⚠️ ' + errMsg2);
       }
     } catch(err) {
       this._rmTyping(tid);
