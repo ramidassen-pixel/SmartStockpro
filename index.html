@@ -2822,6 +2822,58 @@ var Sales = {
 
   // ── CART ───────────────────────────────────────────────────────────────────
 
+  onProdSearch: function(val) {
+    var sugg = Utils.get('s-prod-suggestions');
+    if (!sugg) return;
+    var q = (val||'').toLowerCase().trim();
+    if (!q) { sugg.style.display = 'none'; return; }
+    var cur   = DB.getSettings().currency || '$';
+    var prods = DB.getProducts().filter(function(p){ return p.status !== 'inactive'; });
+    var matches = prods.filter(function(p){
+      return p.name.toLowerCase().includes(q)
+          || (p.sku      && p.sku.toLowerCase().includes(q))
+          || (p.barcode  && p.barcode.toLowerCase().includes(q))
+          || (p.category && p.category.toLowerCase().includes(q));
+    }).slice(0, 12);
+
+    sugg.innerHTML = '';
+    sugg.style.display = 'block';
+
+    if (!matches.length) {
+      var noRes = document.createElement('div');
+      noRes.style.cssText = 'padding:12px 14px;font-size:13px;color:var(--t3)';
+      noRes.textContent = 'No product found for "' + val + '"';
+      sugg.appendChild(noRes);
+      var addNew = document.createElement('div');
+      addNew.style.cssText = 'padding:12px 14px;font-size:13px;font-weight:700;color:var(--g);cursor:pointer;border-top:1px solid var(--bd);display:flex;align-items:center;gap:8px';
+      addNew.innerHTML = '<span style="font-size:18px">+</span> Add New Product';
+      addNew.addEventListener('click', function() {
+        sugg.style.display = 'none';
+        var s = Utils.get('s-prod-search'); if(s) s.value = '';
+        QuickCreate.quickProduct(function(p){ Sales.addToCartById(p.id); });
+      });
+      sugg.appendChild(addNew);
+      return;
+    }
+    matches.forEach(function(p) {
+      var qtyColor = p.qty<=0 ? '#FF4D6A' : p.qty<=(p.lowLevel||5) ? '#FFAD1F' : '#0FD47D';
+      var item = document.createElement('div');
+      item.style.cssText = 'padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--bd)';
+      item.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<div style="font-size:14px;font-weight:700;color:var(--t1)">' + Utils.esc(p.name) + '</div>'
+        + '<div style="font-size:15px;font-weight:800;color:#D4A843">' + Utils.cur(p.price,cur) + '</div>'
+        + '</div>'
+        + '<div style="font-size:11px;color:' + qtyColor + ';margin-top:3px">'
+        + p.qty + ' in stock' + (p.sku ? ' · ' + p.sku : '') + '</div>';
+      item.addEventListener('click', function(){
+        Sales.addToCartById(p.id);
+        var s = Utils.get('s-prod-search'); if(s) s.value = '';
+        sugg.style.display = 'none';
+      });
+      sugg.appendChild(item);
+    });
+  },
+
   addToCartById: function(id) {
     var p = DB.getProducts().find(function(x){ return x.id===id; });
     if (!p) return;
