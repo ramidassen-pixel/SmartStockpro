@@ -19,7 +19,7 @@ var Dashboard = {
     var dow       = now.getDay(); // 0=Sun
 
     // ── Role visibility ───────────────────────────────────────────────────
-    var canSeeMoney = (role==='owner'||role==='admin'||role==='primary admin'||role==='manager');
+    var canSeeMoney = (role==='owner'||role==='admin'||role==='primary_admin'||role==='primary admin'||role==='manager'||role==='store_manager'||role==='accountant');
     var mask = '— — —';
     function showMoney(val) { return canSeeMoney ? Utils.cur(val, cur) : mask; }
 
