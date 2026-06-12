@@ -31,7 +31,7 @@ var Reports = {
     var weekStr  = weekDate.toISOString().slice(0, 10);
     var user     = Auth.currentUser || {};
     var role     = (user.role || 'owner').toLowerCase();
-    var canSeeMoney = role === 'owner' || role === 'admin' || role === 'primary admin' || role === 'manager';
+    var canSeeMoney = (role==='owner'||role==='admin'||role==='primary_admin'||role==='primary admin'||role==='manager'||role==='store_manager'||role==='accountant');
     var mask = '— — —';
 
     // Date range for current period
