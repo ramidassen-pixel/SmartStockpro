@@ -1,7 +1,20 @@
 var Utils = {
-  cur(v, sym) {
-    sym = sym || DB.getSettings().currency || '$';
-    return sym + (parseFloat(v) || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  cur: function(v, sym) {
+    try { if (!sym) { try { sym = DB.getSettings().currency || '$'; } catch(e2) { sym = '$'; } } } catch(e) { sym = '$'; }
+    try {
+      var n = parseFloat(v) || 0;
+      var fixed = n.toFixed(2);
+      var parts = fixed.split('.');
+      var intPart = parts[0];
+      var result = '';
+      var count = 0;
+      for (var i = intPart.length - 1; i >= 0; i--) {
+        if (count > 0 && count % 3 === 0) result = ',' + result;
+        result = intPart[i] + result;
+        count++;
+      }
+      return sym + result + '.' + parts[1];
+    } catch(e) { return (sym||'$') + '0.00'; }
   },
   date(d) { return d ? new Date(d).toLocaleDateString('en-US', {year:'numeric',month:'short',day:'2-digit'}) : '—'; },
   today() { return new Date().toISOString().slice(0,10); },
