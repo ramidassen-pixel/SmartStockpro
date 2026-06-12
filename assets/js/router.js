@@ -1,4 +1,4 @@
-var PAGES = ['dashboard','products','sales','customers','suppliers','supply','expenses','salary','finance','reports','quotations','ai','settings','more','usermgmt'];
+var PAGES = ['dashboard','products','sales','customers','suppliers','supply','expenses','salary','finance','reports','quotations','ai','settings','more','usermgmt','closing'];
 var BN_PAGES = ['dashboard','sales','products','customers','more'];
 
 var Router = {
@@ -40,6 +40,7 @@ var Router = {
       reports:   () => Reports.render(),
       ai:        () => AI.render(),
       usermgmt:  () => UserMgmt.render(),
+      closing:   () => ClosingReport.render(),
       settings:  () => Settings.render(),
       more:      () => MorePage.render(),
     };
