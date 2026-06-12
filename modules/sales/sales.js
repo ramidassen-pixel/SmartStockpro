@@ -819,21 +819,60 @@ var Sales = {
 
   // ── SHARED PRINT HELPER ────────────────────────────────────────────────────
   _printHtml: function(html, frameId){
-    var old=document.getElementById(frameId); if(old) old.remove();
-    var f=document.createElement('iframe');
-    f.id=frameId;
-    f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
-    document.body.appendChild(f);
+    // Remove old frame/overlay
+    var old = document.getElementById(frameId);
+    if (old) old.remove();
+    var oldOv = document.getElementById(frameId + '-overlay');
+    if (oldOv) oldOv.remove();
+
+    // Android Chrome requires the iframe to be visible to print
+    // Use a full-screen overlay that is removed after print
+    var overlay = document.createElement('div');
+    overlay.id  = frameId + '-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff';
+
+    var f = document.createElement('iframe');
+    f.id  = frameId;
+    f.style.cssText = 'width:100%;height:100%;border:none';
+    overlay.appendChild(f);
+    document.body.appendChild(overlay);
+
+    // Inject close button so user can get back if print dialog dismissed
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕ Close Preview';
+    closeBtn.style.cssText = 'position:fixed;top:10px;right:10px;z-index:100000;'
+      + 'background:#111;color:#fff;border:none;padding:10px 18px;border-radius:8px;'
+      + 'font-size:14px;font-weight:700;cursor:pointer';
+    closeBtn.onclick = function() {
+      overlay.remove();
+    };
+    document.body.appendChild(closeBtn);
+    overlay._closeBtn = closeBtn;
+
     try {
       f.contentDocument.open();
       f.contentDocument.write(html);
       f.contentDocument.close();
-      setTimeout(function(){
-        try { f.contentWindow.print(); }
-        catch(e){ window.open('data:text/html;charset=utf-8,'+encodeURIComponent(html),'_blank'); }
-      }, 600);
-    } catch(e){
-      window.open('data:text/html;charset=utf-8,'+encodeURIComponent(html),'_blank');
+      setTimeout(function() {
+        try {
+          f.contentWindow.focus();
+          f.contentWindow.print();
+          // Remove overlay after print dialog closes
+          setTimeout(function() {
+            overlay.remove();
+            closeBtn.remove();
+          }, 2000);
+        } catch(e) {
+          // Fallback: open in new tab
+          overlay.remove();
+          closeBtn.remove();
+          window.open('data:text/html;charset=utf-8,' + encodeURIComponent(html), '_blank');
+        }
+      }, 500);
+    } catch(e) {
+      overlay.remove();
+      closeBtn.remove();
+      window.open('data:text/html;charset=utf-8,' + encodeURIComponent(html), '_blank');
     }
   },
 };
