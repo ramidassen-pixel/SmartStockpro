@@ -70,61 +70,104 @@ var Sales = {
   // ── NEW SALE FORM ──────────────────────────────────────────────────────────
   openNewSale: function() {
     this.cart=[]; this.discount=0;
-    var custs    = DB.getCustomers();
-    var prods    = DB.getProducts().filter(function(p){ return p.status!=='inactive' && p.qty>0; });
     var settings = DB.getSettings();
-    var cur      = settings.currency||'$';
-
-    var custOpts = prods.map(function(p){
-      return '<option value="'+p.id+'">'+Utils.esc(p.name)+' · '+Utils.cur(p.price,cur)+' · '+p.qty+' left</option>';
-    }).join('');
+    var cur      = settings.currency || '$';
+    var lrdRate  = settings.lrdRate  || 198; // LRD per 1 USD
 
     Modal.open({
       title:'New Sale', sub:'Create invoice', barColor:'var(--ok)',
-      body: '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
-          + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">👤 Customer</div>'
-          + '<div class="form-row" style="margin-bottom:8px">'
-          + '<div class="fg" style="margin:0"><label class="fl">Customer Name</label>'
-          + '<div style="position:relative">'
-          + '<input class="fi" id="s-cust-name" placeholder="Type name, phone or walk-in..." oninput="Sales.onCustNameInput(this.value)" autocomplete="off" style="font-weight:600">'
-          + '<div id="s-cust-suggestions" style="position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);z-index:99;max-height:200px;overflow-y:auto;display:none"></div>'
-          + '</div>'
-          + '<div id="s-cust-info" style="display:none;margin-top:6px;font-size:11px;color:var(--ok);font-weight:600"></div>'
-          + '</div>'
-          + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
-          + '<input class="fi" id="s-date" type="date" value="'+Utils.today()+'"></div></div>'
-          + '<input type="hidden" id="s-cust-id" value="">'
-          + '<div id="s-cust-suggestions" style="display:none;border:1px solid var(--bd2);border-radius:var(--r8);background:var(--bg2);overflow:hidden;max-height:140px;overflow-y:auto"></div>'
-          + '<div id="s-cust-tag" style="display:none;font-size:11px;color:var(--ok);font-weight:600;margin-top:5px;font-family:var(--fm)"></div>'
-          + '</div>'
-          + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
-          + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📦 Products</div>'
-          + '<div class="fg" style="margin-bottom:10px"><label class="fl">Search & Add Product</label>'
-          + '<div style="position:relative">'
-          + '<input class="fi" id="s-prod-search" placeholder="Type product name, SKU or barcode..." oninput="Sales.onProdSearch(this.value)" autocomplete="off">'
-          + '<div id="s-prod-suggestions" style="position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);z-index:99;max-height:220px;overflow-y:auto;display:none"></div>'
-          + '</div></div>'
-          + '<div id="s-cart-wrap"><div style="text-align:center;padding:14px 0;color:var(--t3);font-size:13px">No items added yet</div></div>'
-          + '</div>'
-          + '<div id="s-totals"></div>'
-          + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
-          + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">💳 Payment</div>'
-          + '<div class="form-row" style="margin-bottom:12px">'
-          + '<div class="fg" style="margin:0"><label class="fl">Discount %</label><input class="fi" id="s-disc" type="number" value="0" min="0" max="100" oninput="Sales.updateTotals()"></div>'
-          + '<div class="fg" style="margin:0"><label class="fl">Payment Method</label><select class="fi" id="s-method"><option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option><option>Credit</option></select></div>'
-          + '</div>'
-          + '<div class="fg" style="margin:0"><label class="fl">Amount Paid Now <span style="color:var(--t3);text-transform:none;letter-spacing:0;font-weight:400">(0 = full payment on save)</span></label>'
-          + '<input class="fi" id="s-amt-paid" type="number" value="0" min="0" step="0.01" oninput="Sales.updateTotals()" style="font-size:16px;font-weight:700;color:var(--ok)"></div>'
-          + '</div>'
-          + '<div class="fg"><label class="fl">Notes (optional)</label><input class="fi" id="s-notes" placeholder="Any extra information..."></div>',
+      body:
+        // ── Customer ─────────────────────────────────────────────
+        '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">👤 Customer</div>'
+        + '<div class="form-row" style="margin-bottom:0">'
+
+        // Customer name with smart search
+        + '<div class="fg" style="margin:0"><label class="fl">Customer Name</label>'
+        + '<div style="position:relative">'
+        + '<input class="fi" id="s-cust-name" placeholder="Type name or phone..." '
+        + 'oninput="Sales.onCustNameInput(this.value)" autocomplete="off" style="font-weight:600">'
+        + '<div id="s-cust-suggestions" style="position:absolute;top:100%;left:0;right:0;'
+        + 'background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);'
+        + 'z-index:200;max-height:200px;overflow-y:auto;display:none;box-shadow:var(--sh2)"></div>'
+        + '</div>'
+        + '<div id="s-cust-tag" style="display:none;font-size:11px;color:var(--ok);font-weight:600;margin-top:5px"></div>'
+        + '</div>'
+
+        + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
+        + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '"></div>'
+        + '</div>'
+        + '<input type="hidden" id="s-cust-id" value="">'
+        + '</div>'
+
+        // ── Products ──────────────────────────────────────────────
+        + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📦 Products</div>'
+        + '<div class="fg" style="margin-bottom:10px"><label class="fl">Search Products</label>'
+        + '<div style="position:relative">'
+        + '<input class="fi" id="s-prod-search" placeholder="Type name, SKU or barcode..." '
+        + 'oninput="Sales.onProdSearch(this.value)" autocomplete="off">'
+        + '<div id="s-prod-suggestions" style="position:absolute;top:100%;left:0;right:0;'
+        + 'background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);'
+        + 'z-index:200;max-height:240px;overflow-y:auto;display:none;box-shadow:var(--sh2)"></div>'
+        + '</div></div>'
+        + '<div id="s-cart-wrap"><div style="text-align:center;padding:14px 0;color:var(--t3);font-size:13px">No items added — search above</div></div>'
+        + '</div>'
+
+        // ── Totals ────────────────────────────────────────────────
+        + '<div id="s-totals"></div>'
+
+        // ── Payment ───────────────────────────────────────────────
+        + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">💳 Payment</div>'
+        + '<div class="form-row" style="margin-bottom:12px">'
+        + '<div class="fg" style="margin:0"><label class="fl">Discount %</label>'
+        + '<input class="fi" id="s-disc" type="number" placeholder="0" min="0" max="100" '
+        + 'oninput="Sales.updateTotals()"></div>'
+        + '<div class="fg" style="margin:0"><label class="fl">Payment Method</label>'
+        + '<select class="fi" id="s-method">'
+        + '<option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option><option>Credit</option>'
+        + '</select></div>'
+        + '</div>'
+
+        // Amount paid — no zero placeholder
+        + '<div class="fg" style="margin-bottom:10px"><label class="fl">Amount Paid (USD) — leave blank for full payment</label>'
+        + '<input class="fi" id="s-amt-paid" type="number" placeholder="" min="0" step="0.01" '
+        + 'oninput="Sales.updateTotals()" style="font-size:16px;font-weight:700;color:var(--ok)"></div>'
+
+        // LRD Converter
+        + '<div style="background:var(--inb);border:1px solid var(--inbd);border-radius:var(--r10);padding:12px;margin-bottom:10px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--in);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">🇱🇷 LRD ↔ USD Converter</div>'
+        + '<div class="form-row" style="margin-bottom:8px">'
+        + '<div class="fg" style="margin:0"><label class="fl">Rate (LRD per $1)</label>'
+        + '<input class="fi" id="s-lrd-rate" type="number" placeholder="' + lrdRate + '" value="' + lrdRate + '" '
+        + 'min="1" oninput="Sales.calcLrd()" style="font-weight:700;color:var(--in)"></div>'
+        + '<div class="fg" style="margin:0"><label class="fl">Amount in LRD</label>'
+        + '<input class="fi" id="s-lrd-amt" type="number" placeholder="Enter LRD amount" min="0" '
+        + 'oninput="Sales.calcLrd()" style="font-weight:700;color:var(--in)"></div>'
+        + '</div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:var(--r8);padding:10px 14px">'
+        + '<span style="font-size:12px;color:var(--t2)">= USD equivalent</span>'
+        + '<span id="s-lrd-result" style="font-size:18px;font-weight:800;color:var(--in);font-family:var(--fm)">$0.00</span>'
+        + '<button onclick="Sales.useLrdAmount()" class="btn-ghost btn-sm" style="color:var(--in);border-color:var(--inbd)">Use this amount</button>'
+        + '</div>'
+        + '</div>'
+
+        + '</div>'
+        + '<div class="fg"><label class="fl">Notes (optional)</label>'
+        + '<input class="fi" id="s-notes" placeholder="Any extra information..."></div>',
+
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-ghost" onclick="Sales.saveSale(\'new\')" style="color:var(--g);border-color:rgba(201,168,76,.3)">💾 Save &amp; New</button>'
+            + '<button class="btn-ghost" onclick="Sales.saveSale(\'new\')" style="color:var(--g);border-color:rgba(201,168,67,.3)">💾 Save &amp; New</button>'
             + '<button class="btn-primary" style="flex:1" onclick="Sales.saveSale(\'close\')">🧾 Save Invoice</button>',
     });
-    var nameEl=Utils.get('s-cust-name');
-    if(nameEl) nameEl.value='Walk-in Customer';
+
+    // Set default customer
+    var nameEl = Utils.get('s-cust-name');
+    if (nameEl) nameEl.value = 'Walk-in Customer';
     this.updateTotals();
   },
+
 
   // ── CUSTOMER AUTO-SUGGEST + INFO PANEL ────────────────────────────────────
   onCustNameInput: function(val) {
@@ -327,7 +370,8 @@ var Sales = {
     var sub      = this.cart.reduce(function(a,i){ return a+(parseFloat(i.price)||0)*(parseInt(i.qty)||0); },0);
     var discAmt  = sub*(this.discount/100);
     var total    = sub-discAmt;
-    var paidRaw  = parseFloat(Utils.val('s-amt-paid')||0);
+    var _amtStr  = Utils.val('s-amt-paid').trim();
+    var paidRaw  = _amtStr === '' ? total : (parseFloat(_amtStr)||0);
     var paid     = Math.min(paidRaw, total);
     var balance  = Math.max(0, total-paid);
     var status   = paid>0&&balance>0?'Partial':(paid<=0&&method==='Credit')?'Credit':'Paid';
