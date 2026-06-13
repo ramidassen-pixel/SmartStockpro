@@ -237,7 +237,7 @@ var AI = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': this.KEY,
+        'x-api-key': AI.KEY,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
@@ -259,9 +259,10 @@ var AI = {
         self._setStatus('Report ready ✓', 'var(--ok)');
         Toast.show('Full business report generated ✓','ok');
       } else {
-        var errMsg = data.error ? data.error.message : 'Could not generate report.';
-        if (errMsg.toLowerCase().includes('api-key') || errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('auth')) {
-          errMsg = '🔑 API key issue. Please check your Anthropic API key in ai.js';
+        var errMsg = data.error ? (data.error.message + ' [type:' + (data.error.type||'?') + ']') : 'Could not generate report.';
+        console.error('AI API Error:', JSON.stringify(data));
+        if (errMsg.toLowerCase().includes('api-key') || errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('invalid')) {
+          errMsg = '🔑 API key rejected by Anthropic. Key: ' + AI.KEY.slice(0,20) + '...';
         }
         self._addBot('⚠️ ' + errMsg);
         self._setStatus('Ready', 'var(--ok)');
@@ -431,7 +432,7 @@ var AI = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': this.KEY,
+          'x-api-key': AI.KEY,
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
@@ -453,9 +454,10 @@ var AI = {
         this.history.push({role:'assistant', content:ans});
         if (this.history.length > 20) this.history = this.history.slice(-20);
       } else {
-        var errMsg2 = data.error ? data.error.message : 'No response.';
-        if (errMsg2.toLowerCase().includes('api-key') || errMsg2.toLowerCase().includes('auth')) {
-          errMsg2 = '🔑 API key invalid. Update the KEY in ai.js with a valid Anthropic API key.';
+        var errMsg2 = data.error ? (data.error.message + ' [type:' + (data.error.type||'?') + ']') : 'No response.';
+        console.error('AI Chat Error:', JSON.stringify(data));
+        if (errMsg2.toLowerCase().includes('api-key') || errMsg2.toLowerCase().includes('auth') || errMsg2.toLowerCase().includes('invalid')) {
+          errMsg2 = '🔑 API key rejected. Key starts with: ' + AI.KEY.slice(0,20) + '...';
         }
         this._addBot('⚠️ ' + errMsg2);
       }
