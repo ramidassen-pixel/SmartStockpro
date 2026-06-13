@@ -2,7 +2,7 @@ var AI = {
   history: [],
   busy: false,
   inited: false,
-  KEY: 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
+  KEY: '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',
 
   render: function() {
     var pg = Utils.get('pg-ai');
