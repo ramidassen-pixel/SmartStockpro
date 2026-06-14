@@ -4,11 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SmartStock">
 <meta name="description" content="SmartStock Pro V5 — Business Management System">
-<meta name="theme-color" content="#070A12">
 <title>SmartStock Pro</title>
 <link rel="stylesheet" href="assets/css/variables.css">
 <link rel="stylesheet" href="assets/css/reset.css">
@@ -52,11 +48,13 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
 .splash-txt { font-size:11px;font-weight:600;color:rgba(255,255,255,.35);letter-spacing:.18em;text-transform:uppercase; }
 </style>
 <!-- PWA -->
-<link rel="manifest" href="pwa/manifest.json">
-<link rel="apple-touch-icon" href="pwa/icon-192.png">
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SmartStock">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
 </head>
 <body>
 
@@ -3275,7 +3273,15 @@ var Sales = {
       + '@media print{@page{size:A4;margin:12mm}body{padding:0;max-width:100%}}';
 
     // ── Full HTML ─────────────────────────────────────────
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice '+s.id+'</title><style>'+css+'</style></head><body>'
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice '+s.id+'</title><style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
 
       // Header — logo + business name
       + '<div style="text-align:center;padding-bottom:16px;border-bottom:2px solid #111;margin-bottom:16px">'
@@ -3371,7 +3377,15 @@ var Sales = {
     }).join('');
 
     var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Payment Receipt</title>'
-      +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;font-size:13px;color:#000;background:#fff;padding:12px;max-width:360px;margin:0 auto}.center{text-align:center}.bold{font-weight:bold}.lg{font-size:16px}.sm{font-size:11px}.line{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;padding:3px 0}.paid{color:#16a34a}.bal{color:#d97706}@media print{@page{margin:5mm}body{max-width:100%}}</style></head><body>'
+      +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;font-size:13px;color:#000;background:#fff;padding:12px;max-width:360px;margin:0 auto}.center{text-align:center}.bold{font-weight:bold}.lg{font-size:16px}.sm{font-size:11px}.line{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;padding:3px 0}.paid{color:#16a34a}.bal{color:#d97706}@media print{@page{margin:5mm}body{max-width:100%}}</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       +'<div class="center bold lg">'+bizName+'</div>'
       +'<div class="center bold sm">PAYMENT RECEIPT</div>'
       +'<div class="center sm">'+now.toLocaleString()+'</div>'
@@ -6028,7 +6042,15 @@ var Salary = {
     /* ── FULL HTML ─────────────────────────────────────────────────────── */
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
       +'<title>'+Utils.esc(e.name)+' Payslip — '+payMonthFull+'</title>'
-      +'<style>'+css+'</style></head><body>'
+      +'<style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       +'<div class="page">'
 
       /* ── HEADER BAND ── */
@@ -6448,7 +6470,15 @@ var Finance = {
       + '.sig{flex:1;border-top:1px solid #333;padding-top:6px;font-size:11px;color:#444;margin-right:20px}'
       + '@media print{@page{size:A4;margin:12mm}}';
 
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Finance Summary</title><style>'+css+'</style></head><body>'
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Finance Summary</title><style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       + '<div style="text-align:center;margin-bottom:10px">'
       + (settings.bizLogo?'<img src="'+settings.bizLogo+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #ddd;margin-bottom:6px"><br>':'')
       + '<strong style="font-size:20px">'+Utils.esc(bizName)+'</strong><br>'
@@ -7084,7 +7114,15 @@ var Reports = {
       return '<div class="sum-row"><span>'+Utils.esc(m)+'</span><span class="bold">'+Utils.cur(payTotals[m],cur)+'</span></div>';
     }).join('');
 
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Report — '+Utils.esc(bizName)+'</title><style>'+css+'</style></head><body>'
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Report — '+Utils.esc(bizName)+'</title><style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       + '<div class="page">'
       // Header
       + '<div class="header">'
@@ -7711,7 +7749,15 @@ var Quotations = {
 
     var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
       +'<meta name="viewport" content="width=device-width,initial-scale=1">'
-      +'<title>Quotation '+q.id+'</title><style>'+css+'</style></head><body>'
+      +'<title>Quotation '+q.id+'</title><style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       +'<div class="page">'
 
       // Header
@@ -8192,7 +8238,15 @@ var AI = {
       .replace(/(<tr>[\s\S]*?<\/tr>)+/g,'<table>$&</table>')
       .replace(/\n/g,'<br>');
 
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Business Report</title><style>'+css+'</style></head><body>'
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Business Report</title><style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       + logoHtml
       + '<h1>' + biz + '</h1>'
       + '<p style="text-align:center;color:#555;font-size:11px">DAILY BUSINESS MANAGEMENT REPORT &nbsp;|&nbsp; ' + date + '</p>'
@@ -9905,7 +9959,15 @@ var ClosingReport = {
       + '@media print{@page{size:A4;margin:10mm}.page{padding:0}}';
 
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
-      + '<title>Daily Closing — '+Utils.esc(bizName)+'</title><style>'+css+'</style></head><body>'
+      + '<title>Daily Closing — '+Utils.esc(bizName)+'</title><style>'+css+'</style><!-- PWA -->
+<link rel="manifest" href="/SmartStockpro/pwa/manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="/SmartStockpro/pwa/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/SmartStockpro/pwa/icon-512.png">
+<meta name="theme-color" content="#D4A843">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartStock Pro">
+</head><body>'
       + '<div class="page">'
 
       // Header
@@ -10071,7 +10133,9 @@ var ClosingReport = {
   }, 5000);
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('./pwa/service-worker.js').catch(function(e){});
+      navigator.serviceWorker.register('/SmartStockpro/pwa/service-worker.js')
+        .then(function(reg){ console.log('SW registered, scope:', reg.scope); })
+        .catch(function(e){ console.log('SW error:', e); });
     });
   }
 })();
