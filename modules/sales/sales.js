@@ -646,139 +646,179 @@ var Sales = {
   printReceipt: function(id){
     var s = DB.getSales().find(function(x){ return x.id===id; }); if(!s) return;
     var settings = DB.getSettings();
-    var cur      = settings.currency  || '$';
-    var bizName  = settings.bizName   || 'SmartStock Pro';
-    var bizAddr  = settings.bizAddress|| '';
-    var bizPhone = settings.bizPhone  || '';
-    var bizEmail = settings.bizEmail  || '';
-    var bizLogo  = settings.bizLogo   || '';
+    var cur      = settings.currency   || '$';
+    var bizName  = settings.bizName    || 'SmartStock Pro';
+    var bizAddr  = settings.bizAddress || '';
+    var bizPhone = settings.bizPhone   || '';
+    var bizEmail = settings.bizEmail   || '';
+    var bizLogo  = settings.bizLogo    || '';
     var now      = new Date();
     var payments = DB.getPaymentsForSale(id);
 
-    // ── Logo ─────────────────────────────────────────────
+    // Logo
     var logoHtml = bizLogo
-      ? '<img src="'+bizLogo+'" style="width:80px;height:80px;object-fit:contain;display:block;margin:0 auto 10px" onerror="this.style.display=\'none\'">'
+      ? '<img src="'+bizLogo+'" style="width:72px;height:72px;object-fit:contain;border-radius:10px;margin-right:16px;flex-shrink:0" onerror="this.style.display=\'none\'">'
       : '';
 
-    // ── Items table rows ──────────────────────────────────
-    var itemRows = (s.items||[]).map(function(item){
-      var lineTotal = (parseFloat(item.price)||0) * (parseInt(item.qty)||1);
-      return '<tr>'
-        + '<td style="padding:7px 0;border-bottom:1px solid #e8e8e8;font-size:13px;color:#111">'+Utils.esc(item.name)+'</td>'
-        + '<td style="padding:7px 0;border-bottom:1px solid #e8e8e8;font-size:12px;color:#555;text-align:center;white-space:nowrap">'+item.qty+' &times; '+Utils.cur(item.price,cur)+'</td>'
-        + '<td style="padding:7px 0;border-bottom:1px solid #e8e8e8;font-size:13px;font-weight:700;text-align:right;white-space:nowrap">'+Utils.cur(lineTotal,cur)+'</td>'
-        + '</tr>';
+    // Status colour
+    var statusColor = s.status==='Paid' ? '#16a34a' : s.status==='Partial' ? '#d97706' : '#dc2626';
+
+    // Customer info from customers DB
+    var custRec = DB.getCustomers().find(function(c){ return c.id===s.customerId || c.name===s.customer; });
+    var custPhone   = custRec ? (custRec.phone||'')   : '';
+    var custAddress = custRec ? (custRec.address||'') : '';
+    var custEmail   = custRec ? (custRec.email||'')   : '';
+
+    // Items rows — same columns as quotation
+    var itemRows = (s.items||[]).map(function(item, i){
+      var lineTotal = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
+      var bg = i%2===1 ? 'background:#f9fafb;' : '';
+      return '<tr style="'+bg+'border-bottom:1px solid #e5e7eb">'
+        +'<td style="padding:10px 12px;font-size:12px">'+Utils.esc(item.name||'')+'</td>'
+        +'<td style="padding:10px 12px;font-size:12px;text-align:center">'+item.qty+'</td>'
+        +'<td style="padding:10px 12px;font-size:12px;text-align:center">'+(item.unit||'Pcs')+'</td>'
+        +'<td style="padding:10px 12px;font-size:12px;text-align:right">'+Utils.cur(item.price,cur)+'</td>'
+        +'<td style="padding:10px 12px;font-size:12px;text-align:right">'+((item.discount||0)>0?(item.discount+'%'):'—')+'</td>'
+        +'<td style="padding:10px 12px;font-size:12px;font-weight:700;text-align:right">'+Utils.cur(lineTotal,cur)+'</td>'
+        +'</tr>';
     }).join('');
 
-    // ── Payment history ───────────────────────────────────
+    // Payment history rows
     var payHistHtml = '';
     if (payments.length > 0) {
-      payHistHtml = '<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #ccc">'
-        + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:6px">Payment History</div>'
-        + payments.map(function(p, i){
-            return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">'
-              + '<span style="color:#555">#'+(i+1)+' '+(p.paidAt ? new Date(p.paidAt).toLocaleDateString() : Utils.date(s.date))+'</span>'
-              + '<span style="font-weight:600;color:#16a34a">'+Utils.cur(p.amount,cur)+'</span>'
-              + '</div>';
-          }).join('')
-        + '</div>';
+      payHistHtml = '<div style="margin-top:20px;padding:14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">'
+        +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:10px">Payment History</div>'
+        +payments.map(function(p, i){
+          return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:1px solid #e5e7eb">'
+            +'<span style="color:#555">#'+(i+1)+' · '+Utils.date(p.paidAt||s.date)+' · '+(p.method||'Cash')+'</span>'
+            +'<span style="font-weight:700;color:#16a34a">'+Utils.cur(p.amount,cur)+'</span>'
+            +'</div>';
+        }).join('')
+        +'</div>';
     }
 
-    // ── Status badge ──────────────────────────────────────
-    var statusColor = s.status==='Paid' ? '#16a34a' : s.status==='Partial' ? '#d97706' : '#dc2626';
-    var statusBg    = s.status==='Paid' ? '#f0fdf4' : s.status==='Partial' ? '#fffbeb' : '#fef2f2';
+    var subtotal  = (s.subtotal||s.total||0);
+    var discAmt   = (s.discount||0) > 0 ? subtotal*(s.discount/100) : 0;
+    var total     = parseFloat(s.total)||0;
+    var amtPaid   = parseFloat(s.amountPaid||s.total)||0;
+    var balance   = parseFloat(s.balance)||0;
 
-    // ── CSS ───────────────────────────────────────────────
+    // CSS — identical to quotation template
     var css = '*{margin:0;padding:0;box-sizing:border-box}'
-      + 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#fff;color:#111;padding:20px;max-width:520px;margin:0 auto}'
-      + 'table{width:100%;border-collapse:collapse}'
-      + '@media print{@page{size:A4;margin:12mm}body{padding:0;max-width:100%}}';
+      +'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:13px;color:#111;background:#fff}'
+      +'.page{max-width:210mm;margin:0 auto;padding:16mm}'
+      +'.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #111}'
+      +'.biz-block{flex:1;padding-right:20px}'
+      +'.biz-name{font-size:24px;font-weight:900;letter-spacing:-.03em;margin-bottom:6px}'
+      +'.biz-detail{font-size:11px;color:#555;line-height:1.7}'
+      +'.doc-block{text-align:right;flex-shrink:0}'
+      +'.doc-title{font-size:26px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:#111;margin-bottom:8px}'
+      +'.doc-num{font-size:14px;font-weight:700;color:#555;margin-bottom:4px}'
+      +'.doc-status{display:inline-block;padding:3px 12px;border-radius:99px;font-size:10px;font-weight:800;border:2px solid;letter-spacing:.08em}'
+      +'.client-section{display:flex;justify-content:space-between;margin-bottom:28px;gap:20px}'
+      +'.client-box{flex:1;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px}'
+      +'.client-box h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:8px}'
+      +'.client-box p{font-size:12px;color:#111;line-height:1.7}'
+      +'.items-table{width:100%;border-collapse:collapse;margin-bottom:0}'
+      +'.items-table th{background:#111;color:#fff;padding:10px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:right}'
+      +'.items-table th:first-child{text-align:left}'
+      +'.items-table th:nth-child(2),.items-table th:nth-child(3){text-align:center}'
+      +'.totals-block{display:flex;justify-content:flex-end;margin-top:0}'
+      +'.totals-inner{width:280px}'
+      +'.totals-row{display:flex;justify-content:space-between;padding:7px 12px;font-size:12px;border-bottom:1px solid #e5e7eb}'
+      +'.totals-row.grand{background:#111;color:#fff;font-size:15px;font-weight:800;padding:12px;border-radius:0 0 0 0;border:none}'
+      +'.paid-row{display:flex;justify-content:space-between;padding:7px 12px;font-size:12px;color:#16a34a;font-weight:700;border-bottom:1px solid #e5e7eb}'
+      +'.bal-row{display:flex;justify-content:space-between;padding:7px 12px;font-size:12px;color:#dc2626;font-weight:800;border-bottom:1px solid #e5e7eb}'
+      +'.footer{margin-top:28px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:flex-end}'
+      +'.sig-line{border-top:1px solid #333;padding-top:6px;font-size:10px;color:#777;width:180px}'
+      +'.page-footer{text-align:center;font-size:10px;color:#9ca3af;margin-top:16px}'
+      +'@media print{@page{size:A4;margin:12mm}.page{padding:0}}';
 
-    // ── Full HTML ─────────────────────────────────────────
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice '+s.id+'</title><style>'+css+'</style></head><body>'
+    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
+      +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+      +'<title>Invoice '+s.id+'</title><style>'+css+'</style></head><body>'
+      +'<div class="page">'
 
-      // Header — logo + business name
-      + '<div style="text-align:center;padding-bottom:16px;border-bottom:2px solid #111;margin-bottom:16px">'
-      + logoHtml
-      + '<div style="font-size:24px;font-weight:800;color:#111;letter-spacing:-.02em">'+Utils.esc(bizName)+'</div>'
-      + (bizAddr ? '<div style="font-size:11px;color:#555;margin-top:4px">'+Utils.esc(bizAddr)+'</div>' : '')
-      + (bizPhone ? '<div style="font-size:11px;color:#555;margin-top:2px">'+Utils.esc(bizPhone)+'</div>' : '')
-      + (bizEmail ? '<div style="font-size:11px;color:#555;margin-top:2px">'+Utils.esc(bizEmail)+'</div>' : '')
-      + '</div>'
+      // ── HEADER ──────────────────────────────────────────────────────────────
+      +'<div class="header">'
+      +'<div style="display:flex;align-items:flex-start;gap:16px">'
+      +logoHtml
+      +'<div class="biz-block">'
+      +'<div class="biz-name">'+Utils.esc(bizName)+'</div>'
+      +'<div class="biz-detail">'
+      +(bizAddr  ? bizAddr+'<br>'  : '')
+      +(bizPhone ? 'Tel: '+bizPhone+'<br>' : '')
+      +(bizEmail ? bizEmail : '')
+      +'</div></div></div>'
+      +'<div class="doc-block">'
+      +'<div class="doc-title">Invoice</div>'
+      +'<div class="doc-num">'+s.id+'</div>'
+      +'<div class="doc-num" style="font-size:11px;font-weight:400">Date: '+Utils.date(s.date)+'</div>'
+      +'<div class="doc-num" style="font-size:11px;font-weight:400">Payment: '+(s.payment||'Cash')+'</div>'
+      +'<div style="margin-top:8px"><span class="doc-status" style="color:'+statusColor+';border-color:'+statusColor+';">'+(s.status||'Paid').toUpperCase()+'</span></div>'
+      +'</div></div>'
 
-      // Invoice info grid
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px dashed #ccc">'
-      + '<div style="font-size:12px;color:#555">Invoice</div><div style="font-size:12px;font-weight:700;text-align:right">'+s.id+'</div>'
-      + '<div style="font-size:12px;color:#555">Date</div><div style="font-size:12px;text-align:right">'+Utils.date(s.date)+'</div>'
-      + '<div style="font-size:12px;color:#555">Customer</div><div style="font-size:12px;font-weight:700;text-align:right">'+Utils.esc(s.customer||'Walk-in')+'</div>'
-      + '<div style="font-size:12px;color:#555">Payment</div><div style="font-size:12px;text-align:right">'+(s.payment||'Cash')+'</div>'
-      + '</div>'
+      // ── BILL TO + INVOICE DETAILS ────────────────────────────────────────────
+      +'<div class="client-section">'
+      +'<div class="client-box">'
+      +'<h3>Bill To</h3>'
+      +'<p><strong>'+Utils.esc(s.customer||'Walk-in Customer')+'</strong><br>'
+      +(custPhone   ? 'Tel: '+Utils.esc(custPhone)+'<br>'   : '')
+      +(custAddress ? Utils.esc(custAddress)+'<br>'         : '')
+      +(custEmail   ? Utils.esc(custEmail)                  : '')
+      +'</p></div>'
+      +'<div class="client-box">'
+      +'<h3>Invoice Details</h3>'
+      +'<p>Invoice No: <strong>'+s.id+'</strong><br>'
+      +'Date: <strong>'+Utils.date(s.date)+'</strong><br>'
+      +'Payment: <strong>'+(s.payment||'Cash')+'</strong><br>'
+      +'Prepared by: <strong>'+Utils.esc(bizName)+'</strong><br>'
+      +'Generated: '+now.toLocaleDateString()
+      +'</p></div>'
+      +'</div>'
 
-      // Items table
-      + '<table style="margin-bottom:0">'
-      + '<thead><tr>'
-      + '<th style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;padding:0 0 8px;text-align:left;border-bottom:2px solid #111">Item</th>'
-      + '<th style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;padding:0 0 8px;text-align:center;border-bottom:2px solid #111">Qty/Price</th>'
-      + '<th style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;padding:0 0 8px;text-align:right;border-bottom:2px solid #111">Total</th>'
-      + '</tr></thead>'
-      + '<tbody>'+itemRows+'</tbody>'
-      + '</table>'
+      // ── ITEMS TABLE ──────────────────────────────────────────────────────────
+      +'<div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:0">'
+      +'<table class="items-table">'
+      +'<thead><tr>'
+      +'<th style="text-align:left;width:36%">Description</th>'
+      +'<th style="text-align:center;width:8%">Qty</th>'
+      +'<th style="text-align:center;width:8%">Unit</th>'
+      +'<th style="text-align:right;width:16%">Unit Price</th>'
+      +'<th style="text-align:right;width:10%">Disc.</th>'
+      +'<th style="text-align:right;width:22%">Amount</th>'
+      +'</tr></thead>'
+      +'<tbody>'+itemRows+'</tbody>'
+      +'</table>'
 
-      // Totals section
-      + '<div style="margin-top:12px;padding-top:12px;border-top:2px solid #111">'
-      + (s.discount > 0
-          ? '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span style="color:#555">Discount ('+s.discount+'%)</span><span>-'+Utils.cur((s.subtotal||0)*(s.discount/100),cur)+'</span></div>'
-          : '')
-      + '<div style="display:flex;justify-content:space-between;padding:4px 0">'
-      + '<span style="font-size:12px;color:#555">Subtotal</span>'
-      + '<span style="font-size:12px">'+Utils.cur(s.subtotal||s.total,cur)+'</span>'
-      + '</div>'
-      + '</div>'
-
-      // Grand Total
-      + '<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid #111;border-bottom:2px solid #111;margin:4px 0">'
-      + '<span style="font-size:18px;font-weight:800">TOTAL</span>'
-      + '<span style="font-size:18px;font-weight:800">'+Utils.cur(s.total,cur)+'</span>'
-      + '</div>'
-
-      // Paid & Balance
-      + '<div style="margin-top:8px">'
-      + '<div style="display:flex;justify-content:space-between;padding:4px 0">'
-      + '<span style="font-size:13px;color:#555">Paid ('+(s.payment||'Cash')+')</span>'
-      + '<span style="font-size:13px;font-weight:700;color:#16a34a">'+Utils.cur(s.amountPaid||s.total,cur)+'</span>'
-      + '</div>'
-      + ((s.balance||0) > 0
-          ? '<div style="display:flex;justify-content:space-between;padding:4px 0">'
-            + '<span style="font-size:13px;font-weight:700;color:#dc2626">Balance Due</span>'
-            + '<span style="font-size:13px;font-weight:800;color:#dc2626">'+Utils.cur(s.balance,cur)+'</span>'
-            + '</div>'
-          : '')
-      + '</div>'
+      // ── TOTALS ───────────────────────────────────────────────────────────────
+      +'<div class="totals-block">'
+      +'<div class="totals-inner">'
+      +(discAmt>0 ? '<div class="totals-row"><span>Subtotal</span><span>'+Utils.cur(subtotal,cur)+'</span></div>' : '')
+      +(discAmt>0 ? '<div class="totals-row"><span>Discount ('+s.discount+'%)</span><span>−'+Utils.cur(discAmt,cur)+'</span></div>' : '')
+      +'<div class="totals-row"><span>Subtotal</span><span>'+Utils.cur(total,cur)+'</span></div>'
+      +'<div class="totals-row grand"><span>TOTAL</span><span>'+Utils.cur(total,cur)+'</span></div>'
+      +'<div class="paid-row"><span>Paid ('+Utils.esc(s.payment||'Cash')+')</span><span>'+Utils.cur(amtPaid,cur)+'</span></div>'
+      +(balance>0 ? '<div class="bal-row"><span>Balance Due</span><span>'+Utils.cur(balance,cur)+'</span></div>' : '')
+      +'</div></div></div>'
 
       // Payment history
-      + payHistHtml
-
-      // Status badge
-      + '<div style="text-align:center;margin:16px 0">'
-      + '<span style="display:inline-block;padding:4px 18px;border-radius:99px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;background:'+statusBg+';color:'+statusColor+';border:1.5px solid '+statusColor+'">'
-      + (s.status||'Paid')
-      + '</span></div>'
+      +payHistHtml
 
       // Notes
-      + (s.notes ? '<div style="font-size:12px;color:#555;text-align:center;margin-bottom:12px;font-style:italic">'+Utils.esc(s.notes)+'</div>' : '')
+      +(s.notes ? '<div style="margin-top:20px;padding:14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:11px;color:#555;line-height:1.7"><strong>Notes:</strong> '+Utils.esc(s.notes)+'</div>' : '')
 
-      // Footer
-      + '<div style="border-top:1px dashed #ccc;padding-top:14px;text-align:center">'
-      + '<div style="font-size:13px;font-weight:700;color:#d4a843;margin-bottom:3px">Thank you for your business!</div>'
-      + '<div style="font-size:11px;color:#888">'+Utils.esc(bizName)+' &bull; Powered by SmartStock Pro</div>'
-      + (bizAddr ? '<div style="font-size:11px;color:#888;margin-top:2px">'+Utils.esc(bizAddr)+'</div>' : '')
-      + '</div>'
-
-      + '</body></html>';
+      // ── FOOTER ───────────────────────────────────────────────────────────────
+      +'<div class="footer">'
+      +'<div class="sig-line">Authorised Signature &nbsp;&nbsp;&nbsp; Date: _________</div>'
+      +'<div class="sig-line" style="text-align:right">Client Acceptance &nbsp;&nbsp;&nbsp; Date: _________</div>'
+      +'</div>'
+      +'<div class="page-footer">'+Utils.esc(bizName)+(bizPhone?' &nbsp;·&nbsp; Tel: '+Utils.esc(bizPhone):'')+' &nbsp;·&nbsp; Thank you for your business!</div>'
+      +'</div>'
+      +'</body></html>';
 
     Sales._printHtml(html,'print-frame');
   },
-
   printPaymentReceipt: function(saleId,paymentId,amount,newBalance){
     var s=DB.getSales().find(function(x){ return x.id===saleId; }); if(!s) return;
     var settings=DB.getSettings(); var cur=settings.currency||'$';
