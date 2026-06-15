@@ -512,7 +512,8 @@ var Reports = {
     });
     var totalUnits = Object.values(prodSold).reduce(function(a,p){ return a+p.qty; },0);
 
-    var css = 'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;background:#fff;margin:0;padding:0}'
+    var css = '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
+      + 'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;background:#fff;margin:0;padding:0}'
       + '.page{max-width:210mm;margin:0 auto;padding:15mm}'
       + 'h1{font-size:22px;font-weight:900;margin:0 0 2px}'
       + 'h2{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid #111;padding-bottom:4px;margin:18px 0 8px}'
@@ -534,7 +535,7 @@ var Reports = {
       + '.sig-line{display:flex;justify-content:space-between;margin-top:32px}'
       + '.sig{flex:1;border-top:1px solid #333;padding-top:6px;font-size:11px;color:#444;margin-right:20px}'
       + '.footer{text-align:center;font-size:10px;color:#888;margin-top:24px;border-top:1px solid #ddd;padding-top:10px}'
-      + '@media print{@page{size:A4;margin:12mm} .page{padding:0} .no-print{display:none}}'
+      + '@media print{@page{size:A4 portrait;margin:10mm} body{margin:0;padding:0} .page{padding:0;max-width:100%} .no-print{display:none}}'
       + '@page{@bottom-right{content:counter(page) " of " counter(pages);font-size:10px}}';
 
     var salesTableRows = sales.map(function(s){
