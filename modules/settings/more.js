@@ -7,6 +7,7 @@ var MorePage = {
         label: 'Business',
         items: [
           { icon:'📄', label:'Quotations',         desc:'Create & manage client quotations', bg:'var(--inb)', action:"Router.go('quotations')", badge:'NEW' },
+          { icon:'🎫', label:'Support Center',          desc:'Help, feedback & issue tickets',    bg:'var(--inb)', action:"Router.go('support')",   badge:'NEW' },
           { icon:'👥', label:'Team & Access',         desc:'Users, roles & permissions',       bg:'var(--gb)',  action:"Router.go('usermgmt')",  badge:'NEW' },
           { icon:'🤖', label:'AI Assistant',        desc:'Ask Claude about your business',   bg:'var(--gb)',  action:"Router.go('ai')" },
           { icon:'🏭', label:'Suppliers',           desc:'Manage your suppliers',            bg:'var(--wab)', action:"Router.go('suppliers')" },
