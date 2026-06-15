@@ -704,7 +704,7 @@ var Sales = {
     var balance   = parseFloat(s.balance)||0;
 
     // CSS — identical to quotation template
-    var css = '*{margin:0;padding:0;box-sizing:border-box}'
+    var css = '*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
       +'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:13px;color:#111;background:#fff}'
       +'.page{max-width:210mm;margin:0 auto;padding:16mm}'
       +'.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #111}'
@@ -859,35 +859,39 @@ var Sales = {
 
   // ── SHARED PRINT HELPER ────────────────────────────────────────────────────
   _printHtml: function(html, frameId){
-    // Remove old frame/overlay
-    var old = document.getElementById(frameId);
-    if (old) old.remove();
+    // Inject print-color-adjust into the HTML if not present
+    if (html.indexOf('-webkit-print-color-adjust') === -1) {
+      html = html.replace('<style>', '<style>*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}');
+    }
+    // Ensure A4 page size is enforced
+    if (html.indexOf('@page') === -1) {
+      html = html.replace('</style>', '@page{size:A4 portrait;margin:10mm}</style>');
+    }
+
+    // Remove old overlay
     var oldOv = document.getElementById(frameId + '-overlay');
     if (oldOv) oldOv.remove();
+    var old = document.getElementById(frameId);
+    if (old) old.remove();
 
-    // Android Chrome requires the iframe to be visible to print
-    // Use a full-screen overlay that is removed after print
+    // Full-screen overlay with close button
     var overlay = document.createElement('div');
     overlay.id  = frameId + '-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff';
 
+    // Close button
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '✕ Close';
+    closeBtn.style.cssText = 'position:fixed;top:12px;right:12px;z-index:100000;background:#111;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+    closeBtn.onclick = function() { overlay.remove(); closeBtn.remove(); };
+    document.body.appendChild(closeBtn);
+
+    // iframe
     var f = document.createElement('iframe');
     f.id  = frameId;
     f.style.cssText = 'width:100%;height:100%;border:none';
     overlay.appendChild(f);
     document.body.appendChild(overlay);
-
-    // Inject close button so user can get back if print dialog dismissed
-    var closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕ Close Preview';
-    closeBtn.style.cssText = 'position:fixed;top:10px;right:10px;z-index:100000;'
-      + 'background:#111;color:#fff;border:none;padding:10px 18px;border-radius:8px;'
-      + 'font-size:14px;font-weight:700;cursor:pointer';
-    closeBtn.onclick = function() {
-      overlay.remove();
-    };
-    document.body.appendChild(closeBtn);
-    overlay._closeBtn = closeBtn;
 
     try {
       f.contentDocument.open();
@@ -897,22 +901,19 @@ var Sales = {
         try {
           f.contentWindow.focus();
           f.contentWindow.print();
-          // Remove overlay after print dialog closes
-          setTimeout(function() {
-            overlay.remove();
-            closeBtn.remove();
-          }, 2000);
+          setTimeout(function() { overlay.remove(); closeBtn.remove(); }, 3000);
         } catch(e) {
-          // Fallback: open in new tab
-          overlay.remove();
-          closeBtn.remove();
-          window.open('data:text/html;charset=utf-8,' + encodeURIComponent(html), '_blank');
+          overlay.remove(); closeBtn.remove();
+          var blob = new Blob([html], {type:'text/html'});
+          var url  = URL.createObjectURL(blob);
+          window.open(url, '_blank');
         }
-      }, 500);
+      }, 600);
     } catch(e) {
-      overlay.remove();
-      closeBtn.remove();
-      window.open('data:text/html;charset=utf-8,' + encodeURIComponent(html), '_blank');
+      overlay.remove(); closeBtn.remove();
+      var blob = new Blob([html], {type:'text/html'});
+      var url  = URL.createObjectURL(blob);
+      window.open(url, '_blank');
     }
   },
 };
