@@ -1,4 +1,4 @@
-var PAGES = ['dashboard','products','sales','customers','suppliers','supply','expenses','salary','finance','reports','quotations','ai','settings','more','usermgmt','closing'];
+var PAGES = ['dashboard','products','sales','customers','suppliers','supply','expenses','salary','finance','reports','quotations','ai','settings','more','usermgmt','closing','superadmin'];
 var BN_PAGES = ['dashboard','sales','products','customers','more'];
 
 var Router = {
@@ -41,6 +41,7 @@ var Router = {
       ai:        () => AI.render(),
       usermgmt:  () => UserMgmt.render(),
       closing:   () => ClosingReport.render(),
+      superadmin: () => SuperAdmin._loadAndRender(),
       settings:  () => Settings.render(),
       more:      () => MorePage.render(),
     };

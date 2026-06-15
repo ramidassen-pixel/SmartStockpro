@@ -93,6 +93,8 @@ var Auth = {
     Auth.currentUser = user;
     Utils.storage.set('ssp_session', { uid: user.id, loginTime: new Date().toISOString() });
     try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
+    // Ping platform
+    try { if (typeof Platform !== 'undefined') Platform.pingLogin(user, user.currentBusinessId||(user.businessIds&&user.businessIds[0])); } catch(e) {}
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('LOGIN', 'Successful login'); } catch(e) {}
 
     // Check for pending user approvals (notify primary admin)
@@ -201,6 +203,8 @@ var Auth = {
 
     DB.saveSettings({ bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email });
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
+    // Sync to platform
+    try { if (typeof Platform !== 'undefined') { Platform.syncBusiness(biz, user); Platform.syncUser(user, bizId); } } catch(e) {}
 
     // Show verification screen instead of logging in
     // Send real email via Supabase Edge Function
@@ -283,6 +287,8 @@ var Auth = {
     } catch(e) {}
 
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + bizName); } catch(e) {}
+    // Sync to platform
+    try { if (typeof Platform !== 'undefined') Platform.syncUser(user, biz.id); } catch(e) {}
 
     // Send real email
     var joinBizName = biz.name;
@@ -541,25 +547,36 @@ var Auth = {
   showTab: function(tab) {
     var forms = ['login-form','signup-form','join-form'];
     var tabs  = ['ltab-in','ltab-up','ltab-join'];
+    // Hide all forms
     forms.forEach(function(f) {
       var el = Utils.get(f);
       if (el) { el.style.display = 'none'; el.classList.add('hidden'); }
     });
+    // Reset all tab buttons to inactive style
     tabs.forEach(function(t) {
       var el = Utils.get(t);
-      if (el) el.classList.remove('active');
+      if (el) {
+        el.classList.remove('active');
+        el.style.background = 'transparent';
+        el.style.color = 'rgba(255,255,255,0.5)';
+      }
     });
-    var errIds = ['login-err','signup-err','join-err'];
-    errIds.forEach(function(e) {
+    // Clear errors
+    ['login-err','signup-err','join-err'].forEach(function(e) {
       var el = Utils.get(e);
       if (el) { el.classList.add('hidden'); el.style.display = 'none'; }
     });
-    var formMap  = { 'in':'login-form',  'up':'signup-form',  'join':'join-form' };
-    var tabMap   = { 'in':'ltab-in',     'up':'ltab-up',      'join':'ltab-join' };
+    // Show selected form
+    var formMap = { 'in':'login-form', 'up':'signup-form', 'join':'join-form' };
+    var tabMap  = { 'in':'ltab-in',    'up':'ltab-up',     'join':'ltab-join' };
     var showForm = Utils.get(formMap[tab]);
-    var showTab  = Utils.get(tabMap[tab]);
+    var activeTab= Utils.get(tabMap[tab]);
     if (showForm) { showForm.style.display = 'block'; showForm.classList.remove('hidden'); }
-    if (showTab)  { showTab.classList.add('active'); }
+    if (activeTab) {
+      activeTab.classList.add('active');
+      activeTab.style.background = '#D4A843';
+      activeTab.style.color = '#07080D';
+    }
   },
 
   togglePw: function(id) {
