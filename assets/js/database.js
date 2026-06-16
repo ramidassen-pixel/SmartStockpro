@@ -24,6 +24,7 @@ var DB = {
       supplierBills: [],
       quotations: [],
       employeeLoans: [],
+      stockMovements: [],
       monthlyStatements: [],
       businesses: [],
       branches: [],
@@ -52,7 +53,7 @@ var DB = {
   set(key, val) { if (!this._data) this.load(); this._data[key] = val; this.save(); },
 
   getSettings() { return this.get('settings') || {}; },
-  saveSettings(s) { this._data.settings = { ...this.getSettings(), ...s }; this.save(); },
+  saveSettings(s) { this._data.settings = Object.assign({}, this.getSettings(), s); this.save(); },
 
   // Products
   getProducts() { return this.get('products') || []; },
@@ -92,6 +93,8 @@ var DB = {
   // Payroll
   getPayroll() { return this.get('payroll') || []; },
   getMonthlyStatements() { return this.get('monthlyStatements') || []; },
+  getStockMovements() { return this.get('stockMovements') || []; },
+  addStockMovement(mv) { var arr=this.get('stockMovements')||[]; arr.unshift(mv); this.set('stockMovements',arr); },
   saveMonthlyStatement(stmt) { var arr = this.get('monthlyStatements')||[]; var idx=arr.findIndex(function(s){ return s.id===stmt.id; }); if(idx>=0) arr[idx]=stmt; else arr.unshift(stmt); this.set('monthlyStatements',arr); return stmt; },
   addPayroll(p) { p.id = Utils.uid('PAY'); p.paidAt = Utils.today(); const arr = this.get('payroll'); arr.unshift(p); this.save(); return p; },
 
