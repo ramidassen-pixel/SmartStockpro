@@ -89,7 +89,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;background:rgba(255,255,255,.06);border-radius:12px;padding:4px;margin-bottom:22px;width:100%;box-sizing:border-box">
         <button id="ltab-in"   onclick="Auth.showTab('in')"   style="padding:10px 4px;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;background:#D4A843;color:#07080D;transition:all .2s">Sign In</button>
         <button id="ltab-up"   onclick="Auth.showTab('up')"   style="padding:10px 4px;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:rgba(255,255,255,.5);transition:all .2s">New Biz</button>
-        <button id="ltab-join" onclick="Auth.showTab('join')" style="padding:10px 4px;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:rgba(255,255,255,.5);transition:all .2s">Join</button>
+        <button id="ltab-join" onclick="Auth.showTab('join')" style="padding:10px 4px;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:rgba(255,255,255,.5);transition:all .2s">Join Team</button>
       </div>
 
       <!-- SIGN IN -->
@@ -130,7 +130,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
       <!-- JOIN -->
       <div id="join-form" class="hidden" style="display:none;width:100%">
         <div id="join-err" class="form-err hidden"></div>
-        <div style="background:rgba(100,149,237,.08);border:1px solid rgba(100,149,237,.2);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#6495ED">ℹ️ Your request will be sent to the Primary Admin for approval.</div>
+        <div style="background:rgba(100,149,237,.08);border:1px solid rgba(100,149,237,.2);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#6495ED">👥 <strong>Joining an existing business?</strong> Enter the exact name your employer registered.<br><br>🆕 <strong>New business owner?</strong> Use the <strong>New Biz</strong> tab instead.</div>
         <div class="fg"><label class="fl">Business Name *</label><input class="fi" id="j-biz" placeholder="Exact business name" style="width:100%;box-sizing:border-box"></div>
         <div class="fg"><label class="fl">Your Full Name *</label><input class="fi" id="j-name" placeholder="Full name" style="width:100%;box-sizing:border-box"></div>
         <div class="fg"><label class="fl">Email Address *</label><input class="fi" id="j-email" type="email" placeholder="your@email.com" style="width:100%;box-sizing:border-box"></div>
@@ -140,6 +140,9 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
         <div class="fg"><label class="fl">Confirm Password *</label>
           <div class="pw-wrap" style="width:100%;box-sizing:border-box"><input class="fi" id="j-pass-conf" type="password" placeholder="Repeat password" style="width:100%;box-sizing:border-box"><span class="pw-eye" onclick="Auth.togglePw('j-pass-conf')">👁</span></div></div>
         <button class="btn-primary btn-full" onclick="Auth.joinBusiness()" style="width:100%">📤 Request to Join</button>
+        <div style="text-align:center;margin-top:12px;font-size:12px;color:rgba(255,255,255,.4)">
+          New business owner? <span onclick="Auth.showTab('up')" style="color:#D4A843;font-weight:700;cursor:pointer">Create your account →</span>
+        </div>
       </div>
 
     </div>
@@ -770,15 +773,55 @@ var Auth = {
     if (pw.length < 6) { Auth._err('join-err', '⚠️ Password min 6 characters'); return; }
     if (pw !== pwConf)  { Auth._err('join-err', '⚠️ Passwords do not match'); return; }
 
+    // First search locally
     var businesses = DB.get('businesses') || [];
     var biz = null;
     for (var i = 0; i < businesses.length; i++) {
       if (businesses[i].name.toLowerCase() === bizName.toLowerCase()) { biz = businesses[i]; break; }
     }
+
     if (!biz) {
-      Auth._err('join-err', '❌ Business "' + bizName + '" not found. Check the name or contact the business owner.');
-      return;
+      // Not found locally — search Supabase platform (other devices may have registered)
+      Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
+      var searchUrl = SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status';
+      fetch(searchUrl, {
+        headers: {
+          'apikey':        SUPABASE_ANON,
+          'Authorization': 'Bearer ' + SUPABASE_ANON,
+        }
+      }).then(function(r){ return r.json(); })
+        .then(function(results) {
+          if (!results || !results.length) {
+            // Truly not found — guide user to register
+            Auth._err('join-err',
+              '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
+              + '<strong>Is this your first time?</strong><br>'
+              + '👉 Go to <strong>New Biz</strong> tab to register your business.<br><br>'
+              + 'If your employer created the business, ask them for the <strong>exact business name</strong>.'
+            );
+            return;
+          }
+          // Found on Supabase — save locally and continue join
+          var remoteBiz = results[0];
+          var localBizes = DB.get('businesses') || [];
+          localBizes.push({ id: remoteBiz.id, name: remoteBiz.name, status: remoteBiz.status || 'active' });
+          DB.set('businesses', localBizes);
+          Auth._continueJoin(remoteBiz, bizName, name, email, phone, pw);
+        })
+        .catch(function(e) {
+          Auth._err('join-err',
+            '❌ No business named "' + Utils.esc(bizName) + '" was found.<br><br>'
+            + '👉 <strong>New to SmartStock Pro?</strong> Tap <strong>New Biz</strong> tab to create your account.<br>'
+            + '👉 Joining your employer? Ask them for the exact business name they registered.'
+          );
+        });
+      return;  // async continues in _continueJoin
     }
+
+    Auth._continueJoin(biz, bizName, name, email, phone, pw);
+  },
+
+  _continueJoin: function(biz, bizName, name, email, phone, pw) {
 
     var users = DB.get('users') || [];
     for (var j = 0; j < users.length; j++) {
@@ -1471,44 +1514,159 @@ var Notifs = {
 };
 
 /* === charts.js === */
+/* SmartStock Pro V5 — Charts (Real Data) */
 var Charts = {
-  bar(data, labels, color) {
-    color = color || 'gold';
-    const max = Math.max(...data, 1);
-    const bars = data.map((v,i) => `
-      <div class="bar-col">
-        <div class="bar-fill ${color}" style="height:${Math.max(4,Math.round((v/max)*100))}%" title="${labels[i]}: ${v}"></div>
-        <div class="bar-lbl">${labels[i]}</div>
-      </div>`).join('');
-    return `<div class="bar-chart">${bars}</div>`;
+
+  /* ── CSS BAR CHART ────────────────────────────────────────────────────── */
+  bar: function(data, labels, color, currency) {
+    color    = color    || 'gold';
+    currency = currency || '';
+    var max  = Math.max.apply(null, data.concat([1]));
+    var bars = data.map(function(v, i) {
+      var pct  = Math.max(3, Math.round((v/max)*100));
+      var disp = '';
+      if (v > 0) {
+        disp = currency
+          ? (currency + (v >= 1000 ? (v/1000).toFixed(1)+'k' : Math.round(v)))
+          : Math.round(v);
+      }
+      return '<div class="bar-col">'
+        + '<div style="font-size:9px;color:var(--t3);text-align:center;margin-bottom:2px;min-height:13px;line-height:13px">' + disp + '</div>'
+        + '<div class="bar-fill ' + color + '" style="height:' + pct + '%" title="' + labels[i] + ': ' + disp + '"></div>'
+        + '<div class="bar-lbl">' + labels[i] + '</div>'
+        + '</div>';
+    }).join('');
+    return '<div class="bar-chart">' + bars + '</div>';
   },
 
-  weekBars(sales) {
-    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const today = new Date();
-    const data = Array(7).fill(0);
-    const lbls = [];
-    for (let i=6; i>=0; i--) {
-      const d = new Date(today); d.setDate(d.getDate()-i);
-      const ds = d.toISOString().slice(0,10);
-      data[6-i] = sales.filter(s=>s.date===ds).reduce((a,s)=>a+(parseFloat(s.total)||0),0);
+  /* ── 7-DAY REVENUE ────────────────────────────────────────────────────── */
+  weekBars: function(sales, cur) {
+    var days  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var today = new Date();
+    var data  = [];
+    var lbls  = [];
+    for (var i = 6; i >= 0; i--) {
+      var d  = new Date(today); d.setDate(d.getDate() - i);
+      var ds = d.toISOString().slice(0,10);
+      var v  = sales.filter(function(s){ return s.date===ds; })
+                    .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+      data.push(v);
       lbls.push(days[d.getDay()]);
     }
-    return this.bar(data, lbls, 'gold');
+    return Charts.bar(data, lbls, 'gold', cur||'$');
   },
 
-  monthBars(sales, type) {
-    const today = new Date();
-    const data = [], lbls = [];
-    for (let i=5; i>=0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth()-i, 1);
-      const m = d.toISOString().slice(0,7);
-      const v = sales.filter(s=>s.date&&s.date.startsWith(m)).reduce((a,s)=>a+(parseFloat(s.total)||0),0);
+  /* ── 6-MONTH REVENUE ──────────────────────────────────────────────────── */
+  monthBars: function(sales, cur, color) {
+    var today = new Date();
+    var data = []; var lbls = [];
+    for (var i = 5; i >= 0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth()-i, 1);
+      var m = d.toISOString().slice(0,7);
+      var v = sales.filter(function(s){ return s.date&&s.date.startsWith(m); })
+                   .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
       data.push(v); lbls.push(d.toLocaleString('default',{month:'short'}));
     }
-    return this.bar(data, lbls, type||'gold');
+    return Charts.bar(data, lbls, color||'gold', cur||'$');
+  },
+
+  /* ── REVENUE vs EXPENSES side-by-side ────────────────────────────────── */
+  revenueVsExpenses: function(sales, expenses, cur) {
+    var today = new Date();
+    var revData=[]; var expData=[]; var lbls=[];
+    for (var i=5; i>=0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth()-i, 1);
+      var m = d.toISOString().slice(0,7);
+      var rev = sales.filter(function(s){ return s.date&&s.date.startsWith(m); })
+                     .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+      var exp = expenses.filter(function(e){ return e.date&&e.date.startsWith(m); })
+                        .reduce(function(a,e){ return a+(parseFloat(e.amount)||0); }, 0);
+      revData.push(rev); expData.push(exp);
+      lbls.push(d.toLocaleString('default',{month:'short'}));
+    }
+    var max = Math.max.apply(null, revData.concat(expData).concat([1]));
+    var c   = cur||'$';
+    var bars = lbls.map(function(lbl,i){
+      var rPct = Math.max(3, Math.round((revData[i]/max)*100));
+      var ePct = Math.max(3, Math.round((expData[i]/max)*100));
+      return '<div class="bar-col" style="flex:1;min-width:0">'
+        + '<div style="display:flex;gap:2px;align-items:flex-end;height:80px;margin-bottom:4px">'
+        + '<div style="flex:1;background:var(--ok);border-radius:4px 4px 0 0;height:'+rPct+'%;min-height:3px" title="Rev: '+c+revData[i].toFixed(0)+'"></div>'
+        + '<div style="flex:1;background:var(--er);border-radius:4px 4px 0 0;height:'+ePct+'%;min-height:3px" title="Exp: '+c+expData[i].toFixed(0)+'"></div>'
+        + '</div><div class="bar-lbl">'+lbl+'</div></div>';
+    }).join('');
+    return '<div style="display:flex;gap:4px;height:110px;align-items:flex-end">' + bars + '</div>'
+      + '<div style="display:flex;gap:16px;justify-content:center;margin-top:8px">'
+      + '<div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--t2)"><div style="width:10px;height:10px;background:var(--ok);border-radius:2px"></div>Revenue</div>'
+      + '<div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--t2)"><div style="width:10px;height:10px;background:var(--er);border-radius:2px"></div>Expenses</div>'
+      + '</div>';
+  },
+
+  /* ── TOP 5 PRODUCTS horizontal progress bars ─────────────────────────── */
+  topProducts: function(sales, cur) {
+    var prodMap = {};
+    sales.forEach(function(s){
+      (s.items||[]).forEach(function(item){
+        var k = item.name||'Unknown';
+        if (!prodMap[k]) prodMap[k] = {rev:0, qty:0};
+        prodMap[k].rev += (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
+        prodMap[k].qty += parseInt(item.qty)||1;
+      });
+    });
+    var sorted = Object.keys(prodMap).map(function(k){
+      return {name:k, rev:prodMap[k].rev, qty:prodMap[k].qty};
+    }).sort(function(a,b){ return b.rev-a.rev; }).slice(0,5);
+
+    if (!sorted.length) {
+      return '<div style="text-align:center;padding:20px;color:var(--t3);font-size:12px">No sales data yet</div>';
+    }
+    var maxRev = sorted[0].rev;
+    var c = cur||'$';
+    return sorted.map(function(p,i){
+      var pct  = Math.max(4, Math.round((p.rev/maxRev)*100));
+      var disp = p.rev >= 1000 ? c+(p.rev/1000).toFixed(1)+'k' : c+p.rev.toFixed(0);
+      return '<div style="margin-bottom:12px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+        + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<div style="width:18px;height:18px;border-radius:50%;background:var(--gb);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:var(--g)">'+(i+1)+'</div>'
+        + '<span style="font-size:12px;font-weight:600;color:var(--t1);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+Utils.esc(p.name)+'</span>'
+        + '</div>'
+        + '<div style="text-align:right">'
+        + '<span style="font-size:13px;font-weight:800;color:var(--g)">'+disp+'</span>'
+        + '<span style="font-size:10px;color:var(--t3);margin-left:4px">'+p.qty+' units</span>'
+        + '</div></div>'
+        + '<div style="background:var(--bd);border-radius:99px;height:6px">'
+        + '<div style="background:linear-gradient(90deg,var(--g),#F0C866);border-radius:99px;height:6px;width:'+pct+'%;transition:width .6s ease"></div>'
+        + '</div></div>';
+    }).join('');
+  },
+
+  /* ── PROFIT TREND (7-day sparkline) ──────────────────────────────────── */
+  profitSparkline: function(sales, expenses, cur) {
+    var today = new Date();
+    var data  = []; var lbls = [];
+    for (var i=6; i>=0; i--) {
+      var d  = new Date(today); d.setDate(d.getDate()-i);
+      var ds = d.toISOString().slice(0,10);
+      var rev = sales.filter(function(s){ return s.date===ds; })
+                     .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+      var exp = expenses.filter(function(e){ return e.date===ds; })
+                        .reduce(function(a,e){ return a+(parseFloat(e.amount)||0); }, 0);
+      data.push(rev - exp);
+      var days=['Su','Mo','Tu','We','Th','Fr','Sa'];
+      lbls.push(days[d.getDay()]);
+    }
+    var max = Math.max.apply(null, data.map(function(v){return Math.abs(v);}).concat([1]));
+    return data.map(function(v,i){
+      var pct  = Math.max(3, Math.round((Math.abs(v)/max)*100));
+      var col  = v >= 0 ? 'var(--ok)' : 'var(--er)';
+      return '<div class="bar-col">'
+        + '<div style="background:'+col+';border-radius:4px 4px 0 0;height:'+pct+'%;min-height:3px;margin-top:auto"></div>'
+        + '<div class="bar-lbl">'+lbls[i]+'</div></div>';
+    }).join('');
   },
 };
+
 
 /* === app.js === */
 var UI = {
@@ -2726,16 +2884,76 @@ var Dashboard = {
   },
 };
 
-// Week chart helper
-function weekChart() {
-  var sales = DB.getSales();
-  var cur   = DB.getSettings().currency || '$';
-  return '<div class="sec"><div class="chart-wrap">'
-    + '<div class="chart-title">This Week\'s Revenue</div>'
-    + '<div class="chart-sub">'+cur+' daily breakdown</div>'
-    + Charts.weekBars(sales)
-    + '</div></div>';
+// ── ANALYTICS SECTION (real data charts) ─────────────────────────────────
+function analyticsSection() {
+  var allSales    = DB.getSales();
+  var allExpenses = DB.getExpenses();
+  var cur         = DB.getSettings().currency || '$';
+
+  // ── 7-day revenue bars
+  var weekHtml = Charts.weekBars(allSales, cur);
+
+  // ── Revenue vs Expenses (6 months)
+  var revExpHtml = Charts.revenueVsExpenses(allSales, allExpenses, cur);
+
+  // ── Top 5 products
+  var topProdHtml = Charts.topProducts(allSales, cur);
+
+  // ── Quick summary numbers for charts
+  var today = Utils.today();
+  var month = today.slice(0,7);
+  var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+  var weekAgoStr = weekAgo.toISOString().slice(0,10);
+
+  var weekTotal = allSales.filter(function(s){ return s.date >= weekAgoStr; })
+                          .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+  var monthTotal= allSales.filter(function(s){ return s.date&&s.date.startsWith(month); })
+                          .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+
+  // Last week for comparison
+  var lastWeekStart = new Date(); lastWeekStart.setDate(lastWeekStart.getDate()-14);
+  var lastWeekEnd   = new Date(); lastWeekEnd.setDate(lastWeekEnd.getDate()-7);
+  var lastWeekStartStr = lastWeekStart.toISOString().slice(0,10);
+  var lastWeekEndStr   = lastWeekEnd.toISOString().slice(0,10);
+  var lastWeekTotal = allSales.filter(function(s){ return s.date>=lastWeekStartStr && s.date<lastWeekEndStr; })
+                              .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+  var weekChange = lastWeekTotal > 0 ? Math.round(((weekTotal-lastWeekTotal)/lastWeekTotal)*100) : 0;
+  var weekTrend  = weekChange >= 0
+    ? '<span style="color:var(--ok);font-size:11px;font-weight:700">▲ '+weekChange+'%</span>'
+    : '<span style="color:var(--er);font-size:11px;font-weight:700">▼ '+Math.abs(weekChange)+'%</span>';
+
+  return '<div class="sec">'
+    // ── WEEK REVENUE CHART ──────────────────────────────────────────────
+    + '<div class="card card-body" style="margin-bottom:12px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'
+    + '<div><div class="chart-title">📈 This Week Revenue</div>'
+    + '<div class="chart-sub">'+cur+' daily breakdown · 7-day total: <strong>'+Utils.cur(weekTotal,cur)+'</strong></div>'
+    + '</div>'
+    + weekTrend
+    + '</div>'
+    + weekHtml
+    + '</div>'
+
+    // ── REVENUE vs EXPENSES ─────────────────────────────────────────────
+    + '<div class="card card-body" style="margin-bottom:12px">'
+    + '<div style="margin-bottom:12px"><div class="chart-title">📊 Revenue vs Expenses</div>'
+    + '<div class="chart-sub">Last 6 months comparison</div>'
+    + '</div>'
+    + revExpHtml
+    + '</div>'
+
+    // ── TOP PRODUCTS ────────────────────────────────────────────────────
+    + '<div class="card card-body">'
+    + '<div style="margin-bottom:14px"><div class="chart-title">🏆 Top Products</div>'
+    + '<div class="chart-sub">By revenue — all time</div>'
+    + '</div>'
+    + topProdHtml
+    + '</div>'
+    + '</div>';
 }
+
+// Keep old weekChart for compatibility
+function weekChart() { return analyticsSection(); }
 
 
 /* === products.js === */
@@ -10929,6 +11147,300 @@ var Support = {
   _getLocalMessages: function(ticketId) {
     var all = Utils.storage.get('support_messages') || {};
     return all[ticketId] || [];
+  },
+};
+
+
+/* === backup.js === */
+/* SmartStock Pro V5 — Data Backup & Restore */
+var Backup = {
+
+  /* ══════════════════════════════════════════════════════════════
+     RENDER — backup page in Settings → More
+  ══════════════════════════════════════════════════════════════ */
+  renderPanel: function(container) {
+    var settings = DB.getSettings();
+    var lastBackup = Utils.storage.get('lastBackupDate') || null;
+    var bizName  = settings.bizName || 'SmartStock';
+    var today    = Utils.today();
+    var dataSize = Backup._getDataSize();
+
+    var sinceHtml = lastBackup
+      ? '<span style="color:var(--ok)">✅ Last backup: ' + lastBackup + '</span>'
+      : '<span style="color:var(--wa)">⚠️ Never backed up</span>';
+
+    container.innerHTML = '<div class="sec">'
+
+      // ── WARNING BANNER if no backup ──────────────────────────────────────
+      + (!lastBackup ? '<div style="background:var(--wab);border:1.5px solid var(--wabd);border-radius:var(--r12);padding:14px 16px;margin-bottom:14px;display:flex;gap:10px">'
+        + '<div style="font-size:24px;flex-shrink:0">⚠️</div>'
+        + '<div><div style="font-size:13px;font-weight:700;color:var(--wa);margin-bottom:3px">No backup found!</div>'
+        + '<div style="font-size:11px;color:var(--t2);line-height:1.6">If you clear your browser or change phones, all your data will be permanently lost. Back up now!</div>'
+        + '</div></div>' : '')
+
+      // ── INFO CARD ────────────────────────────────────────────────────────
+      + '<div class="card card-body" style="margin-bottom:12px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+      + '<div><div style="font-size:15px;font-weight:800;color:var(--t1)">💾 Your Data</div>'
+      + '<div style="font-size:11px;color:var(--t2);margin-top:2px">' + sinceHtml + '</div>'
+      + '</div>'
+      + '<div style="text-align:right">'
+      + '<div style="font-size:18px;font-weight:900;color:var(--g)">' + dataSize.label + '</div>'
+      + '<div style="font-size:10px;color:var(--t3)">data stored</div>'
+      + '</div></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">'
+      + Backup._statPill('🧾', dataSize.sales, 'Sales')
+      + Backup._statPill('📦', dataSize.products, 'Products')
+      + Backup._statPill('👥', dataSize.customers, 'Customers')
+      + '</div>'
+      + '<button class="btn-primary btn-full" onclick="Backup.exportData()" style="margin-bottom:8px">⬇️ Download Backup File</button>'
+      + '<div style="font-size:10px;color:var(--t3);text-align:center">Saves a .json file to your phone Downloads folder</div>'
+      + '</div>'
+
+      // ── RESTORE CARD ─────────────────────────────────────────────────────
+      + '<div class="card card-body">'
+      + '<div style="font-size:15px;font-weight:800;color:var(--t1);margin-bottom:4px">📂 Restore from Backup</div>'
+      + '<div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.6">Select a backup file (.json) previously downloaded from SmartStock Pro</div>'
+      + '<input type="file" id="backup-file-input" accept=".json" onchange="Backup.previewRestore(this)" style="display:none">'
+      + '<button class="btn-ghost btn-full" onclick="Utils.get(\'backup-file-input\').click()" style="margin-bottom:8px">📁 Choose Backup File</button>'
+      + '<div id="restore-preview" style="display:none"></div>'
+      + '</div>'
+
+      // ── AUTO BACKUP REMINDER ─────────────────────────────────────────────
+      + '<div style="background:var(--inb);border:1px solid var(--inbd);border-radius:var(--r12);padding:12px 14px;margin-top:4px">'
+      + '<div style="font-size:12px;font-weight:700;color:var(--in);margin-bottom:4px">💡 Backup Tips</div>'
+      + '<div style="font-size:11px;color:var(--t2);line-height:1.7">'
+      + '• Back up <strong>every week</strong> or after a big sale<br>'
+      + '• Save the file to Google Drive or WhatsApp yourself<br>'
+      + '• Backup before updating the app or changing phones'
+      + '</div></div>'
+      + '</div>';
+  },
+
+  _statPill: function(icon, count, label) {
+    return '<div style="background:var(--bg3);border-radius:var(--r8);padding:8px;text-align:center">'
+      + '<div style="font-size:16px">' + icon + '</div>'
+      + '<div style="font-size:14px;font-weight:800;color:var(--t1)">' + count + '</div>'
+      + '<div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">' + label + '</div>'
+      + '</div>';
+  },
+
+  _getDataSize: function() {
+    var sales     = DB.getSales();
+    var products  = DB.getProducts();
+    var customers = DB.getCustomers();
+    var raw       = JSON.stringify(localStorage).length;
+    var kb        = (raw/1024).toFixed(1);
+    var label     = raw > 1024000 ? (raw/1048576).toFixed(1)+'MB' : kb+'KB';
+    return { sales: sales.length, products: products.length, customers: customers.length, label: label };
+  },
+
+  /* ══════════════════════════════════════════════════════════════
+     EXPORT — download full backup as JSON
+  ══════════════════════════════════════════════════════════════ */
+  exportData: function() {
+    try {
+      var settings  = DB.getSettings();
+      var bizName   = (settings.bizName || 'SmartStock').replace(/[^a-zA-Z0-9]/g,'_');
+      var today     = Utils.today();
+
+      // Collect ALL data keys
+      var data = {
+        _meta: {
+          version:     'SmartStock Pro V5',
+          exportedAt:  new Date().toISOString(),
+          exportedBy:  (Auth.currentUser||{}).name || '',
+          bizName:     settings.bizName || '',
+          date:        today,
+        },
+      };
+
+      // Export every key from localStorage
+      var keys = [
+        'settings','users','products','sales','customers','suppliers',
+        'expenses','employees','payroll','notifications','payments',
+        'allocations','purchaseOrders','grns','supplierBills','quotations',
+        'employeeLoans','monthlyStatements','support_tickets','support_messages',
+        'businesses','branches','customRoles','auditLogs','activityLogs',
+      ];
+
+      keys.forEach(function(key) {
+        try {
+          var val = DB.get(key);
+          if (val !== null && val !== undefined) data[key] = val;
+        } catch(e) {}
+      });
+
+      // Also grab any other SS keys in localStorage
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.startsWith('ssp_') && !data[k]) {
+          try { data[k] = JSON.parse(localStorage.getItem(k)); } catch(e) {}
+        }
+      }
+
+      var json     = JSON.stringify(data, null, 2);
+      var blob     = new Blob([json], {type:'application/json'});
+      var url      = URL.createObjectURL(blob);
+      var filename = bizName + '_backup_' + today + '.json';
+
+      var a = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 1000);
+
+      // Record last backup date
+      Utils.storage.set('lastBackupDate', today);
+      Toast.show('Backup downloaded: ' + filename + ' ✓', 'ok');
+
+      // Refresh the panel
+      setTimeout(function(){
+        var el = Utils.get('backup-container');
+        if (el) Backup.renderPanel(el);
+      }, 500);
+
+    } catch(e) {
+      Toast.show('Backup failed: ' + e.message, 'err');
+    }
+  },
+
+  /* ══════════════════════════════════════════════════════════════
+     RESTORE — preview then confirm
+  ══════════════════════════════════════════════════════════════ */
+  previewRestore: function(input) {
+    var file = input.files[0];
+    if (!file) return;
+
+    var preview = Utils.get('restore-preview');
+    if (!preview) return;
+
+    preview.style.display = 'block';
+    preview.innerHTML = '<div style="text-align:center;padding:12px;color:var(--t3)">Reading file...</div>';
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var data = JSON.parse(e.target.result);
+        var meta = data._meta || {};
+
+        if (!meta.version || !meta.version.includes('SmartStock')) {
+          preview.innerHTML = '<div style="color:var(--er);padding:10px;font-size:12px">❌ Invalid backup file. Only SmartStock Pro backups are supported.</div>';
+          return;
+        }
+
+        var salesCount    = (data.sales||[]).length;
+        var prodCount     = (data.products||[]).length;
+        var custCount     = (data.customers||[]).length;
+        var expCount      = (data.expenses||[]).length;
+
+        Backup._pendingRestore = data;
+
+        preview.innerHTML = '<div style="background:var(--okb);border:1px solid var(--okbd);border-radius:var(--r10);padding:14px;margin-top:10px">'
+          + '<div style="font-size:13px;font-weight:700;color:var(--ok);margin-bottom:10px">✅ Valid Backup Found</div>'
+          + '<div style="font-size:11px;color:var(--t2);margin-bottom:10px;line-height:1.8">'
+          + '📅 Exported: <strong>' + (meta.date||'Unknown') + '</strong><br>'
+          + '🏢 Business: <strong>' + Utils.esc(meta.bizName||'Unknown') + '</strong><br>'
+          + '🧾 Sales: <strong>' + salesCount + '</strong> · '
+          + '📦 Products: <strong>' + prodCount + '</strong> · '
+          + '👥 Customers: <strong>' + custCount + '</strong>'
+          + '</div>'
+          + '<div style="background:var(--wab);border-radius:var(--r8);padding:10px;margin-bottom:12px;font-size:11px;color:var(--wa)">'
+          + '⚠️ <strong>Warning:</strong> This will replace ALL current data. Your existing data will be overwritten.'
+          + '</div>'
+          + '<button class="btn-primary btn-full" onclick="Backup.confirmRestore()" style="background:var(--ok)">🔄 Restore This Backup</button>'
+          + '</div>';
+
+      } catch(err) {
+        preview.innerHTML = '<div style="color:var(--er);padding:10px;font-size:12px">❌ Could not read file: ' + Utils.esc(err.message) + '</div>';
+      }
+    };
+    reader.readAsText(file);
+  },
+
+  _pendingRestore: null,
+
+  confirmRestore: function() {
+    var data = Backup._pendingRestore;
+    if (!data) { Toast.show('No backup loaded','err'); return; }
+
+    Modal.open({
+      title: '⚠️ Confirm Restore', barColor: 'var(--er)',
+      body:  '<div style="text-align:center;padding:16px 0">'
+           + '<div style="font-size:48px;margin-bottom:14px">🔄</div>'
+           + '<div style="font-size:14px;font-weight:700;color:var(--t1);margin-bottom:8px">Are you absolutely sure?</div>'
+           + '<div style="font-size:12px;color:var(--t2);line-height:1.7;max-width:280px;margin:0 auto">'
+           + 'All current data on this device will be permanently replaced with the backup from <strong>' + (data._meta&&data._meta.date||'unknown date') + '</strong>.'
+           + '</div></div>',
+      footer: '<button class="btn-ghost" style="flex:1" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1;background:var(--er)" onclick="Backup.executeRestore()">🔄 Yes, Restore</button>',
+    });
+  },
+
+  executeRestore: function() {
+    var data = Backup._pendingRestore;
+    if (!data) return;
+
+    try {
+      var meta = data._meta || {};
+      var count = 0;
+
+      // Restore all data keys
+      var keys = [
+        'settings','users','products','sales','customers','suppliers',
+        'expenses','employees','payroll','notifications','payments',
+        'allocations','purchaseOrders','grns','supplierBills','quotations',
+        'employeeLoans','monthlyStatements','support_tickets',
+        'businesses','branches','customRoles','auditLogs',
+      ];
+
+      keys.forEach(function(key) {
+        if (data[key] !== undefined) {
+          try {
+            DB.set(key, data[key]);
+            count++;
+          } catch(e) {}
+        }
+      });
+
+      // Restore any ssp_ prefixed keys
+      Object.keys(data).forEach(function(key) {
+        if (key.startsWith('ssp_')) {
+          try {
+            localStorage.setItem(key, JSON.stringify(data[key]));
+            count++;
+          } catch(e) {}
+        }
+      });
+
+      Backup._pendingRestore = null;
+      Toast.show('✅ Restore complete — ' + count + ' data categories restored', 'ok');
+      Modal.close();
+
+      // Reload the app
+      setTimeout(function() { location.reload(); }, 1500);
+
+    } catch(e) {
+      Toast.show('Restore failed: ' + e.message, 'err');
+    }
+  },
+
+  /* ── Quick modal triggered from More menu ─────────────────────────────── */
+  _openBackupModal: function() {
+    Modal.open({
+      title: '💾 Data Backup & Restore', barColor: 'var(--ok)',
+      body:   '<div id="backup-container" style="min-height:200px"></div>',
+      footer: '<button class="btn-primary btn-full" onclick="Modal.close()">Close</button>',
+    });
+    setTimeout(function() {
+      var el = Utils.get('backup-container');
+      if (el) Backup.renderPanel(el);
+    }, 150);
   },
 };
 
