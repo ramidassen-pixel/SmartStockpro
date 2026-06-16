@@ -241,15 +241,55 @@ var Auth = {
     if (pw.length < 6) { Auth._err('join-err', '⚠️ Password min 6 characters'); return; }
     if (pw !== pwConf)  { Auth._err('join-err', '⚠️ Passwords do not match'); return; }
 
+    // First search locally
     var businesses = DB.get('businesses') || [];
     var biz = null;
     for (var i = 0; i < businesses.length; i++) {
       if (businesses[i].name.toLowerCase() === bizName.toLowerCase()) { biz = businesses[i]; break; }
     }
+
     if (!biz) {
-      Auth._err('join-err', '❌ Business "' + bizName + '" not found. Check the name or contact the business owner.');
-      return;
+      // Not found locally — search Supabase platform (other devices may have registered)
+      Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
+      var searchUrl = SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status';
+      fetch(searchUrl, {
+        headers: {
+          'apikey':        SUPABASE_ANON,
+          'Authorization': 'Bearer ' + SUPABASE_ANON,
+        }
+      }).then(function(r){ return r.json(); })
+        .then(function(results) {
+          if (!results || !results.length) {
+            // Truly not found — guide user to register
+            Auth._err('join-err',
+              '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
+              + '<strong>Is this your first time?</strong><br>'
+              + '👉 Go to <strong>New Biz</strong> tab to register your business.<br><br>'
+              + 'If your employer created the business, ask them for the <strong>exact business name</strong>.'
+            );
+            return;
+          }
+          // Found on Supabase — save locally and continue join
+          var remoteBiz = results[0];
+          var localBizes = DB.get('businesses') || [];
+          localBizes.push({ id: remoteBiz.id, name: remoteBiz.name, status: remoteBiz.status || 'active' });
+          DB.set('businesses', localBizes);
+          Auth._continueJoin(remoteBiz, bizName, name, email, phone, pw);
+        })
+        .catch(function(e) {
+          Auth._err('join-err',
+            '❌ No business named "' + Utils.esc(bizName) + '" was found.<br><br>'
+            + '👉 <strong>New to SmartStock Pro?</strong> Tap <strong>New Biz</strong> tab to create your account.<br>'
+            + '👉 Joining your employer? Ask them for the exact business name they registered.'
+          );
+        });
+      return;  // async continues in _continueJoin
     }
+
+    Auth._continueJoin(biz, bizName, name, email, phone, pw);
+  },
+
+  _continueJoin: function(biz, bizName, name, email, phone, pw) {
 
     var users = DB.get('users') || [];
     for (var j = 0; j < users.length; j++) {
