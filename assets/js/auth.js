@@ -354,24 +354,49 @@ var Auth = {
   _showEmailVerification: function(user, code) {
     var loginScreen = Utils.get('login-screen');
     if (!loginScreen) return;
-    loginScreen.innerHTML = '<div class="login-card">'
-      + '<div style="text-align:center;padding:10px 0 20px">'
-      + '<div style="font-size:64px;margin-bottom:14px">📧</div>'
-      + '<div class="login-title" style="font-size:20px">Verify Your Email</div>'
-      + '<div class="login-sub" style="margin-bottom:18px">We sent a 6-digit code to<br><strong style="color:var(--g)">' + Utils.esc(user.email) + '</strong></div>'
+    var emailSent = !code;
+
+    var codeBlock = '';
+    if (emailSent) {
+      codeBlock = '<div style="background:var(--okb);border:1px solid var(--okbd);border-radius:12px;padding:14px;margin-bottom:16px;font-size:13px;color:var(--ok);text-align:center">'
+        + '<div style="font-weight:700;margin-bottom:4px">✅ Code sent to:</div>'
+        + '<div style="color:var(--g);font-weight:800">' + Utils.esc(user.email) + '</div>'
+        + '<div style="font-size:11px;color:var(--t2);margin-top:6px">Check your inbox &amp; spam. Takes 1–2 minutes.</div>'
+        + '</div>';
+    } else {
+      codeBlock = '<div style="background:var(--wab);border:1.5px solid var(--wabd);border-radius:12px;padding:16px;margin-bottom:16px;text-align:center">'
+        + '<div style="font-size:11px;color:var(--wa);font-weight:700;margin-bottom:8px;text-transform:uppercase">⚠️ Email could not be delivered</div>'
+        + '<div style="font-size:12px;color:var(--t2);margin-bottom:12px">Use this code to verify your account:</div>'
+        + '<div style="background:#111;border-radius:12px;padding:14px;display:inline-block;min-width:160px">'
+        + '<div style="font-size:38px;font-weight:900;letter-spacing:10px;color:var(--g);font-family:monospace">' + code + '</div>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--wa);margin-top:8px">Write this down — expires in 15 minutes</div>'
+        + '</div>';
+    }
+
+    loginScreen.innerHTML =
+      '<div style="width:100%;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#070A12,#0d1a2e,#070A12);box-sizing:border-box">'
+      + '<div style="width:100%;max-width:420px;background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.15);border-radius:20px;padding:24px 20px;box-sizing:border-box">'
+      + '<div style="text-align:center;margin-bottom:20px">'
+      + '<div style="font-size:52px;margin-bottom:8px">📧</div>'
+      + '<div style="font-size:20px;font-weight:800;color:var(--t1)">Verify Your Account</div>'
+      + '<div style="font-size:12px;color:var(--t2);margin-top:5px">Enter your 6-digit verification code</div>'
+      + '</div>'
+      + codeBlock
       + '<div id="verify-err" class="form-err hidden"></div>'
-      + '<div class="fg"><label class="fl">Enter Verification Code</label>'
-      + '<input class="fi" id="verify-code" type="text" maxlength="6" placeholder="000000" style="text-align:center;font-size:24px;font-weight:700;letter-spacing:8px">'
+      + '<div class="fg"><label class="fl" style="text-align:center;display:block;margin-bottom:8px">Your 6-Digit Code</label>'
+      + '<input class="fi" id="verify-code" type="number" maxlength="6" placeholder="000000"'
+      + ' style="text-align:center;font-size:28px;font-weight:900;letter-spacing:10px;width:100%;box-sizing:border-box">'
       + '</div>'
-      + '<button class="btn-primary btn-full" onclick="Auth.verifyEmail(\'' + user.id + '\')" style="margin-bottom:12px">✓ Verify Email</button>'
-      + '<button class="btn-ghost btn-full" onclick="Auth.resendVerification(\'' + user.id + '\')">📧 Resend Code</button>'
-      + '<div style="margin-top:16px;font-size:12px;color:var(--t3)">For demo: your code is <strong style="color:var(--g)">' + code + '</strong></div>'
+      + '<button class="btn-primary btn-full" onclick="Auth.verifyEmail(\'' + user.id + '\')" style="margin-bottom:10px;font-size:15px">✓ Verify &amp; Continue</button>'
+      + '<button class="btn-ghost btn-full" onclick="Auth.resendVerification(\'' + user.id + '\')" style="margin-bottom:10px">📧 Resend Code</button>'
       + '</div>'
-      + '<div style="text-align:center;margin-top:14px"><button class="btn-ghost btn-sm" onclick="location.reload()">← Back to Sign In</button></div>'
+      + '<button class="btn-ghost btn-sm" onclick="location.reload()" style="margin-top:14px;color:rgba(255,255,255,.3)">← Back to Sign In</button>'
       + '</div>';
-    loginScreen.style.display = 'flex';
+    loginScreen.style.display = 'block';
     loginScreen.classList.remove('hidden');
   },
+
 
   verifyEmail: function(userId) {
     var code  = Utils.val('verify-code').trim();
@@ -434,7 +459,22 @@ var Auth = {
     var newCode = Auth._genCode();
     users[idx].verifyCode = newCode;
     DB.set('users', users);
-    Toast.show('New code: ' + newCode + ' (shown for demo — would email in production)', 'ok');
+
+    // Try sending email again
+    Auth._sendEmail({
+      to:      users[idx].email,
+      type:    'verification',
+      code:    newCode,
+      name:    users[idx].name,
+      bizName: DB.getSettings().bizName || 'SmartStock Pro',
+    }, newCode).then(function(result) {
+      Auth._showEmailVerification(users[idx], result.sent ? null : result.code);
+      if (result.sent) {
+        Toast.show('New code sent to ' + users[idx].email, 'ok');
+      } else {
+        Toast.show('New code generated — use code shown on screen', 'ok');
+      }
+    });
   },
 
   /* ═══════════════════════════════════════════════════════
