@@ -2977,6 +2977,7 @@ var BusinessMgr = {
 
 var SUPABASE_URL  = 'https://ovbtqkpvhivqnnxojjwu.supabase.co';
 var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnRxa3B2aGl2cW5ueG9qand1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTQ1NDEsImV4cCI6MjA5Njc5MDU0MX0.TZ_B5NBC3uIyqMYs442umeoi3o78CCwTZW6YgHS9efw';
+var ADMIN_FN_URL  = SUPABASE_URL + '/functions/v1/admin-data';
 
 /* ══════════════════════════════════════════════════════════════
    PLATFORM SYNC — sends registration & activity to Supabase
@@ -3051,21 +3052,11 @@ var Platform = {
   // Call this on login — updates last_active
   pingLogin: function(user, bizId) {
     if (!user) return;
-    // Update last_login_at
-    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(user.id), {
-      method:  'PATCH',
-      headers: Platform._hdr(),
-      body:    JSON.stringify({ last_login_at: new Date().toISOString() }),
+    fetch(ADMIN_FN_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'ping', userId: user.id, bizId: bizId || null }),
     }).catch(function(){});
-
-    // Update business last_active
-    if (bizId) {
-      fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(bizId), {
-        method:  'PATCH',
-        headers: Platform._hdr(),
-        body:    JSON.stringify({ last_active_at: new Date().toISOString() }),
-      }).catch(function(){});
-    }
 
     // Log activity event
     fetch(SUPABASE_URL + '/rest/v1/platform_activity', {
@@ -3156,20 +3147,29 @@ var SuperAdmin = {
       + '</div>'
       + '<div id="sa-content"><div style="text-align:center;padding:40px;color:var(--t3)">Loading platform data...</div></div>';
 
-    // Fetch from Supabase
-    var hdr = {
-      'apikey':         SUPABASE_ANON,
-      'Authorization': 'Bearer ' + SUPABASE_ANON,
+    // Fetch through the PIN-protected admin-data Edge Function — the
+    // browser never holds a key capable of reading these tables directly.
+    var fnHdr = {
+      'Content-Type': 'application/json',
+      'x-owner-pin':  SuperAdmin._pin,
     };
 
+    function fetchTable(table, filter) {
+      return fetch(ADMIN_FN_URL, {
+        method: 'POST',
+        headers: fnHdr,
+        body: JSON.stringify({ action: 'select', table: table, filter: filter }),
+      }).then(function(r){ return r.json(); });
+    }
+
     Promise.all([
-      fetch(SUPABASE_URL + '/rest/v1/platform_businesses?select=*&order=registered_at.desc', {headers:hdr}).then(function(r){return r.json();}),
-      fetch(SUPABASE_URL + '/rest/v1/platform_users?select=*&order=registered_at.desc',      {headers:hdr}).then(function(r){return r.json();}),
-      fetch(SUPABASE_URL + '/rest/v1/platform_activity?select=*&order=created_at.desc&limit=50', {headers:hdr}).then(function(r){return r.json();}),
+      fetchTable('platform_businesses', 'order=registered_at.desc'),
+      fetchTable('platform_users',      'order=registered_at.desc'),
+      fetchTable('platform_activity',   'order=created_at.desc&limit=50'),
     ]).then(function(results) {
-      var businesses = results[0] || [];
-      var users      = results[1] || [];
-      var activity   = results[2] || [];
+      var businesses = Array.isArray(results[0]) ? results[0] : [];
+      var users      = Array.isArray(results[1]) ? results[1] : [];
+      var activity   = Array.isArray(results[2]) ? results[2] : [];
       SuperAdmin._renderDashboard(businesses, users, activity);
     }).catch(function(err) {
       Utils.get('sa-content').innerHTML = '<div style="padding:20px;color:var(--er)">Error loading data: ' + err.message + '</div>';
@@ -9882,7 +9882,9 @@ var AI = {
   history: [],
   busy: false,
   inited: false,
-  KEY: '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',
+  // The Anthropic key now lives only inside the ai-proxy Supabase Edge
+  // Function as a server-side secret — it is never present in this file
+  // or shipped to the browser.
 
   render: function() {
     var pg = Utils.get('pg-ai');
@@ -10113,16 +10115,10 @@ var AI = {
     this._addTyping(tid);
 
     var self = this;
-    fetch('https://api.anthropic.com/v1/messages', {
+    fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': AI.KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{role:'user', content:'Generate the complete Daily Business Management Report now. Be thorough and professional.'}],
@@ -10139,11 +10135,8 @@ var AI = {
         self._setStatus('Report ready ✓', 'var(--ok)');
         Toast.show('Full business report generated ✓','ok');
       } else {
-        var errMsg = data.error ? (data.error.message + ' [type:' + (data.error.type||'?') + ']') : 'Could not generate report.';
+        var errMsg = data.error ? (data.error + (data.type?' [type:'+data.type+']':'')) : 'Could not generate report.';
         console.error('AI API Error:', JSON.stringify(data));
-        if (errMsg.toLowerCase().includes('api-key') || errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('invalid')) {
-          errMsg = '🔑 API key rejected by Anthropic. Key: ' + AI.KEY.slice(0,20) + '...';
-        }
         self._addBot('⚠️ ' + errMsg);
         self._setStatus('Ready', 'var(--ok)');
       }
@@ -10308,16 +10301,10 @@ var AI = {
     this._addTyping(tid);
     var self = this;
     try {
-      var res = await fetch('https://api.anthropic.com/v1/messages', {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': AI.KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
           max_tokens: 1024,
           system: 'You are SmartStock AI — expert business assistant and accountant.\n\nLIVE DATA:\n' + this._context() + '\n\nBe concise, practical, and use bullet points. Always give specific numbers from the data.',
           messages: this.history.slice(-10),
@@ -10334,11 +10321,8 @@ var AI = {
         this.history.push({role:'assistant', content:ans});
         if (this.history.length > 20) this.history = this.history.slice(-20);
       } else {
-        var errMsg2 = data.error ? (data.error.message + ' [type:' + (data.error.type||'?') + ']') : 'No response.';
+        var errMsg2 = data.error ? (data.error + (data.type?' [type:'+data.type+']':'')) : 'No response.';
         console.error('AI Chat Error:', JSON.stringify(data));
-        if (errMsg2.toLowerCase().includes('api-key') || errMsg2.toLowerCase().includes('auth') || errMsg2.toLowerCase().includes('invalid')) {
-          errMsg2 = '🔑 API key rejected. Key starts with: ' + AI.KEY.slice(0,20) + '...';
-        }
         this._addBot('⚠️ ' + errMsg2);
       }
     } catch(err) {
@@ -12483,11 +12467,14 @@ var Support = {
   _renderAllTickets: function(el) {
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading tickets...</div>';
 
-    var hdr = { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer '+SUPABASE_ANON };
-    fetch(SUPABASE_URL + '/rest/v1/support_tickets?select=*&order=created_at.desc', { headers: hdr })
+    fetch(SUPABASE_URL + '/functions/v1/admin-data', {
+      method:  'POST',
+      headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
+      body:    JSON.stringify({ action:'select', table:'support_tickets', filter:'order=created_at.desc' }),
+    })
       .then(function(r){ return r.json(); })
       .then(function(tickets) {
-        if (!tickets || !tickets.length) {
+        if (!tickets || !Array.isArray(tickets) || !tickets.length) {
           el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-title">No tickets yet</div></div>';
           return;
         }
@@ -12648,11 +12635,15 @@ var Support = {
       });
       Utils.storage.set('support_tickets', tickets);
 
-      // Sync update to Supabase
-      fetch(SUPABASE_URL + '/rest/v1/support_tickets?id=eq.'+encodeURIComponent(ticketId), {
-        method:  'PATCH',
-        headers: hdr,
-        body:    JSON.stringify({ status: newStatus, priority: newPriority, updated_at: new Date().toISOString() }),
+      // Sync update to Supabase via the PIN-gated admin function
+      fetch(SUPABASE_URL + '/functions/v1/admin-data', {
+        method:  'POST',
+        headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
+        body:    JSON.stringify({
+          action: 'update', table: 'support_tickets',
+          filter: 'id=eq.'+encodeURIComponent(ticketId),
+          data:   { status: newStatus, priority: newPriority, updated_at: new Date().toISOString() },
+        }),
       }).catch(function(){});
     }
 
@@ -12762,12 +12753,15 @@ var Support = {
   },
 
   _renderFeedbackAdmin: function(el) {
-    var hdr = { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer '+SUPABASE_ANON };
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading feedback...</div>';
-    fetch(SUPABASE_URL + '/rest/v1/support_tickets?category=eq.⭐ General Feedback&select=*&order=created_at.desc', { headers: hdr })
+    fetch(SUPABASE_URL + '/functions/v1/admin-data', {
+      method:  'POST',
+      headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
+      body:    JSON.stringify({ action:'select', table:'support_tickets', filter:'category=eq.⭐ General Feedback&order=created_at.desc' }),
+    })
       .then(function(r){ return r.json(); })
       .then(function(feedbacks) {
-        if (!feedbacks.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-title">No feedback yet</div></div>'; return; }
+        if (!feedbacks || !Array.isArray(feedbacks) || !feedbacks.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-title">No feedback yet</div></div>'; return; }
         var avg = feedbacks.filter(function(f){ return f.rating; }).reduce(function(a,f){ return a+f.rating; },0) / feedbacks.filter(function(f){ return f.rating; }).length;
         el.innerHTML = '<div class="sec">'
           + '<div style="text-align:center;background:var(--gb3);border:1px solid rgba(212,168,67,.2);border-radius:var(--r14);padding:20px;margin-bottom:14px">'
