@@ -3811,95 +3811,84 @@ var Sales = {
 
   // ── PRINT RECEIPT ──────────────────────────────────────────────────────────
 
+
+  /* ── WhatsApp opener — works in PWA + Android Chrome ─────────────────── */
+  _openWhatsApp: function(msg, phone) {
+    var encoded = encodeURIComponent(msg);
+    var url = phone && phone.length > 5
+      ? 'https://wa.me/' + phone + '?text=' + encoded
+      : 'https://wa.me/?text=' + encoded;
+
+    // Method 1: anchor click (works in PWA where window.open is blocked)
+    var a = document.createElement('a');
+    a.href   = url;
+    a.target = '_blank';
+    a.rel    = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); }, 500);
+  },
+
   shareWhatsApp: function(saleId) {
     var s = DB.getSales().find(function(x){ return x.id===saleId; }); if(!s) return;
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
     var bizName  = settings.bizName  || 'SmartStock Pro';
-    var bizPhone = settings.bizPhone  || '';
+    var bizPhone = settings.bizPhone || '';
 
-    // Build clean text receipt
-    var lines = [];
-    lines.push('🧾 *INVOICE — ' + bizName + '*');
-    lines.push('─────────────────────────');
-    lines.push('📋 Invoice: *' + s.id + '*');
-    lines.push('📅 Date: ' + Utils.date(s.date));
-    lines.push('👤 Customer: ' + Utils.esc(s.customer||'Walk-in Customer'));
-    lines.push('');
-    lines.push('*ITEMS PURCHASED:*');
+    // Build message
+    var nl = '\n';
+    var msg = '';
+    msg += '🧾 *INVOICE — ' + bizName + '*' + nl;
+    msg += '─────────────────────' + nl;
+    msg += '📋 *' + s.id + '*' + nl;
+    msg += '📅 Date: ' + Utils.date(s.date) + nl;
+    msg += '👤 ' + Utils.esc(s.customer||'Walk-in Customer') + nl + nl;
+    msg += '*Items:*' + nl;
     (s.items||[]).forEach(function(item){
-      var lineTotal = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
-      lines.push('• ' + item.name + ' × ' + item.qty + ' = ' + Utils.cur(lineTotal,cur));
+      var total = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
+      msg += '• ' + Utils.esc(item.name) + ' x' + item.qty + ' = ' + Utils.cur(total,cur) + nl;
     });
-    lines.push('─────────────────────────');
-    if ((s.discount||0)>0) {
-      lines.push('Discount: ' + s.discount + '%');
-    }
-    lines.push('💰 *TOTAL: ' + Utils.cur(s.total,cur) + '*');
-    lines.push('✅ Status: ' + (s.status||'Paid'));
-    if (parseFloat(s.balance)>0) {
-      lines.push('⚠️ Balance Due: ' + Utils.cur(s.balance,cur));
-    }
-    lines.push('💳 Payment: ' + (s.payment||'Cash'));
-    lines.push('');
-    lines.push('Thank you for your business! 🙏');
-    if (bizPhone) lines.push('📞 ' + bizPhone);
+    msg += '─────────────────────' + nl;
+    msg += '💰 *TOTAL: ' + Utils.cur(s.total,cur) + '*' + nl;
+    msg += '✅ ' + (s.status||'Paid');
+    if (parseFloat(s.balance)>0) msg += nl + '⚠️ Balance: ' + Utils.cur(s.balance,cur);
+    msg += nl + '💳 ' + (s.payment||'Cash');
+    msg += nl + nl + 'Thank you! 🙏';
+    if (bizPhone) msg += nl + '📞 ' + bizPhone;
 
-    var msg = lines.join('\n');
-    var encoded = encodeURIComponent(msg);
-
-    // Try native Web Share API first (Android Chrome supports it)
-    if (navigator.share) {
-      navigator.share({
-        title: 'Invoice ' + s.id + ' — ' + bizName,
-        text:  msg,
-      }).catch(function(e) {
-        // User cancelled or share failed — fallback to WhatsApp
-        window.open('https://wa.me/?text=' + encoded, '_blank');
-      });
-    } else {
-      // Direct WhatsApp link
-      window.open('https://wa.me/?text=' + encoded, '_blank');
-    }
+    Sales._openWhatsApp(msg, '');
   },
 
   shareWhatsAppCustomer: function(saleId) {
     var s = DB.getSales().find(function(x){ return x.id===saleId; }); if(!s) return;
     var customers = DB.getCustomers();
     var cust = customers.find(function(c){ return c.id===s.customerId||c.name===s.customer; });
-    var phone = cust ? (cust.phone||'') : '';
-
+    var phone = cust ? (cust.phone||'').replace(/[^0-9]/g,'') : '';
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
     var bizName  = settings.bizName  || 'SmartStock Pro';
     var bizPhone = settings.bizPhone || '';
 
-    var lines = [];
-    lines.push('🧾 *INVOICE — ' + bizName + '*');
-    lines.push('─────────────────────────');
-    lines.push('📋 Invoice: *' + s.id + '*');
-    lines.push('📅 Date: ' + Utils.date(s.date));
-    lines.push('');
-    lines.push('*ITEMS:*');
+    var nl = '\n';
+    var msg = '';
+    msg += '🧾 *INVOICE — ' + bizName + '*' + nl;
+    msg += '─────────────────────' + nl;
+    msg += '📋 *' + s.id + '*' + nl;
+    msg += '📅 Date: ' + Utils.date(s.date) + nl + nl;
+    msg += '*Items:*' + nl;
     (s.items||[]).forEach(function(item){
-      var lineTotal = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
-      lines.push('• ' + item.name + ' × ' + item.qty + ' = ' + Utils.cur(lineTotal,cur));
+      var total = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
+      msg += '• ' + Utils.esc(item.name) + ' x' + item.qty + ' = ' + Utils.cur(total,cur) + nl;
     });
-    lines.push('─────────────────────────');
-    lines.push('💰 *TOTAL: ' + Utils.cur(s.total,cur) + '*');
-    lines.push('✅ ' + (s.status||'Paid'));
-    if (parseFloat(s.balance)>0) lines.push('⚠️ Balance: ' + Utils.cur(s.balance,cur));
-    lines.push('');
-    lines.push('Thank you! 🙏');
-    if (bizPhone) lines.push('📞 ' + bizPhone);
+    msg += '─────────────────────' + nl;
+    msg += '💰 *TOTAL: ' + Utils.cur(s.total,cur) + '*' + nl;
+    msg += '✅ ' + (s.status||'Paid');
+    if (parseFloat(s.balance)>0) msg += nl + '⚠️ Balance: ' + Utils.cur(s.balance,cur);
+    msg += nl + nl + 'Thank you! 🙏';
+    if (bizPhone) msg += nl + '📞 ' + bizPhone;
 
-    var msg     = lines.join('\n');
-    var encoded = encodeURIComponent(msg);
-    var url     = phone
-      ? 'https://wa.me/' + phone.replace(/[^0-9]/g,'') + '?text=' + encoded
-      : 'https://wa.me/?text=' + encoded;
-
-    window.open(url, '_blank');
+    Sales._openWhatsApp(msg, phone);
   },
 
   printReceipt: function(id){
@@ -4538,12 +4527,21 @@ var Customers = {
   },
 
   sendDebtWhatsApp: function() {
-    var msg   = Utils.val('debt-msg');
-    var phone = Utils.val('debt-phone').replace(/[^0-9]/g,'');
-    var url   = phone
-      ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg)
-      : 'https://wa.me/?text=' + encodeURIComponent(msg);
-    window.open(url, '_blank');
+    var msg     = Utils.val('debt-msg');
+    var phone   = Utils.val('debt-phone').replace(/[^0-9]/g,'');
+    var encoded = encodeURIComponent(msg);
+    var url     = phone && phone.length > 5
+      ? 'https://wa.me/' + phone + '?text=' + encoded
+      : 'https://wa.me/?text=' + encoded;
+
+    // Anchor click trick — works in PWA where window.open is blocked
+    var a = document.createElement('a');
+    a.href   = url;
+    a.target = '_blank';
+    a.rel    = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); }, 500);
     Modal.close();
   },
 
