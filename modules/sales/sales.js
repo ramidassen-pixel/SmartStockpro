@@ -643,6 +643,87 @@ var Sales = {
   },
 
   // ── PRINT RECEIPT ──────────────────────────────────────────────────────────
+
+
+  /* ── WhatsApp opener — works in PWA + Android Chrome ─────────────────── */
+  _openWhatsApp: function(msg, phone) {
+    var encoded = encodeURIComponent(msg);
+    var url = phone && phone.length > 5
+      ? 'https://wa.me/' + phone + '?text=' + encoded
+      : 'https://wa.me/?text=' + encoded;
+
+    // Method 1: anchor click (works in PWA where window.open is blocked)
+    var a = document.createElement('a');
+    a.href   = url;
+    a.target = '_blank';
+    a.rel    = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); }, 500);
+  },
+
+  shareWhatsApp: function(saleId) {
+    var s = DB.getSales().find(function(x){ return x.id===saleId; }); if(!s) return;
+    var settings = DB.getSettings();
+    var cur      = settings.currency || '$';
+    var bizName  = settings.bizName  || 'SmartStock Pro';
+    var bizPhone = settings.bizPhone || '';
+
+    // Build message
+    var nl = '\n';
+    var msg = '';
+    msg += '🧾 *INVOICE — ' + bizName + '*' + nl;
+    msg += '─────────────────────' + nl;
+    msg += '📋 *' + s.id + '*' + nl;
+    msg += '📅 Date: ' + Utils.date(s.date) + nl;
+    msg += '👤 ' + Utils.esc(s.customer||'Walk-in Customer') + nl + nl;
+    msg += '*Items:*' + nl;
+    (s.items||[]).forEach(function(item){
+      var total = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
+      msg += '• ' + Utils.esc(item.name) + ' x' + item.qty + ' = ' + Utils.cur(total,cur) + nl;
+    });
+    msg += '─────────────────────' + nl;
+    msg += '💰 *TOTAL: ' + Utils.cur(s.total,cur) + '*' + nl;
+    msg += '✅ ' + (s.status||'Paid');
+    if (parseFloat(s.balance)>0) msg += nl + '⚠️ Balance: ' + Utils.cur(s.balance,cur);
+    msg += nl + '💳 ' + (s.payment||'Cash');
+    msg += nl + nl + 'Thank you! 🙏';
+    if (bizPhone) msg += nl + '📞 ' + bizPhone;
+
+    Sales._openWhatsApp(msg, '');
+  },
+
+  shareWhatsAppCustomer: function(saleId) {
+    var s = DB.getSales().find(function(x){ return x.id===saleId; }); if(!s) return;
+    var customers = DB.getCustomers();
+    var cust = customers.find(function(c){ return c.id===s.customerId||c.name===s.customer; });
+    var phone = cust ? (cust.phone||'').replace(/[^0-9]/g,'') : '';
+    var settings = DB.getSettings();
+    var cur      = settings.currency || '$';
+    var bizName  = settings.bizName  || 'SmartStock Pro';
+    var bizPhone = settings.bizPhone || '';
+
+    var nl = '\n';
+    var msg = '';
+    msg += '🧾 *INVOICE — ' + bizName + '*' + nl;
+    msg += '─────────────────────' + nl;
+    msg += '📋 *' + s.id + '*' + nl;
+    msg += '📅 Date: ' + Utils.date(s.date) + nl + nl;
+    msg += '*Items:*' + nl;
+    (s.items||[]).forEach(function(item){
+      var total = (parseFloat(item.price)||0)*(parseInt(item.qty)||1);
+      msg += '• ' + Utils.esc(item.name) + ' x' + item.qty + ' = ' + Utils.cur(total,cur) + nl;
+    });
+    msg += '─────────────────────' + nl;
+    msg += '💰 *TOTAL: ' + Utils.cur(s.total,cur) + '*' + nl;
+    msg += '✅ ' + (s.status||'Paid');
+    if (parseFloat(s.balance)>0) msg += nl + '⚠️ Balance: ' + Utils.cur(s.balance,cur);
+    msg += nl + nl + 'Thank you! 🙏';
+    if (bizPhone) msg += nl + '📞 ' + bizPhone;
+
+    Sales._openWhatsApp(msg, phone);
+  },
+
   printReceipt: function(id){
     var s = DB.getSales().find(function(x){ return x.id===id; }); if(!s) return;
     var settings = DB.getSettings();
