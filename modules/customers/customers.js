@@ -299,4 +299,132 @@ var Customers = {
       this.render();
     });
   },
+
+  debtFollowUp: function(custId) {
+    var cust    = DB.getCustomers().find(function(c){ return c.id===custId; });
+    if (!cust) return;
+    var settings = DB.getSettings();
+    var cur      = settings.currency || '$';
+    var bizName  = settings.bizName  || 'SmartStock Pro';
+    var bizPhone = settings.bizPhone || '';
+
+    // Get unpaid sales for this customer
+    var unpaidSales = DB.getSales().filter(function(s){
+      return (s.customerId===custId||s.customer===cust.name) && s.status !== 'Paid' && parseFloat(s.balance)>0;
+    });
+    var totalOwed = unpaidSales.reduce(function(a,s){ return a+(parseFloat(s.balance)||0); },0);
+
+    if (!totalOwed) { Toast.show('No outstanding balance for '+cust.name,'ok'); return; }
+
+    // Build debt details
+    var debtLines = unpaidSales.map(function(s){
+      return '• Invoice '+s.id+' ('+Utils.date(s.date)+'): '+Utils.cur(s.balance,cur);
+    }).join('\n');
+
+    // Aging
+    var oldest = unpaidSales.reduce(function(a,s){ return !a||s.date<a?s.date:a; },null);
+    var daysOld = oldest ? Math.floor((Date.now()-new Date(oldest).getTime())/(864e5)) : 0;
+
+    // Build WhatsApp message
+    var nl = '\n';
+    var msg = 'Dear *'+cust.name+'*,' + nl + nl
+      + 'This is a friendly reminder from *'+bizName+'* regarding your outstanding balance.' + nl + nl
+      + 'Outstanding Invoices:' + nl
+      + debtLines + nl + nl
+      + 'Total Amount Owed: '+Utils.cur(totalOwed,cur) + nl
+      + (daysOld > 0 ? 'Oldest invoice: '+daysOld+' days ago' + nl + nl : nl)
+      + 'Please arrange payment at your earliest convenience.' + nl + nl
+      + 'Thank you for your business!'
+      + (bizPhone ? nl + 'Tel: '+bizPhone : '');
+
+        // Show preview modal before sending
+    Modal.open({
+      title: '📤 Debt Follow-Up', sub: Utils.esc(cust.name), barColor: 'var(--wa)',
+      body:
+        '<div style="background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r10);padding:12px 14px;margin-bottom:14px">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--wa);margin-bottom:4px">Total Outstanding</div>'
+        + '<div style="font-size:22px;font-weight:900;color:var(--er)">'+Utils.cur(totalOwed,cur)+'</div>'
+        + '<div style="font-size:11px;color:var(--t2);margin-top:2px">'+unpaidSales.length+' invoice'+(unpaidSales.length!==1?'s':'')+' · '+daysOld+' days outstanding</div>'
+        + '</div>'
+        + '<div class="fg"><label class="fl">WhatsApp Message Preview</label>'
+        + '<textarea class="fi" id="debt-msg" rows="10" style="font-size:12px;line-height:1.6;resize:none">'+msg+'</textarea></div>'
+        + '<div class="fg"><label class="fl">Customer Phone</label>'
+        + '<input class="fi" id="debt-phone" value="'+(cust.phone||'')+'" placeholder="+231 77 000 000"></div>',
+      footer:
+        '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+        + '<button class="btn-primary" style="flex:1;background:#25D366" onclick="Customers.sendDebtWhatsApp()">📤 Send via WhatsApp</button>',
+    });
+  },
+
+  sendDebtWhatsApp: function() {
+    var msg     = Utils.val('debt-msg');
+    var phone   = Utils.val('debt-phone').replace(/[^0-9]/g,'');
+    var encoded = encodeURIComponent(msg);
+    var url     = phone && phone.length > 5
+      ? 'https://wa.me/' + phone + '?text=' + encoded
+      : 'https://wa.me/?text=' + encoded;
+
+    // Anchor click trick — works in PWA where window.open is blocked
+    var a = document.createElement('a');
+    a.href   = url;
+    a.target = '_blank';
+    a.rel    = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); }, 500);
+    Modal.close();
+  },
+
+  debtReport: function() {
+    var customers = DB.getCustomers();
+    var settings  = DB.getSettings();
+    var cur       = settings.currency || '$';
+    var allSales  = DB.getSales();
+    var today     = new Date();
+
+    // Build debt aging report
+    var debtors = customers.map(function(cust){
+      var unpaid = allSales.filter(function(s){
+        return (s.customerId===cust.id||s.customer===cust.name) && s.status!=='Paid' && parseFloat(s.balance)>0;
+      });
+      var total  = unpaid.reduce(function(a,s){ return a+(parseFloat(s.balance)||0); },0);
+      if (!total) return null;
+      var oldest = unpaid.reduce(function(a,s){ return !a||s.date<a?s.date:a; },null);
+      var days   = oldest ? Math.floor((today-new Date(oldest))/(864e5)) : 0;
+      return { cust:cust, total:total, count:unpaid.length, days:days };
+    }).filter(Boolean).sort(function(a,b){ return b.total-a.total; });
+
+    if (!debtors.length) {
+      Modal.open({
+        title: '💚 Debt Report', barColor: 'var(--ok)',
+        body: '<div style="text-align:center;padding:30px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:16px;font-weight:700;color:var(--ok)">All customers are fully paid!</div><div style="font-size:12px;color:var(--t2);margin-top:6px">No outstanding balances</div></div>',
+        footer: '<button class="btn-primary btn-full" onclick="Modal.close()">Close</button>',
+      });
+      return;
+    }
+
+    var totalDebt = debtors.reduce(function(a,d){ return a+d.total; },0);
+    var body = '<div style="background:var(--erb);border-radius:var(--r10);padding:12px 14px;margin-bottom:14px;display:flex;justify-content:space-between">'
+      + '<div><div style="font-size:11px;color:var(--t2)">Total Outstanding</div><div style="font-size:20px;font-weight:900;color:var(--er)">'+Utils.cur(totalDebt,cur)+'</div></div>'
+      + '<div style="text-align:right"><div style="font-size:11px;color:var(--t2)">Debtors</div><div style="font-size:20px;font-weight:900;color:var(--er)">'+debtors.length+'</div></div>'
+      + '</div>'
+      + debtors.map(function(d){
+          var col = d.days > 30 ? 'var(--er)' : d.days > 7 ? 'var(--wa)' : 'var(--t2)';
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bd)">'
+            + '<div style="flex:1">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--t1)">'+Utils.esc(d.cust.name)+'</div>'
+            + '<div style="font-size:11px;color:'+col+'">'+(d.cust.phone?'📞 '+d.cust.phone+' · ':'')+d.days+' days outstanding · '+d.count+' invoice'+(d.count!==1?'s':'')+'</div>'
+            + '</div>'
+            + '<div style="text-align:right">'
+            + '<div style="font-size:15px;font-weight:800;color:var(--er)">'+Utils.cur(d.total,cur)+'</div>'
+            + '<button class="btn-ghost btn-sm" onclick="Customers.debtFollowUp(\'' + d.cust.id + '\')" style="color:#25D366;font-size:10px;margin-top:4px">📤 Follow Up</button>'
+            + '</div></div>';
+        }).join('');
+
+    Modal.open({
+      title: '⚠️ Debt Aging Report', barColor: 'var(--er)',
+      body: body,
+      footer: '<button class="btn-primary btn-full" onclick="Modal.close()">Close</button>',
+    });
+  },
 };
