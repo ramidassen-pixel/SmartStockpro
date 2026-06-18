@@ -1414,128 +1414,139 @@ var DB = {
 };
 
 /* === auth.js === */
-/* SmartStock Pro V5 — Complete Authentication System */
+/* SmartStock Pro V5 — Authentication via Supabase Auth (real, cross-device) */
 var SUPABASE_EMAIL_URL = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/functions/v1/send-email';
+var SUPABASE_AUTH_URL  = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/auth/v1';
 
 var Auth = {
   currentUser: null,
-  _failedAttempts: {},  // track failed logins per username
-  _resetUser: '',
+  _session: null,   // { access_token, refresh_token, expires_at }
 
   /* ═══════════════════════════════════════════════════════
-     LOGIN
+     LOGIN — real Supabase Auth, works from any device
   ═══════════════════════════════════════════════════════ */
   login: function() {
     var input = Utils.val('l-user').trim();
     var pw    = Utils.val('l-pass');
-    if (!input) { Auth._err('login-err', '⚠️ Enter your email or username'); return; }
+    if (!input) { Auth._err('login-err', '⚠️ Enter your email'); return; }
     if (!pw)    { Auth._err('login-err', '⚠️ Enter your password'); return; }
+    if (!input.includes('@')) { Auth._err('login-err', '⚠️ Use the email address you registered with'); return; }
 
-    var users = DB.get('users') || [];
-    if (!users.length) { Auth._err('login-err', 'No accounts found. Please create a business first.'); return; }
+    var btn = Utils.get('login-submit-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
 
-    // Find by email OR username
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      var u = users[i];
-      if ((u.email && u.email.toLowerCase() === input.toLowerCase()) ||
-          (u.username && u.username.toLowerCase() === input.toLowerCase())) {
-        user = u; break;
-      }
-    }
-    if (!user) { Auth._err('login-err', '❌ No account found with that email or username.'); return; }
-
-    // Account lockout after 5 failed attempts
-    var key = user.username;
-    var attempts = Auth._failedAttempts[key] || { count: 0, lastAttempt: 0 };
-    var now = Date.now();
-    if (attempts.count >= 5 && (now - attempts.lastAttempt) < 15 * 60 * 1000) {
-      var mins = Math.ceil((15 * 60 * 1000 - (now - attempts.lastAttempt)) / 60000);
-      Auth._err('login-err', '🔒 Account locked. Too many failed attempts. Try again in ' + mins + ' minute(s).');
-      return;
-    }
-
-    // Status checks
-    if (user.status === 'pending') {
-      Auth._err('login-err', '⏳ Account pending approval from the Primary Admin. Please wait.');
-      return;
-    }
-    if (user.status === 'rejected') {
-      Auth._err('login-err', '❌ Your registration was rejected. Contact the business owner.');
-      return;
-    }
-    if (user.status === 'suspended' || user.status === 'disabled') {
-      Auth._err('login-err', '🚫 This account has been ' + user.status + '. Contact your administrator.');
-      return;
-    }
-
-    // Email verification check
-    if (user.emailVerified === false) {
-      Auth._showVerificationRequired(user);
-      return;
-    }
-
-    // Password check
-    var ok = (pw === user.password)
-          || (typeof btoa !== 'undefined' && btoa(pw) === user.password);
-
-    if (!ok) {
-      // Try SHA-256
-      Auth._hashPw(pw).then(function(hashed) {
-        if (hashed === user.password) {
-          Auth._failedAttempts[key] = { count: 0, lastAttempt: 0 };
-          Auth._doLogin(user);
+    fetch(SUPABASE_AUTH_URL + '/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: input.toLowerCase(), password: pw }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
+      if (!result.ok) {
+        var msg = (result.data && result.data.error_description) || (result.data && result.data.msg) || 'Login failed';
+        if (msg.toLowerCase().includes('invalid')) {
+          Auth._err('login-err', '❌ Incorrect email or password.');
+        } else if (msg.toLowerCase().includes('confirm')) {
+          Auth._err('login-err', '📧 Please confirm your email first. Check your inbox.');
         } else {
-          attempts.count++;
-          attempts.lastAttempt = Date.now();
-          Auth._failedAttempts[key] = attempts;
-          var remaining = 5 - attempts.count;
-          if (remaining > 0) {
-            Auth._err('login-err', '❌ Incorrect password. ' + remaining + ' attempt(s) remaining.');
+          Auth._err('login-err', '❌ ' + msg);
+        }
+        return;
+      }
+      Auth._session = {
+        access_token:  result.data.access_token,
+        refresh_token: result.data.refresh_token,
+        expires_at:    Date.now() + (result.data.expires_in || 3600) * 1000,
+      };
+      Utils.storage.set('ssp_session', Auth._session);
+      Auth._loadProfileAndEnter();
+    })
+    .catch(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
+      Auth._err('login-err', '❌ Network error: ' + err.message);
+    });
+  },
+
+  // After a successful Supabase Auth login (or session restore), pull this
+  // user's own platform_users + platform_businesses rows and assemble the
+  // SAME-SHAPED currentUser object every other module already expects
+  // (id, name, email, role, status, businessIds, currentBusinessId, ...).
+  _loadProfileAndEnter: function() {
+    var hdr = {
+      'Content-Type':  'application/json',
+      'apikey':         SUPABASE_ANON,
+      'Authorization': 'Bearer ' + Auth._session.access_token,
+    };
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?select=*', { headers: hdr })
+      .then(function(r){ return r.json(); })
+      .then(function(rows) {
+        var row = (Array.isArray(rows) && rows[0]) || null;
+        if (!row) {
+          if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
+            Auth._err('login-err', '❌ Account found but no business profile exists. Contact support.');
           } else {
-            Auth._err('login-err', '🔒 Account locked for 15 minutes due to too many failed attempts.');
+            Utils.storage.del('ssp_session');
+            App.showLogin();
           }
-          try { if (typeof AuditLog !== 'undefined') AuditLog.record('LOGIN_FAILED', 'Failed login for: ' + user.username); } catch(e) {}
+          return;
+        }
+        if (row.status === 'pending') {
+          Auth._showPendingApproval({ businessIds: [row.business_id] });
+          return;
+        }
+        if (row.status === 'rejected') {
+          Utils.storage.del('ssp_session');
+          App.showLogin();
+          setTimeout(function(){ Auth._err('login-err', '❌ Your registration was rejected. Contact the business owner.'); }, 100);
+          return;
+        }
+        if (row.status === 'suspended' || row.status === 'disabled') {
+          Utils.storage.del('ssp_session');
+          App.showLogin();
+          setTimeout(function(){ Auth._err('login-err', '🚫 This account has been ' + row.status + '. Contact your administrator.'); }, 100);
+          return;
+        }
+
+        var user = {
+          id:                row.id,
+          username:          row.email,
+          name:              row.name,
+          email:             row.email,
+          phone:             row.phone || '',
+          role:              row.role || 'sales_employee',
+          status:            row.status || 'active',
+          emailVerified:     true,
+          businessIds:       [row.business_id],
+          currentBusinessId: row.business_id,
+          permissions:       row.permissions || {},
+          createdAt:         row.registered_at,
+          photo:             row.photo || '',
+        };
+
+        Auth.currentUser = user;
+        try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
+        try { if (typeof Platform !== 'undefined') Platform.pingLogin(user, row.business_id); } catch(e) {}
+
+        if (user.role === 'primary_admin') {
+          setTimeout(function() {
+            var pendingCount = (DB.get('users') || []).filter(function(u){ return u.status === 'pending'; }).length;
+            if (pendingCount > 0) Toast.show('📋 ' + pendingCount + ' user approval(s) pending — check Team & Access', 'warn');
+          }, 2000);
+        }
+        App.showShell();
+      })
+      .catch(function(err) {
+        if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
+          Auth._err('login-err', '❌ Could not load profile: ' + err.message);
+        } else {
+          App.showLogin();
         }
       });
-      return;
-    }
-
-    Auth._failedAttempts[key] = { count: 0, lastAttempt: 0 };
-    Auth._doLogin(user);
-  },
-
-  _doLogin: function(user) {
-    Auth.currentUser = user;
-    Utils.storage.set('ssp_session', { uid: user.id, loginTime: new Date().toISOString() });
-    try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
-    // Ping platform
-    try { if (typeof Platform !== 'undefined') Platform.pingLogin(user, user.currentBusinessId||(user.businessIds&&user.businessIds[0])); } catch(e) {}
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('LOGIN', 'Successful login'); } catch(e) {}
-
-    // Check for pending user approvals (notify primary admin)
-    if (user.role === 'primary_admin') {
-      var pendingCount = (DB.get('users') || []).filter(function(u){ return u.status === 'pending'; }).length;
-      if (pendingCount > 0) {
-        setTimeout(function() {
-          Toast.show('📋 ' + pendingCount + ' user approval(s) pending — check Team & Access', 'warn');
-        }, 2000);
-      }
-    }
-    App.showShell();
-  },
-
-  _showVerificationRequired: function(user) {
-    Auth._err('login-err', '📧 Email not verified. Check your inbox or resend the verification email.');
-    // Show resend button
-    var errEl = Utils.get('login-err');
-    if (errEl) {
-      errEl.innerHTML += '<br><button onclick="Auth.resendVerification(\'' + user.id + '\')" style="margin-top:8px;background:var(--g);color:#07080D;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📧 Resend Verification</button>';
-    }
   },
 
   /* ═══════════════════════════════════════════════════════
-     REGISTRATION — CREATE NEW BUSINESS
+     REGISTRATION — CREATE NEW BUSINESS (real Supabase Auth account)
   ═══════════════════════════════════════════════════════ */
   signup: function() {
     var bizName  = Utils.val('s-biz').trim();
@@ -1545,7 +1556,6 @@ var Auth = {
     var pw       = Utils.val('s-pass');
     var pwConf   = Utils.val('s-pass-conf');
 
-    // Validation
     if (!bizName)  { Auth._err('signup-err', '⚠️ Business name is required'); return; }
     if (!name)     { Auth._err('signup-err', '⚠️ Your full name is required'); return; }
     if (!email || !email.includes('@')) { Auth._err('signup-err', '⚠️ Enter a valid email address'); return; }
@@ -1554,94 +1564,72 @@ var Auth = {
     if (pw !== pwConf)  { Auth._err('signup-err', '⚠️ Passwords do not match'); return; }
     if (!Auth._strongPw(pw)) { Auth._err('signup-err', '⚠️ Password must contain uppercase, lowercase and a number'); return; }
 
-    var users      = DB.get('users') || [];
-    var businesses = DB.get('businesses') || [];
+    var btn = Utils.get('signup-submit-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
 
-    // Check duplicate email
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].email && users[i].email.toLowerCase() === email) {
-        Auth._err('signup-err', '❌ An account with this email already exists. Please sign in.'); return;
-      }
-    }
+    var bizId  = Utils.uid('BIZ');
+    var userMeta = { name: name, business_id: bizId, role: 'primary_admin' };
 
-    // Check duplicate business name
-    for (var j = 0; j < businesses.length; j++) {
-      if (businesses[j].name.toLowerCase() === bizName.toLowerCase()) {
-        Auth._err('signup-err', '❌ "' + bizName + '" is already registered. Contact the business owner or choose a different name.');
+    fetch(SUPABASE_AUTH_URL + '/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: email, password: pw, data: userMeta }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
+      if (!result.ok) {
+        var msg = (result.data && result.data.msg) || (result.data && result.data.error_description) || 'Sign up failed';
+        if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
+          Auth._err('signup-err', '❌ An account with this email already exists. Please sign in.');
+        } else {
+          Auth._err('signup-err', '❌ ' + msg);
+        }
         return;
       }
-    }
 
-    var verifyCode = Auth._genCode();
-    var userId     = Utils.uid('U');
-    var bizId      = Utils.uid('BIZ');
+      var authUserId = result.data.id || (result.data.user && result.data.user.id);
 
-    // Create business
-    var biz = {
-      id:        bizId,
-      name:      bizName,
-      address:   '',
-      phone:     phone,
-      email:     email,
-      currency:  '$',
-      timezone:  'Africa/Monrovia',
-      logo:      '',
-      ownerId:   userId,
-      createdAt: Utils.today(),
-    };
-    businesses.push(biz);
-    DB.set('businesses', biz.id && [biz].concat(businesses.filter(function(b){ return b.id !== biz.id; })) || businesses);
+      // Create the matching business + user rows in our own tables
+      var biz  = { id: bizId, name: bizName, owner_name: name, owner_email: email, owner_phone: phone, status: 'active' };
+      var user = { id: authUserId, business_id: bizId, name: name, email: email, phone: phone, role: 'primary_admin', status: 'active' };
 
-    // Create default branch
-    var branches = DB.get('branches') || [];
-    branches.push({ id: Utils.uid('BR'), businessId: bizId, name: 'Main Branch', location: '', managerId: userId, createdAt: Utils.today() });
-    DB.set('branches', branches);
+      fetch(SUPABASE_URL + '/rest/v1/platform_businesses', {
+        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(biz),
+      }).catch(function(){});
+      fetch(SUPABASE_URL + '/rest/v1/platform_users', {
+        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(user),
+      }).catch(function(){});
 
-    // Create Primary Admin user
-    var user = {
-      id:             userId,
-      username:       email,          // email is username
-      name:           name,
-      email:          email,
-      phone:          phone,
-      role:           'primary_admin',
-      status:         'active',
-      emailVerified:  false,          // must verify
-      verifyCode:     verifyCode,
-      businessIds:    [bizId],
-      currentBusinessId: bizId,
-      permissions:    {},
-      createdAt:      Utils.today(),
-      password:       pw,
-    };
-    users.push(user);
-    DB.set('users', users);
+      DB.saveSettings({ bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email });
+      try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
 
-    DB.saveSettings({ bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email });
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
-    // Sync to platform
-    try { if (typeof Platform !== 'undefined') { Platform.syncBusiness(biz, user); Platform.syncUser(user, bizId); } } catch(e) {}
-
-    // Show verification screen instead of logging in
-    // Send real email via Supabase Edge Function
-    Auth._sendEmail({
-      to: email,
-      type: 'verification',
-      code: verifyCode,
-      name: name,
-      bizName: bizName,
-    }, verifyCode).then(function(result) {
-      if (result.sent) {
-        Auth._showEmailVerification(user, null); // hide code on screen
-        Toast.show('Verification email sent to ' + email, 'ok');
-      } else {
-        Auth._showEmailVerification(user, result.code); // show code as fallback
-      }
+      // Supabase sends its own confirmation email automatically on signup.
+      Auth._showCheckEmailScreen(email);
+    })
+    .catch(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
+      Auth._err('signup-err', '❌ Network error: ' + err.message);
     });
   },
 
+  _showCheckEmailScreen: function(email) {
+    var loginScreen = Utils.get('login-screen');
+    if (!loginScreen) return;
+    loginScreen.innerHTML =
+      '<div style="width:100%;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#070A12,#0d1a2e,#070A12);box-sizing:border-box">'
+      + '<div style="width:100%;max-width:420px;background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.15);border-radius:20px;padding:24px 20px;box-sizing:border-box;text-align:center">'
+      + '<div style="font-size:52px;margin-bottom:8px">📧</div>'
+      + '<div style="font-size:20px;font-weight:800;color:var(--t1)">Check Your Email</div>'
+      + '<div style="font-size:13px;color:var(--t2);margin:12px 0 20px;line-height:1.7">We sent a confirmation link to<br><strong style="color:var(--g)">' + Utils.esc(email) + '</strong><br><br>Tap the link in that email, then come back here and sign in.</div>'
+      + '<button class="btn-primary btn-full" onclick="location.reload()">← Back to Sign In</button>'
+      + '</div></div>';
+    loginScreen.style.display = 'block';
+    loginScreen.classList.remove('hidden');
+  },
+
   /* ═══════════════════════════════════════════════════════
-     JOIN EXISTING BUSINESS
+     JOIN EXISTING BUSINESS (real Supabase Auth account, status=pending)
   ═══════════════════════════════════════════════════════ */
   joinBusiness: function() {
     var bizName = Utils.val('j-biz').trim();
@@ -1654,193 +1642,65 @@ var Auth = {
     if (!bizName) { Auth._err('join-err', '⚠️ Enter the business name'); return; }
     if (!name)    { Auth._err('join-err', '⚠️ Enter your full name'); return; }
     if (!email || !email.includes('@')) { Auth._err('join-err', '⚠️ Enter a valid email'); return; }
-    if (pw.length < 6) { Auth._err('join-err', '⚠️ Password min 6 characters'); return; }
+    if (pw.length < 8) { Auth._err('join-err', '⚠️ Password must be at least 8 characters'); return; }
     if (pw !== pwConf)  { Auth._err('join-err', '⚠️ Passwords do not match'); return; }
 
-    // First search locally
-    var businesses = DB.get('businesses') || [];
-    var biz = null;
-    for (var i = 0; i < businesses.length; i++) {
-      if (businesses[i].name.toLowerCase() === bizName.toLowerCase()) { biz = businesses[i]; break; }
-    }
-
-    if (!biz) {
-      // Not found locally — search Supabase platform (other devices may have registered)
-      Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
-      var searchUrl = SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status';
-      fetch(searchUrl, {
-        headers: {
-          'apikey':        SUPABASE_ANON,
-          'Authorization': 'Bearer ' + SUPABASE_ANON,
-        }
-      }).then(function(r){ return r.json(); })
-        .then(function(results) {
-          if (!results || !results.length) {
-            // Truly not found — guide user to register
-            Auth._err('join-err',
-              '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
-              + '<strong>Is this your first time?</strong><br>'
-              + '👉 Go to <strong>New Biz</strong> tab to register your business.<br><br>'
-              + 'If your employer created the business, ask them for the <strong>exact business name</strong>.'
-            );
-            return;
-          }
-          // Found on Supabase — save locally and continue join
-          var remoteBiz = results[0];
-          var localBizes = DB.get('businesses') || [];
-          localBizes.push({ id: remoteBiz.id, name: remoteBiz.name, status: remoteBiz.status || 'active' });
-          DB.set('businesses', localBizes);
-          Auth._continueJoin(remoteBiz, bizName, name, email, phone, pw);
-        })
-        .catch(function(e) {
-          Auth._err('join-err',
-            '❌ No business named "' + Utils.esc(bizName) + '" was found.<br><br>'
-            + '👉 <strong>New to SmartStock Pro?</strong> Tap <strong>New Biz</strong> tab to create your account.<br>'
-            + '👉 Joining your employer? Ask them for the exact business name they registered.'
-          );
-        });
-      return;  // async continues in _continueJoin
-    }
-
-    Auth._continueJoin(biz, bizName, name, email, phone, pw);
-  },
-
-  _continueJoin: function(biz, bizName, name, email, phone, pw) {
-
-    var users = DB.get('users') || [];
-    for (var j = 0; j < users.length; j++) {
-      if (users[j].email && users[j].email.toLowerCase() === email) {
-        Auth._err('join-err', '❌ An account with this email already exists.'); return;
+    Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
+    fetch(SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(results) {
+      if (!results || !results.length) {
+        Auth._err('join-err',
+          '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
+          + '<strong>Is this your first time?</strong><br>'
+          + '👉 Go to <strong>New Biz</strong> tab to register your business.<br><br>'
+          + 'If your employer created the business, ask them for the <strong>exact business name</strong>.'
+        );
+        return;
       }
-    }
-
-    var verifyCode = Auth._genCode();
-    var user = {
-      id:            Utils.uid('U'),
-      username:      email,
-      name:          name,
-      email:         email,
-      phone:         phone,
-      role:          'sales_employee',
-      status:        'pending',       // awaits approval
-      emailVerified: false,
-      verifyCode:    verifyCode,
-      businessIds:   [biz.id],
-      currentBusinessId: biz.id,
-      permissions:   {},
-      createdAt:     Utils.today(),
-      password:      pw,
-      requestedBizId: biz.id,
-    };
-    users.push(user);
-    DB.set('users', users);
-
-    // Notify primary admin
-    try {
-      var notifs = DB.get('notifications') || [];
-      notifs.unshift({ id: Utils.uid('N'), type: 'user_request', message: name + ' has requested to join ' + biz.name, userId: user.id, bizId: biz.id, read: false, createdAt: new Date().toISOString() });
-      DB.set('notifications', notifs);
-    } catch(e) {}
-
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + bizName); } catch(e) {}
-    // Sync to platform
-    try { if (typeof Platform !== 'undefined') Platform.syncUser(user, biz.id); } catch(e) {}
-
-    // Send real email
-    var joinBizName = biz.name;
-    Auth._sendEmail({
-      to: email,
-      type: 'verification',
-      code: verifyCode,
-      name: name,
-      bizName: joinBizName,
-    }, verifyCode).then(function(result) {
-      if (result.sent) {
-        Auth._showEmailVerification(user, null);
-        Toast.show('Verification email sent to ' + email, 'ok');
-      } else {
-        Auth._showEmailVerification(user, result.code);
-      }
+      Auth._continueJoin(results[0], name, email, phone, pw);
+    })
+    .catch(function() {
+      Auth._err('join-err', '❌ Could not search for that business. Check your connection and try again.');
     });
   },
 
-  /* ═══════════════════════════════════════════════════════
-     EMAIL VERIFICATION
-  ═══════════════════════════════════════════════════════ */
-  _showEmailVerification: function(user, code) {
-    var loginScreen = Utils.get('login-screen');
-    if (!loginScreen) return;
-    var emailSent = !code;
+  _continueJoin: function(biz, name, email, phone, pw) {
+    var userMeta = { name: name, business_id: biz.id, role: 'sales_employee' };
 
-    var codeBlock = '';
-    if (emailSent) {
-      codeBlock = '<div style="background:var(--okb);border:1px solid var(--okbd);border-radius:12px;padding:14px;margin-bottom:16px;font-size:13px;color:var(--ok);text-align:center">'
-        + '<div style="font-weight:700;margin-bottom:4px">✅ Code sent to:</div>'
-        + '<div style="color:var(--g);font-weight:800">' + Utils.esc(user.email) + '</div>'
-        + '<div style="font-size:11px;color:var(--t2);margin-top:6px">Check your inbox &amp; spam. Takes 1–2 minutes.</div>'
-        + '</div>';
-    } else {
-      codeBlock = '<div style="background:var(--wab);border:1.5px solid var(--wabd);border-radius:12px;padding:16px;margin-bottom:16px;text-align:center">'
-        + '<div style="font-size:11px;color:var(--wa);font-weight:700;margin-bottom:8px;text-transform:uppercase">⚠️ Email could not be delivered</div>'
-        + '<div style="font-size:12px;color:var(--t2);margin-bottom:12px">Use this code to verify your account:</div>'
-        + '<div style="background:#111;border-radius:12px;padding:14px;display:inline-block;min-width:160px">'
-        + '<div style="font-size:38px;font-weight:900;letter-spacing:10px;color:var(--g);font-family:monospace">' + code + '</div>'
-        + '</div>'
-        + '<div style="font-size:11px;color:var(--wa);margin-top:8px">Write this down — expires in 15 minutes</div>'
-        + '</div>';
-    }
+    fetch(SUPABASE_AUTH_URL + '/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: email, password: pw, data: userMeta }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (!result.ok) {
+        var msg = (result.data && result.data.msg) || 'Sign up failed';
+        if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
+          Auth._err('join-err', '❌ An account with this email already exists.');
+        } else {
+          Auth._err('join-err', '❌ ' + msg);
+        }
+        return;
+      }
 
-    loginScreen.innerHTML =
-      '<div style="width:100%;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#070A12,#0d1a2e,#070A12);box-sizing:border-box">'
-      + '<div style="width:100%;max-width:420px;background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.15);border-radius:20px;padding:24px 20px;box-sizing:border-box">'
-      + '<div style="text-align:center;margin-bottom:20px">'
-      + '<div style="font-size:52px;margin-bottom:8px">📧</div>'
-      + '<div style="font-size:20px;font-weight:800;color:var(--t1)">Verify Your Account</div>'
-      + '<div style="font-size:12px;color:var(--t2);margin-top:5px">Enter your 6-digit verification code</div>'
-      + '</div>'
-      + codeBlock
-      + '<div id="verify-err" class="form-err hidden"></div>'
-      + '<div class="fg"><label class="fl" style="text-align:center;display:block;margin-bottom:8px">Your 6-Digit Code</label>'
-      + '<input class="fi" id="verify-code" type="number" maxlength="6" placeholder="000000"'
-      + ' style="text-align:center;font-size:28px;font-weight:900;letter-spacing:10px;width:100%;box-sizing:border-box">'
-      + '</div>'
-      + '<button class="btn-primary btn-full" onclick="Auth.verifyEmail(\'' + user.id + '\')" style="margin-bottom:10px;font-size:15px">✓ Verify &amp; Continue</button>'
-      + '<button class="btn-ghost btn-full" onclick="Auth.resendVerification(\'' + user.id + '\')" style="margin-bottom:10px">📧 Resend Code</button>'
-      + '</div>'
-      + '<button class="btn-ghost btn-sm" onclick="location.reload()" style="margin-top:14px;color:rgba(255,255,255,.3)">← Back to Sign In</button>'
-      + '</div>';
-    loginScreen.style.display = 'block';
-    loginScreen.classList.remove('hidden');
-  },
+      var authUserId = result.data.id || (result.data.user && result.data.user.id);
+      var user = { id: authUserId, business_id: biz.id, name: name, email: email, phone: phone, role: 'sales_employee', status: 'pending' };
 
+      fetch(SUPABASE_URL + '/rest/v1/platform_users', {
+        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(user),
+      }).catch(function(){});
 
-  verifyEmail: function(userId) {
-    var code  = Utils.val('verify-code').trim();
-    var users = DB.get('users') || [];
-    var idx   = -1;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { idx = i; break; }
-    }
-    if (idx < 0) { Auth._err('verify-err', 'Account not found'); return; }
-    if (!code) { Auth._err('verify-err', 'Enter the 6-digit code'); return; }
-
-    if (users[idx].verifyCode !== code) {
-      Auth._err('verify-err', '❌ Incorrect code. Check your email and try again.');
-      return;
-    }
-    users[idx].emailVerified = true;
-    users[idx].verifyCode    = null;
-    DB.set('users', users);
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('EMAIL_VERIFIED', 'Email verified: ' + users[idx].email); } catch(e) {}
-
-    if (users[idx].status === 'pending') {
-      // Joined existing business — awaiting approval
-      Auth._showPendingApproval(users[idx]);
-    } else {
-      // Created new business — log in immediately
-      Auth._doLogin(users[idx]);
-      Toast.show('✅ Email verified! Welcome to SmartStock Pro.', 'ok');
-    }
+      try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + biz.name); } catch(e) {}
+      Auth._showCheckEmailScreen(email);
+      Toast.show('Request sent — confirm your email, then wait for approval', 'ok');
+    })
+    .catch(function(err) {
+      Auth._err('join-err', '❌ Network error: ' + err.message);
+    });
   },
 
   _showPendingApproval: function(user) {
@@ -1850,51 +1710,17 @@ var Auth = {
       + '<div style="text-align:center;padding:20px 0">'
       + '<div style="font-size:64px;margin-bottom:14px">⏳</div>'
       + '<div class="login-title" style="font-size:20px">Awaiting Approval</div>'
-      + '<div class="login-sub" style="margin-bottom:16px">Your email is verified!</div>'
+      + '<div class="login-sub" style="margin-bottom:16px">Your email is confirmed!</div>'
       + '<div style="background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r12);padding:16px;font-size:13px;color:var(--t1);line-height:1.7;margin-bottom:20px">'
-      + 'Your registration request has been submitted to the Primary Admin of <strong>' + Utils.esc(user.businessIds && user.businessIds[0] ? Auth._getBizName(user.businessIds[0]) : 'the business') + '</strong>.<br><br>'
-      + 'You will be notified once your account is approved.'
+      + 'Your registration request has been submitted to the Primary Admin.<br><br>'
+      + 'You will be able to sign in once your account is approved.'
       + '</div>'
       + '<button class="btn-ghost btn-full" onclick="location.reload()">← Back to Sign In</button>'
       + '</div></div>';
   },
 
-  _getBizName: function(bizId) {
-    var bizes = DB.get('businesses') || [];
-    var b = bizes.find(function(x){ return x.id === bizId; });
-    return b ? b.name : 'Unknown';
-  },
-
-  resendVerification: function(userId) {
-    var users = DB.get('users') || [];
-    var idx = -1;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { idx = i; break; }
-    }
-    if (idx < 0) { Toast.show('Account not found', 'err'); return; }
-    var newCode = Auth._genCode();
-    users[idx].verifyCode = newCode;
-    DB.set('users', users);
-
-    // Try sending email again
-    Auth._sendEmail({
-      to:      users[idx].email,
-      type:    'verification',
-      code:    newCode,
-      name:    users[idx].name,
-      bizName: DB.getSettings().bizName || 'SmartStock Pro',
-    }, newCode).then(function(result) {
-      Auth._showEmailVerification(users[idx], result.sent ? null : result.code);
-      if (result.sent) {
-        Toast.show('New code sent to ' + users[idx].email, 'ok');
-      } else {
-        Toast.show('New code generated — use code shown on screen', 'ok');
-      }
-    });
-  },
-
   /* ═══════════════════════════════════════════════════════
-     FORGOT PASSWORD
+     FORGOT PASSWORD — real Supabase Auth reset email
   ═══════════════════════════════════════════════════════ */
   forgotPassword: function() {
     Modal.open({
@@ -1903,152 +1729,103 @@ var Auth = {
       body: '<div class="fg"><label class="fl">Email Address</label>'
           + '<input class="fi" id="fp-email" type="email" placeholder="your@email.com"></div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Auth.sendResetCode()">📧 Send Reset Code</button>',
+            + '<button class="btn-primary" style="flex:1" onclick="Auth.sendResetCode()">📧 Send Reset Link</button>',
     });
   },
 
   sendResetCode: function() {
     var email = Utils.val('fp-email').trim().toLowerCase();
     if (!email || !email.includes('@')) { Toast.show('Enter a valid email', 'err'); return; }
-    var users = DB.get('users') || [];
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].email && users[i].email.toLowerCase() === email) { user = users[i]; break; }
-    }
-    if (!user) {
-      Toast.show('No account found with that email', 'err');
-      return;
-    }
-    var code    = Auth._genCode();
-    var expiry  = Date.now() + 15 * 60 * 1000; // 15 min expiry
-    var userArr = DB.get('users') || [];
-    for (var j = 0; j < userArr.length; j++) {
-      if (userArr[j].id === user.id) {
-        userArr[j].resetCode   = code;
-        userArr[j].resetExpiry = expiry;
-        break;
-      }
-    }
-    DB.set('users', userArr);
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('PASSWORD_RESET_REQUEST', 'Reset code sent to: ' + email); } catch(e) {}
-    Modal.close();
 
-    // Send real email
-    Auth._sendEmail({
-      to: email,
-      type: 'password_reset',
-      code: code,
-      name: user.name || user.username,
-    }, code).then(function(result) {
-      var codeLine = result.sent
-        ? '<div style="background:var(--okb);border:1px solid var(--okbd);border-radius:var(--r10);padding:12px;margin-bottom:14px;font-size:12px;color:var(--ok)">✅ Reset code sent to your email.</div>'
-        : '<div style="background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r10);padding:12px;margin-bottom:14px;font-size:12px;color:var(--wa)">📧 Your reset code is: <strong style="font-size:16px;letter-spacing:4px">' + (result.code||code) + '</strong></div>';
-
-      Modal.open({
-        title: 'Enter Reset Code', barColor: 'var(--wa)',
-        sub: 'Code sent to ' + email + ' (expires in 15 min)',
-        body: codeLine
-            + '<div class="fg"><label class="fl">6-Digit Reset Code</label>'
-            + '<input class="fi" id="rc-code" type="text" maxlength="6" placeholder="000000" style="text-align:center;font-size:20px;font-weight:700;letter-spacing:6px"></div>'
-            + '<div class="fg"><label class="fl">New Password (min 8 chars)</label>'
-            + '<input class="fi" id="rc-new" type="password" placeholder="New password"></div>'
-            + '<div class="fg"><label class="fl">Confirm New Password</label>'
-            + '<input class="fi" id="rc-conf" type="password" placeholder="Confirm password"></div>',
-        footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-              + '<button class="btn-primary" style="flex:1" onclick="Auth.confirmReset(\'' + user.id + '\')">✓ Reset Password</button>',
-      });
+    fetch(SUPABASE_AUTH_URL + '/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: email }),
+    })
+    .then(function(){
+      Modal.close();
+      Toast.show('If an account exists for that email, a reset link has been sent.', 'ok');
+    })
+    .catch(function() {
+      Toast.show('Network error — try again', 'err');
     });
   },
 
-  confirmReset: function(userId) {
-    var code  = Utils.val('rc-code').trim();
-    var newPw = Utils.val('rc-new');
-    var conf  = Utils.val('rc-conf');
-    if (!code)             { Toast.show('Enter the reset code', 'err'); return; }
-    if (newPw.length < 8)  { Toast.show('Password min 8 characters', 'err'); return; }
-    if (newPw !== conf)    { Toast.show('Passwords do not match', 'err'); return; }
-
-    var users = DB.get('users') || [];
-    var idx   = -1;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { idx = i; break; }
-    }
-    if (idx < 0) { Toast.show('Account not found', 'err'); return; }
-
-    var u = users[idx];
-    if (u.resetCode !== code) { Toast.show('❌ Incorrect reset code', 'err'); return; }
-    if (u.resetExpiry && Date.now() > u.resetExpiry) { Toast.show('❌ Reset code expired. Request a new one.', 'err'); return; }
-
-    users[idx].password    = newPw;
-    users[idx].resetCode   = null;
-    users[idx].resetExpiry = null;
-    DB.set('users', users);
-
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('PASSWORD_RESET', 'Password reset for: ' + u.email); } catch(e) {}
-    Modal.close();
-    Toast.show('✅ Password reset successfully! Sign in with your new password.', 'ok');
-  },
-
   /* ═══════════════════════════════════════════════════════
-     LOGOUT
+     LOGOUT — ends the real Supabase session
   ═══════════════════════════════════════════════════════ */
   logout: function() {
     try { if (typeof Activity !== 'undefined') Activity.endSession(); } catch(e) {}
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('LOGOUT', 'User logged out'); } catch(e) {}
+    var token = Auth._session && Auth._session.access_token;
+    if (token) {
+      fetch(SUPABASE_AUTH_URL + '/logout', {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
+      }).catch(function(){});
+    }
     Auth.currentUser = null;
+    Auth._session = null;
     Utils.storage.del('ssp_session');
     location.reload();
   },
 
   /* ═══════════════════════════════════════════════════════
-     APPROVAL WORKFLOW (called by UserMgmt)
+     APPROVAL WORKFLOW (called by UserMgmt) — updates platform_users
   ═══════════════════════════════════════════════════════ */
   approveUser: function(userId, role) {
-    var users = DB.get('users') || [];
-    var idx   = -1;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { idx = i; break; }
-    }
-    if (idx < 0) return;
-    users[idx].status = 'active';
-    if (role) users[idx].role = role;
-    DB.set('users', users);
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('USER_APPROVED', 'Approved: ' + users[idx].name + ' as ' + (role||users[idx].role)); } catch(e) {}
-    // Send approval email
-    var approvedUser = users[idx];
-    var bizArr = DB.get('businesses') || [];
-    var biz = bizArr.find(function(b){ return b.id === (approvedUser.businessIds||[])[0]; });
-    Auth._sendEmail({
-      to: approvedUser.email,
-      type: 'approved',
-      name: approvedUser.name,
-      bizName: biz ? biz.name : 'SmartStock Pro',
-    }, null);
-    Toast.show(users[idx].name + ' approved ✓', 'ok');
+    var token = Auth._session && Auth._session.access_token;
+    var data  = { status: 'active' };
+    if (role) data.role = role;
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(userId), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + (token || SUPABASE_ANON),
+        'Prefer': 'return=representation',
+      },
+      body: JSON.stringify(data),
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      var u = Array.isArray(rows) && rows[0];
+      if (!u) { Toast.show('Could not approve — check connection', 'err'); return; }
+      try { if (typeof AuditLog !== 'undefined') AuditLog.record('USER_APPROVED', 'Approved: ' + u.name + ' as ' + (role||u.role)); } catch(e) {}
+      Auth._sendEmail({ to: u.email, type: 'approved', name: u.name, bizName: DB.getSettings().bizName || 'SmartStock Pro' }, null);
+      Toast.show(u.name + ' approved ✓', 'ok');
+    })
+    .catch(function() { Toast.show('Could not approve — check connection', 'err'); });
   },
 
   rejectUser: function(userId) {
-    var users = DB.get('users') || [];
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { users[i].status = 'rejected'; break; }
-    }
-    DB.set('users', users);
-    try { if (typeof AuditLog !== 'undefined') AuditLog.record('USER_REJECTED', 'Rejected user: ' + userId); } catch(e) {}
-    Toast.show('User rejected', 'warn');
+    var token = Auth._session && Auth._session.access_token;
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(userId), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + (token || SUPABASE_ANON),
+      },
+      body: JSON.stringify({ status: 'rejected' }),
+    })
+    .then(function(){
+      try { if (typeof AuditLog !== 'undefined') AuditLog.record('USER_REJECTED', 'Rejected user: ' + userId); } catch(e) {}
+      Toast.show('User rejected', 'warn');
+    })
+    .catch(function() { Toast.show('Could not reject — check connection', 'err'); });
   },
 
   /* ═══════════════════════════════════════════════════════
-     UI TABS
+     UI TABS  (unchanged from before)
   ═══════════════════════════════════════════════════════ */
   showTab: function(tab) {
     var forms = ['login-form','signup-form','join-form'];
     var tabs  = ['ltab-in','ltab-up','ltab-join'];
-    // Hide all forms
     forms.forEach(function(f) {
       var el = Utils.get(f);
       if (el) { el.style.display = 'none'; el.classList.add('hidden'); }
     });
-    // Reset all tab buttons to inactive style
     tabs.forEach(function(t) {
       var el = Utils.get(t);
       if (el) {
@@ -2057,12 +1834,10 @@ var Auth = {
         el.style.color = 'rgba(255,255,255,0.5)';
       }
     });
-    // Clear errors
     ['login-err','signup-err','join-err'].forEach(function(e) {
       var el = Utils.get(e);
       if (el) { el.classList.add('hidden'); el.style.display = 'none'; }
     });
-    // Show selected form
     var formMap = { 'in':'login-form', 'up':'signup-form', 'join':'join-form' };
     var tabMap  = { 'in':'ltab-in',    'up':'ltab-up',     'join':'ltab-join' };
     var showForm = Utils.get(formMap[tab]);
@@ -2092,26 +1867,14 @@ var Auth = {
     }
   },
 
-  _genCode: function() {
-    return String(Math.floor(100000 + Math.random() * 900000));
-  },
-
   _strongPw: function(pw) {
     return /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw);
   },
 
-  _hashPw: function(pw) {
-    return new Promise(function(resolve) {
-      try {
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw)).then(function(buf) {
-          resolve(Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join(''));
-        }).catch(function() { resolve(btoa(pw)); });
-      } catch(e) { resolve(btoa(pw)); }
-    });
-  },
-
   /* ═══════════════════════════════════════════════════════
-     SEND EMAIL via Supabase Edge Function
+     SEND EMAIL via Supabase Edge Function (used for the
+     custom "approved" notification only — signup/reset
+     emails are now sent natively by Supabase Auth itself)
   ═══════════════════════════════════════════════════════ */
   _sendEmail: function(payload, fallbackCode) {
     return fetch(SUPABASE_EMAIL_URL, {
@@ -2121,33 +1884,53 @@ var Auth = {
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
-      if (data.success) {
-        console.log('Email sent:', data.id);
-        return { sent: true };
-      } else {
-        console.warn('Email API issue:', data.error);
-        // Fallback: show code on screen
-        return { sent: false, code: fallbackCode };
-      }
+      if (data.success) return { sent: true };
+      return { sent: false, code: fallbackCode };
     })
-    .catch(function(err) {
-      console.warn('Email send failed:', err.message);
+    .catch(function() {
       return { sent: false, code: fallbackCode };
     });
   },
 
+  /* ═══════════════════════════════════════════════════════
+     SESSION RESTORE — runs on app boot. Tries the stored
+     Supabase session first (works across restarts on the
+     SAME device); if the access token has expired, uses the
+     refresh token to get a new one automatically.
+  ═══════════════════════════════════════════════════════ */
   bootSync: function() {
-    try {
-      var sess = Utils.storage.get('ssp_session');
-      if (sess && sess.uid) {
-        var users = DB.get('users') || [];
-        for (var i = 0; i < users.length; i++) {
-          if (users[i].id === sess.uid && users[i].status === 'active') {
-            Auth.currentUser = users[i]; return true;
-          }
-        }
-      }
-    } catch(e) {}
+    var sess = Utils.storage.get('ssp_session');
+    if (!sess || !sess.access_token) return false;
+    Auth._session = sess;
+
+    if (Date.now() < sess.expires_at - 30000) {
+      Auth._loadProfileAndEnter();
+      return true;
+    }
+
+    // Expired — try to refresh silently
+    if (sess.refresh_token) {
+      fetch(SUPABASE_AUTH_URL + '/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+        body: JSON.stringify({ refresh_token: sess.refresh_token }),
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (!result.ok) { Utils.storage.del('ssp_session'); App.showLogin(); return; }
+        Auth._session = {
+          access_token:  result.data.access_token,
+          refresh_token: result.data.refresh_token,
+          expires_at:    Date.now() + (result.data.expires_in || 3600) * 1000,
+        };
+        Utils.storage.set('ssp_session', Auth._session);
+        Auth._loadProfileAndEnter();
+      })
+      .catch(function() { Utils.storage.del('ssp_session'); App.showLogin(); });
+      return true; // tell App we're attempting a restore (async)
+    }
+
+    Utils.storage.del('ssp_session');
     return false;
   },
 };
@@ -2649,20 +2432,13 @@ var App = {
 
   boot: function() {
     try { DB.load(); } catch(e) { console.error('DB:', e); }
-    var loggedIn = false;
-    try {
-      var sess = Utils.storage.get('ssp_session');
-      if (sess && sess.uid) {
-        var users = DB.get('users') || [];
-        for (var i = 0; i < users.length; i++) {
-          if (users[i].id === sess.uid && users[i].status !== 'pending') {
-            Auth.currentUser = users[i]; loggedIn = true; break;
-          }
-        }
-      }
-    } catch(e) { console.error('session:', e); }
-    if (loggedIn) App.showShell();
-    else App.showLogin();
+    var attemptingRestore = false;
+    try { attemptingRestore = Auth.bootSync(); } catch(e) { console.error('session:', e); }
+    // Auth.bootSync() either:
+    //  - returns false (no/invalid stored session) → show login now, or
+    //  - returns true and asynchronously calls App.showShell() itself once
+    //    the session is validated/refreshed and the profile is loaded.
+    if (!attemptingRestore) App.showLogin();
   },
 };
 
@@ -10772,27 +10548,56 @@ var Settings = {
     Modal.open({
       title:'Change Password', barColor:'var(--wa)',
       body:'<div class="fg"><label class="fl">Current Password</label><input class="fi" id="pw-old" type="password"></div>'
-          +'<div class="fg"><label class="fl">New Password (min 6)</label><input class="fi" id="pw-new" type="password"></div>'
+          +'<div class="fg"><label class="fl">New Password (min 8, with upper/lower/number)</label><input class="fi" id="pw-new" type="password"></div>'
           +'<div class="fg"><label class="fl">Confirm New Password</label><input class="fi" id="pw-conf" type="password"></div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
             +'<button class="btn-primary" style="flex:1" onclick="Settings.changePassword()">Update</button>',
     });
   },
 
-  changePassword: async function() {
+  changePassword: function() {
     var oldPw=Utils.val('pw-old'), newPw=Utils.val('pw-new'), conf=Utils.val('pw-conf');
     if(!oldPw||!newPw){ Toast.show('All fields required','err'); return; }
-    if(newPw.length<6){ Toast.show('Min 6 characters','err'); return; }
+    if(newPw.length<8){ Toast.show('Min 8 characters','err'); return; }
     if(newPw!==conf){ Toast.show('Passwords do not match','err'); return; }
-    var user=Auth.currentUser;
-    var ok=await Auth._verifyPw(oldPw,user.password);
-    if(!ok){ Toast.show('Current password is wrong','err'); return; }
-    var hashed=await Auth._hashPw(newPw);
-    var users=DB.get('users');
-    for(var i=0;i<users.length;i++){ if(users[i].id===user.id){ users[i].password=hashed; break; } }
-    DB.set('users',users);
-    Toast.show('Password updated ✓','ok');
-    Modal.close();
+    if(!Auth._strongPw(newPw)){ Toast.show('Password needs uppercase, lowercase and a number','err'); return; }
+
+    var session = Auth._session;
+    if (!session || !session.access_token) { Toast.show('Session expired — please sign in again','err'); return; }
+
+    // Re-verify identity by attempting a fresh login with the OLD password —
+    // this confirms the person changing the password actually knows the
+    // current one, without SmartStock Pro ever storing or hashing it itself.
+    fetch(SUPABASE_AUTH_URL + '/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: Auth.currentUser.email, password: oldPw }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(verify) {
+      if (!verify.ok) { Toast.show('Current password is wrong','err'); return; }
+
+      fetch(SUPABASE_AUTH_URL + '/user', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON,
+          'Authorization': 'Bearer ' + session.access_token,
+        },
+        body: JSON.stringify({ password: newPw }),
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (!result.ok) {
+          Toast.show('Could not update password: ' + ((result.data && result.data.msg) || 'Unknown error'), 'err');
+          return;
+        }
+        Toast.show('Password updated ✓','ok');
+        Modal.close();
+      })
+      .catch(function(err) { Toast.show('Network error: ' + err.message, 'err'); });
+    })
+    .catch(function(err) { Toast.show('Network error: ' + err.message, 'err'); });
   },
 
   // ═══ EXPORT / IMPORT ═════════════════════════════════════════════════════
@@ -11047,7 +10852,7 @@ var UserMgmt = {
 
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Team & Access</div><div class="page-sub">Roles, permissions & activity</div></div>'
-      + (Perms.can('manage_users') ? '<div class="page-actions"><button class="btn-primary btn-sm" onclick="UserMgmt.openAddUser()">＋ Add User</button></div>' : '')
+      + (Perms.can('manage_users') ? '<div class="page-actions"><button class="btn-ghost btn-sm" onclick="UserMgmt.showAddUserInfo()">＋ Add User</button></div>' : '')
       + '</div>'
       + '<div class="chips">' + tabs.map(function(t){
           return '<div class="chip' + (UserMgmt.activeTab===t[0]?' active':'') + '" onclick="UserMgmt.setTab(\'' + t[0] + '\')">' + t[1] + '</div>';
@@ -11071,60 +10876,101 @@ var UserMgmt = {
     else if (t === 'activity')   UserMgmt._renderActivity(el);
   },
 
-  /* ── USERS TAB ──────────────────────────────────────────── */
+  /* ── USERS TAB — reads live from Supabase (platform_users), so the
+     same staff list and pending approvals show identically on every
+     device, not just the one that originally registered them. ──── */
   _renderUsers: function(el) {
-    var users   = DB.get('users') || [];
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--t3)">Loading team...</div>';
     var current = Auth.currentUser || {};
-    var pending = users.filter(function(u){ return u.status === 'pending'; });
+    var token = (Auth._session && Auth._session.access_token) || SUPABASE_ANON;
 
-    // Show pending approvals at top if Primary Admin
-    var pendingHtml = '';
-    if (pending.length && current.role === 'primary_admin') {
-      var roleOpts = Object.keys(ROLE_PRESETS).filter(function(k){ return k !== 'primary_admin'; }).map(function(k){
-        return '<option value="' + k + '">' + ROLE_PRESETS[k].icon + ' ' + ROLE_PRESETS[k].label + '</option>';
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?select=*&order=registered_at', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      var allUsers = Array.isArray(rows) ? rows : [];
+      // A non-admin's session only has RLS access to their own row;
+      // an admin reading via admin-data would see the whole business —
+      // for now this self-scoped read is enough to show "my own status"
+      // for staff, and the full team for whoever the RLS allows.
+      var users = allUsers.filter(function(u){ return u.business_id === current.currentBusinessId; });
+      var pending = users.filter(function(u){ return u.status === 'pending'; });
+
+      var pendingHtml = '';
+      if (pending.length && current.role === 'primary_admin') {
+        var roleOpts = Object.keys(ROLE_PRESETS).filter(function(k){ return k !== 'primary_admin'; }).map(function(k){
+          return '<option value="' + k + '">' + ROLE_PRESETS[k].icon + ' ' + ROLE_PRESETS[k].label + '</option>';
+        }).join('');
+        pendingHtml = '<div style="background:rgba(255,173,31,.06);border:1px solid var(--wabd);border-radius:var(--r14);padding:14px;margin:0 14px 14px">'
+          + '<div style="font-size:11px;font-weight:800;color:var(--wa);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">⏳ Pending Approvals (' + pending.length + ')</div>'
+          + pending.map(function(u) {
+              return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r10);padding:12px;margin-bottom:8px">'
+                + '<div style="display:flex;align-items:flex-start;gap:10px">'
+                + '<div style="flex:1">'
+                + '<div style="font-size:13px;font-weight:700;color:var(--t1)">' + Utils.esc(u.name) + '</div>'
+                + '<div style="font-size:11px;color:var(--t2);margin-top:2px">' + Utils.esc(u.email) + '</div>'
+                + '<div style="font-size:10px;color:var(--t3);margin-top:2px">📱 ' + Utils.esc(u.phone||'No phone') + ' · Requested: ' + Utils.date(u.registered_at) + '</div>'
+                + '</div></div>'
+                + '<div style="margin-top:10px;display:flex;gap:7px;align-items:center">'
+                + '<select id="apr-role-' + u.id + '" style="flex:1;background:var(--bg3);border:1px solid var(--bd2);border-radius:6px;padding:6px;font-size:12px;color:var(--t1)">' + roleOpts + '</select>'
+                + '<button class="btn-ok btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.approveUser(this.dataset.uid)">✓ Approve</button>'
+                + '<button class="btn-danger btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.rejectUser(this.dataset.uid)">✕ Reject</button>'
+                + '</div></div>';
+            }).join('')
+          + '</div>';
+      }
+
+      var rows2 = users.filter(function(u){ return u.status !== 'pending'; }).map(function(u) {
+        var isSelf  = u.id === current.id;
+        var info    = Perms.getRoleInfo(u.role);
+        var stats   = (typeof Activity !== 'undefined') ? Activity.getStats(u.id) : { lastLogin:null, totalSales:0 };
+        var lastLogin = u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : (stats.lastLogin ? new Date(stats.lastLogin).toLocaleDateString() : 'Never');
+
+        return '<div class="list-item">'
+          + '<div class="list-icon" style="background:' + info.bg + ';font-size:20px">' + info.icon + '</div>'
+          + '<div class="list-info">'
+          + '<div class="list-name">' + Utils.esc(u.name || u.email) + (isSelf ? ' <span style="font-size:9px;background:var(--gb);color:var(--g);padding:2px 6px;border-radius:99px;font-weight:700">YOU</span>' : '') + '</div>'
+          + '<div class="list-meta">' + Utils.esc(u.email) + ' · ' + Perms.roleBadge(u.role) + '</div>'
+          + '<div class="list-meta" style="font-size:10px;color:var(--t3)">Last login: ' + lastLogin + ' · Sales: ' + (stats.totalSales||0) + '</div>'
+          + '</div>'
+          + '<div class="list-right">'
+          + '<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;background:' + (u.status==='active'?'var(--okb)':'var(--erb)') + ';color:' + (u.status==='active'?'var(--ok)':'var(--er)') + '">' + (u.status||'active').toUpperCase() + '</span>'
+          + '<div class="list-actions">'
+          + (!isSelf && Perms.can('manage_roles') && current.role === 'primary_admin' ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openPromote(\'' + u.id + '\')">⬆️ Role</button>' : '')
+          + '</div></div></div>';
       }).join('');
-      pendingHtml = '<div style="background:rgba(255,173,31,.06);border:1px solid var(--wabd);border-radius:var(--r14);padding:14px;margin:0 14px 14px">'
-        + '<div style="font-size:11px;font-weight:800;color:var(--wa);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">⏳ Pending Approvals (' + pending.length + ')</div>'
-        + pending.map(function(u) {
-            return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r10);padding:12px;margin-bottom:8px">'
-              + '<div style="display:flex;align-items:flex-start;gap:10px">'
-              + '<div style="flex:1">'
-              + '<div style="font-size:13px;font-weight:700;color:var(--t1)">' + Utils.esc(u.name) + '</div>'
-              + '<div style="font-size:11px;color:var(--t2);margin-top:2px">' + Utils.esc(u.email||u.username) + '</div>'
-              + '<div style="font-size:10px;color:var(--t3);margin-top:2px">📱 ' + (u.phone||'No phone') + ' · Requested: ' + Utils.date(u.createdAt) + '</div>'
-              + '</div></div>'
-              + '<div style="margin-top:10px;display:flex;gap:7px;align-items:center">'
-              + '<select id="apr-role-' + u.id + '" style="flex:1;background:var(--bg3);border:1px solid var(--bd2);border-radius:6px;padding:6px;font-size:12px;color:var(--t1)">' + roleOpts + '</select>'
-              + '<button class="btn-ok btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.approveUser(this.dataset.uid)">✓ Approve</button>'
-              + '<button class="btn-danger btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.rejectUser(this.dataset.uid)">✕ Reject</button>'
-              + '</div></div>';
-          }).join('')
-        + '</div>';
-    }
-    var current = Auth.currentUser || {};
 
-    var rows = users.map(function(u) {
-      var isSelf  = u.id === current.id;
-      var info    = Perms.getRoleInfo(u.role);
-      var stats   = Activity.getStats(u.id);
-      var lastLogin = stats.lastLogin ? new Date(stats.lastLogin).toLocaleDateString() : 'Never';
+      el.innerHTML = pendingHtml + '<div class="sec"><div class="card">' + (rows2 || '<div class="empty" style="padding:30px"><div class="empty-icon">👥</div><div class="empty-title">No users yet</div></div>') + '</div></div>'
+        + '<div class="sec" style="text-align:center;padding:0 14px"><div style="font-size:11px;color:var(--t3);line-height:1.6">New staff join from the <strong>Sign In screen → Join Business</strong> tab — they\'ll appear here once they request access.</div></div>';
+    })
+    .catch(function(err) {
+      el.innerHTML = '<div style="padding:20px;color:var(--er)">Could not load team: ' + err.message + '</div>';
+    });
+  },
 
-      return '<div class="list-item">'
-        + '<div class="list-icon" style="background:' + info.bg + ';font-size:20px">' + info.icon + '</div>'
-        + '<div class="list-info">'
-        + '<div class="list-name">' + Utils.esc(u.name || u.username) + (isSelf ? ' <span style="font-size:9px;background:var(--gb);color:var(--g);padding:2px 6px;border-radius:99px;font-weight:700">YOU</span>' : '') + '</div>'
-        + '<div class="list-meta">@' + Utils.esc(u.username) + ' · ' + Perms.roleBadge(u.role) + '</div>'
-        + '<div class="list-meta" style="font-size:10px;color:var(--t3)">Last login: ' + lastLogin + ' · Sales: ' + stats.totalSales + '</div>'
-        + '</div>'
-        + '<div class="list-right">'
-        + '<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;background:' + (u.status==='active'?'var(--okb)':'var(--erb)') + ';color:' + (u.status==='active'?'var(--ok)':'var(--er)') + '">' + (u.status||'active').toUpperCase() + '</span>'
-        + '<div class="list-actions">'
-        + (!isSelf && Perms.can('manage_users') ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openEditUser(\'' + u.id + '\')">✏️</button>' : '')
-        + (!isSelf && Perms.can('manage_roles') && current.role === 'primary_admin' ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openPromote(\'' + u.id + '\')">⬆️ Role</button>' : '')
-        + '</div></div></div>';
-    }).join('');
+  approveUser: function(userId) {
+    var roleEl = Utils.get('apr-role-' + userId);
+    var role   = roleEl ? roleEl.value : null;
+    Auth.approveUser(userId, role);
+    setTimeout(function(){ UserMgmt._renderTab(); }, 600);
+  },
 
-    el.innerHTML = pendingHtml + '<div class="sec"><div class="card">' + (rows || '<div class="empty" style="padding:30px"><div class="empty-icon">👥</div><div class="empty-title">No users yet</div></div>') + '</div></div>';
+  rejectUser: function(userId) {
+    Auth.rejectUser(userId);
+    setTimeout(function(){ UserMgmt._renderTab(); }, 600);
+  },
+
+  showAddUserInfo: function() {
+    Modal.open({
+      title: '＋ Adding Staff', barColor: 'var(--in)',
+      body: '<div style="text-align:center;padding:10px 0">'
+        + '<div style="font-size:42px;margin-bottom:14px">📲</div>'
+        + '<div style="font-size:13px;color:var(--t2);line-height:1.8">To add a new staff member, have them open SmartStock Pro on their own phone and use the <strong style="color:var(--g)">Join Business</strong> tab on the sign-in screen with your exact business name.</div>'
+        + '<div style="font-size:12px;color:var(--t3);margin-top:14px;line-height:1.7">Their request will appear right here under <strong>Pending Approvals</strong> for you to approve.</div>'
+        + '</div>',
+      footer: '<button class="btn-primary btn-full" onclick="Modal.close()">Got it</button>',
+    });
   },
 
   openAddUser: function() {
