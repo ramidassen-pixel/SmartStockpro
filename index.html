@@ -1285,12 +1285,34 @@ var DB = {
       ['biz_monthly_statements','monthlyStatements'],
     ];
 
+    // Supabase/PostgREST caps every response at 1000 rows server-side.
+    // This helper pages through with offset/limit until a page comes
+    // back with fewer than PAGE_SIZE rows (= end of table), then
+    // returns the full combined array.
+    var PAGE_SIZE = 1000;
+    function fetchAllRows(cloudTable) {
+      var allRows = [];
+      function fetchPage(offset) {
+        var url = self._rest(cloudTable) +
+          '?business_id=eq.' + encodeURIComponent(self._bizId) +
+          '&deleted=eq.false&select=id,data,updated_at' +
+          '&order=id.asc' +
+          '&offset=' + offset + '&limit=' + PAGE_SIZE;
+        return fetch(url, { headers: self._hdr() })
+          .then(function(r){ return r.json(); })
+          .then(function(rows) {
+            if (!Array.isArray(rows) || rows.length === 0) return allRows;
+            allRows = allRows.concat(rows);
+            if (rows.length < PAGE_SIZE) return allRows;
+            return fetchPage(offset + PAGE_SIZE);
+          });
+      }
+      return fetchPage(0);
+    }
+
     var fetches = tables.map(function(pair) {
       var cloudTable = pair[0], localKey = pair[1];
-      return fetch(self._rest(cloudTable) + '?business_id=eq.' + encodeURIComponent(self._bizId) + '&deleted=eq.false&select=id,data,updated_at', {
-        headers: self._hdr()
-      })
-      .then(function(r){ return r.json(); })
+      return fetchAllRows(cloudTable)
       .then(function(rows) {
         if (!Array.isArray(rows)) return;
         // Merge strategy: cloud wins by updated_at
