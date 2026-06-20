@@ -1235,6 +1235,16 @@ var DB = {
     };
   },
   _rest(table) { return this._url() + '/rest/v1/' + table; },
+  _rpc(fnName) { return this._url() + '/rest/v1/rpc/' + fnName; },
+  // RPC calls need the function's return value, unlike table writes which
+  // use return=minimal (self._hdr()) since we don't need the row back.
+  _hdrRpc() {
+    return {
+      'Content-Type': 'application/json',
+      'apikey': this._anon(),
+      'Authorization': 'Bearer ' + (this._token || this._anon()),
+    };
+  },
 
   // ── Sync status indicator ────────────────────────────────────────────────
   _setStatus(s) {
@@ -1615,11 +1625,34 @@ var DB = {
 
   // ── Sales ─────────────────────────────────────────────────────────────────
   getSales: function() { return this.get('sales') || []; },
+  // Now async: the invoice number is reserved atomically on the server
+  // (via the next_invoice_number Postgres function) so two devices can
+  // never be issued the same number. Requires an internet connection —
+  // by design, there is no offline fallback/placeholder for this.
+  // Returns a Promise that resolves to the created sale, or rejects with
+  // an Error if offline / the server call fails.
   addSale: function(s) {
-    s.id = Utils.uid('INV'); s.createdAt = Utils.today();
-    var arr = this.get('sales'); arr.unshift(s); this.save();
-    this._push('biz_sales', s.id, s);
-    return s;
+    var self = this;
+    if (!self._bizId || !self._token) {
+      return Promise.reject(new Error('You must be logged in to create a sale.'));
+    }
+    return fetch(self._rpc('next_invoice_number'), {
+      method:'POST', headers:self._hdrRpc(),
+      body: JSON.stringify({ p_business_id: self._bizId }),
+    })
+    .then(function(r){
+      if (!r.ok) throw new Error('Could not reserve an invoice number. Check your connection and try again.');
+      return r.json();
+    })
+    .then(function(invoiceNumber){
+      // Supabase RPC returning a single scalar comes back as a bare
+      // JSON value (a quoted string here), not wrapped in an object.
+      s.id = invoiceNumber;
+      s.createdAt = Utils.today();
+      var arr = self.get('sales'); arr.unshift(s); self.save();
+      self._push('biz_sales', s.id, s);
+      return s;
+    });
   },
   updateSale: function(id, data) {
     var arr = this.get('sales'), i = arr.findIndex(function(x){ return x.id===id; });
@@ -1644,6 +1677,15 @@ var DB = {
     newId = (newId||'').trim();
     if (!newId) return { ok:false, error:'Invoice number cannot be empty' };
     if (newId === oldId) return { ok:false, error:'Invoice number unchanged' };
+    // Block renaming TO anything that looks like an auto-numbered invoice
+    // (INV- followed by digits). The sequential counter has no idea this
+    // manually-typed number exists, so it would eventually try to issue
+    // the same number to a real new sale later and silently collide with
+    // this one. Manually typed numbers should use a clearly different
+    // pattern (e.g. a corrected imported number) instead.
+    if (/^INV-\d+$/i.test(newId)) {
+      return { ok:false, error:'"'+newId+'" looks like an auto-generated invoice number and is reserved for the automatic sequence. Please use a different format.' };
+    }
     var arr = this.get('sales');
     if (arr.some(function(x){ return x.id===newId; })) {
       return { ok:false, error:'Invoice number "'+newId+'" is already in use' };
@@ -5108,6 +5150,10 @@ var Sales = {
     if (this.editingSaleId) { this.updateExistingSale(); return; }
     action=action||'close';
     if(!this.cart.length){ Toast.show('Add at least one product','err'); return; }
+    if (this._saving) return; // guard against double-submit while the
+                               // invoice number is being reserved (async)
+    this._saving = true;
+
     var custName  = Utils.val('s-cust-name').trim()||'Walk-in Customer';
     var custId    = Utils.val('s-cust-id')||null;
     var custPhone = (Utils.val('s-cust-phone')||'').trim();
@@ -5133,9 +5179,14 @@ var Sales = {
       cust.phone = custPhone;
     }
 
-    var sale = DB.addSale({
+    var cartSnapshot = this.cart; // addSale() is now async — snapshot the
+                                   // cart now in case the user somehow
+                                   // changes it before the promise resolves
+    var self = this;
+
+    DB.addSale({
       customer:custName, customerId:finalCustId||null, customerPhone:custPhone||(cust&&cust.phone)||'',
-      items:this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
+      items:cartSnapshot.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
       subtotal:sub, discount:this.discount, total:total,
       amountPaid:status==='Paid'?total:paid,
       balance:status==='Paid'?0:balance,
@@ -5144,41 +5195,47 @@ var Sales = {
       notes:Utils.val('s-notes'),
       createdBy: (Auth.currentUser && Auth.currentUser.id) || null,
       createdByName: (Auth.currentUser && Auth.currentUser.name) || 'Unknown',
+    })
+    .then(function(sale){
+      if (paid>0 || status==='Paid') {
+        DB.addPayment({ saleId:sale.id, customerId:finalCustId||null,
+          amount:status==='Paid'?total:paid, method:method,
+          note:'Initial payment', invoiceRef:sale.id });
+      }
+      cartSnapshot.forEach(function(item){
+        var p=DB.getProducts().find(function(x){ return x.id===item.id; });
+        if(p) DB.updateProduct(item.id,{qty:Math.max(0,(p.qty||0)-(parseInt(item.qty)||0))});
+      });
+      if(cust) DB.updateCustomer(finalCustId,{totalSpent:(cust.totalSpent||0)+total,purchases:(cust.purchases||0)+1});
+
+      Toast.show('Invoice '+sale.id+' saved ✓','ok');
+      Notifs.check();
+      self._saving = false;
+
+      if(action==='new'){
+        self.cart=[]; self.discount=0;
+        var n=Utils.get('s-cust-name'); if(n) n.value='Walk-in Customer';
+        Utils.get('s-cust-id').value='';
+        var ph=Utils.get('s-cust-phone'); if(ph) ph.value='';
+        Utils.get('s-cust-tag').style.display='none';
+        var d=Utils.get('s-disc'); if(d) d.value='0';
+        var p2=Utils.get('s-amt-paid'); if(p2) p2.value='0';
+        var nt=Utils.get('s-notes'); if(nt) nt.value='';
+        self.renderCart();
+        Toast.show('Ready for next sale','ok');
+        self.render();
+      } else {
+        Modal.close();
+        self.render();
+        // Show print prompt after close
+        var sid = sale.id;
+        setTimeout(function(){ Sales.showPrintPrompt(sid,'invoice'); }, 350);
+      }
+    })
+    .catch(function(err){
+      self._saving = false;
+      Toast.show(err.message || 'Could not save sale — check your connection','err');
     });
-
-    if (paid>0 || status==='Paid') {
-      DB.addPayment({ saleId:sale.id, customerId:finalCustId||null,
-        amount:status==='Paid'?total:paid, method:method,
-        note:'Initial payment', invoiceRef:sale.id });
-    }
-    this.cart.forEach(function(item){
-      var p=DB.getProducts().find(function(x){ return x.id===item.id; });
-      if(p) DB.updateProduct(item.id,{qty:Math.max(0,(p.qty||0)-(parseInt(item.qty)||0))});
-    });
-    if(cust) DB.updateCustomer(finalCustId,{totalSpent:(cust.totalSpent||0)+total,purchases:(cust.purchases||0)+1});
-
-    Toast.show('Invoice '+sale.id+' saved ✓','ok');
-    Notifs.check();
-
-    if(action==='new'){
-      this.cart=[]; this.discount=0;
-      var n=Utils.get('s-cust-name'); if(n) n.value='Walk-in Customer';
-      Utils.get('s-cust-id').value='';
-      var ph=Utils.get('s-cust-phone'); if(ph) ph.value='';
-      Utils.get('s-cust-tag').style.display='none';
-      var d=Utils.get('s-disc'); if(d) d.value='0';
-      var p2=Utils.get('s-amt-paid'); if(p2) p2.value='0';
-      var nt=Utils.get('s-notes'); if(nt) nt.value='';
-      this.renderCart();
-      Toast.show('Ready for next sale','ok');
-      this.render();
-    } else {
-      Modal.close();
-      this.render();
-      // Show print prompt after close
-      var sid = sale.id;
-      setTimeout(function(){ Sales.showPrintPrompt(sid,'invoice'); }, 350);
-    }
   },
 
   // ── UPDATE EXISTING SALE (Edit) ───────────────────────────────────────────
@@ -10156,6 +10213,7 @@ var Quotations = {
     var paid   = Math.min(parseFloat(Utils.val('cv-paid')||0), q.total);
     var balance= Math.max(0, q.total-paid);
     var status = paid>=q.total?'Paid':(paid>0?'Partial':'Credit');
+    var self = this;
 
     // Find or create customer
     var cust = DB.findOrCreateCustomer(q.clientName, q.clientPhone);
@@ -10163,8 +10221,8 @@ var Quotations = {
       DB.updateCustomer(cust.id,{email:q.clientEmail||cust.email,address:q.clientAddress||cust.address});
     }
 
-    // Create sale
-    var sale = DB.addSale({
+    // Create sale (DB.addSale is async — reserves a real invoice number)
+    DB.addSale({
       customer:   q.clientName,
       customerId: cust?cust.id:null,
       items:      q.items,
@@ -10178,25 +10236,29 @@ var Quotations = {
       date:       Utils.today(),
       notes:      'Converted from quotation '+q.id,
       fromQuotation: id,
+    })
+    .then(function(sale){
+      // Deduct stock
+      q.items.forEach(function(item){
+        var p=DB.getProducts().find(function(x){ return x.id===item.id; });
+        if(p) DB.updateProduct(item.id,{qty:Math.max(0,(p.qty||0)-(parseInt(item.qty)||0))});
+      });
+
+      // Update customer
+      if(cust) DB.updateCustomer(cust.id,{totalSpent:(cust.totalSpent||0)+q.total,purchases:(cust.purchases||0)+1});
+
+      // Mark quotation approved
+      DB.updateQuotation(id,{status:'Approved',convertedToInvoice:sale.id});
+
+      Modal.close();
+      Toast.show('Invoice '+sale.id+' created from quotation ✓','ok');
+      self.render();
+      // Show print prompt
+      setTimeout(function(){ Sales.showPrintPrompt(sale.id,'invoice'); },400);
+    })
+    .catch(function(err){
+      Toast.show(err.message || 'Could not create invoice — check your connection','err');
     });
-
-    // Deduct stock
-    q.items.forEach(function(item){
-      var p=DB.getProducts().find(function(x){ return x.id===item.id; });
-      if(p) DB.updateProduct(item.id,{qty:Math.max(0,(p.qty||0)-(parseInt(item.qty)||0))});
-    });
-
-    // Update customer
-    if(cust) DB.updateCustomer(cust.id,{totalSpent:(cust.totalSpent||0)+q.total,purchases:(cust.purchases||0)+1});
-
-    // Mark quotation approved
-    DB.updateQuotation(id,{status:'Approved',convertedToInvoice:sale.id});
-
-    Modal.close();
-    Toast.show('Invoice '+sale.id+' created from quotation ✓','ok');
-    this.render();
-    // Show print prompt
-    setTimeout(function(){ Sales.showPrintPrompt(sale.id,'invoice'); },400);
   },
 
   del: function(id) {
