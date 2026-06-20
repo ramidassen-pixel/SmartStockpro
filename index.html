@@ -1186,6 +1186,11 @@ var Modal = {
   close() {
     var ov = Utils.get('modal-overlay');
     if (ov) { ov.classList.add('hidden'); ov.innerHTML = ''; }
+    // Guard: if a Sales edit was in progress and the modal was closed via
+    // the X button or backdrop click (not the dedicated Cancel handler),
+    // clear the edit-mode flag so a later "New Sale" doesn't accidentally
+    // route into update mode for a stale invoice ID.
+    if (typeof Sales !== 'undefined') Sales.editingSaleId = null;
   },
 };
 
@@ -4532,6 +4537,7 @@ var Products = {
 /* === sales.js === */
 var Sales = {
   filter: 'All',
+  sortBy: 'date_desc',
   cart: [],
   discount: 0,
 
@@ -4542,7 +4548,14 @@ var Sales = {
     var all      = DB.getSales();
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
-    var filtered = this.filter === 'All' ? all : all.filter(function(s){ return s.status === Sales.filter; });
+    var filtered = this.filter === 'All' ? all.slice() : all.filter(function(s){ return s.status === Sales.filter; });
+    var sortFns = {
+      date_desc:   function(a,b){ return (b.date||'').localeCompare(a.date||'') || (b.createdAt||'').localeCompare(a.createdAt||''); },
+      date_asc:    function(a,b){ return (a.date||'').localeCompare(b.date||'') || (a.createdAt||'').localeCompare(b.createdAt||''); },
+      amount_desc: function(a,b){ return (parseFloat(b.total)||0) - (parseFloat(a.total)||0); },
+      amount_asc:  function(a,b){ return (parseFloat(a.total)||0) - (parseFloat(b.total)||0); },
+    };
+    filtered.sort(sortFns[this.sortBy] || sortFns.date_desc);
     var totalRev    = all.reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
     var collected   = all.filter(function(s){ return s.status==='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
     var partPaid    = all.filter(function(s){ return s.status==='Partial'; }).reduce(function(a,s){ return a+(parseFloat(s.amountPaid)||0); }, 0);
@@ -4568,6 +4581,7 @@ var Sales = {
         + '<div style="margin-top:4px">'+Utils.statusBadge(s.status||'Paid')+'</div>'
         + '<div class="list-actions">'
         + '<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Sales.printReceipt(\''+s.id+'\')" title="Print">🖨</button>'
+        + '<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Sales.openEditSale(\''+s.id+'\')" title="Edit">✏️</button>'
         + payBtn
         + '<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Sales.del(\''+s.id+'\')">🗑</button>'
         + '</div></div></div>';
@@ -4583,6 +4597,16 @@ var Sales = {
       return '<div class="chip'+(Sales.filter===f?' active':'')+'" onclick="Sales.setFilter(\''+f+'\')">'+f+' ('+cnt+')</div>';
     }).join('');
 
+    var sortOptions = [
+      ['date_desc','Newest First'],
+      ['date_asc','Oldest First'],
+      ['amount_desc','Highest Amount First'],
+      ['amount_asc','Lowest Amount First'],
+    ];
+    var sortSelect = '<select class="fi" id="sales-sort" style="width:auto;display:inline-block;padding:6px 10px;font-size:12px" onchange="Sales.setSortBy(this.value)">'
+      + sortOptions.map(function(o){ return '<option value="'+o[0]+'"'+(Sales.sortBy===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
+      + '</select>';
+
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Sales</div><div class="page-sub">'+all.length+' invoices total</div></div>'
       + '<div class="page-actions"><button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
@@ -4593,14 +4617,19 @@ var Sales = {
       + '<div class="kpi" style="--kc:var(--wa);--kibg:var(--wab)"><div class="kpi-icon">⏳</div><div class="kpi-label">Outstanding</div><div class="kpi-value">'+Utils.cur(outstanding,cur)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status!=='Paid';}).length+' open</div></div>'
       + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)"><div class="kpi-icon">📊</div><div class="kpi-label">Invoices</div><div class="kpi-value">'+all.length+'</div><div class="kpi-sub">All time</div></div>'
       + '</div></div>'
-      + '<div class="chips">'+chips+'</div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">'
+      + '<div class="chips" style="margin-bottom:0">'+chips+'</div>'
+      + sortSelect
+      + '</div>'
       + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>' : emptyState)+'</div>';
   },
 
   setFilter: function(f) { this.filter=f; this.render(); },
+  setSortBy: function(v) { this.sortBy=v; this.render(); },
 
   // ── NEW SALE FORM ──────────────────────────────────────────────────────────
   openNewSale: function() {
+    this.editingSaleId = null;
     this.cart=[]; this.discount=0;
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
@@ -4628,6 +4657,10 @@ var Sales = {
 
         + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
         + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '"></div>'
+        + '</div>'
+        + '<div class="form-row" style="margin-top:10px;margin-bottom:0">'
+        + '<div class="fg" style="margin:0"><label class="fl">Contact Number</label>'
+        + '<input class="fi" id="s-cust-phone" type="tel" placeholder="+231 ..." autocomplete="off"></div>'
         + '</div>'
         + '<input type="hidden" id="s-cust-id" value="">'
         + '</div>'
@@ -4670,24 +4703,6 @@ var Sales = {
         + '<input class="fi" id="s-amt-paid" type="number" placeholder="" min="0" step="0.01" '
         + 'oninput="Sales.updateTotals()" style="font-size:16px;font-weight:700;color:var(--ok)"></div>'
 
-        // LRD Converter
-        + '<div style="background:var(--inb);border:1px solid var(--inbd);border-radius:var(--r10);padding:12px;margin-bottom:10px">'
-        + '<div style="font-size:10px;font-weight:800;color:var(--in);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">🇱🇷 LRD ↔ USD Converter</div>'
-        + '<div class="form-row" style="margin-bottom:8px">'
-        + '<div class="fg" style="margin:0"><label class="fl">Rate (LRD per $1)</label>'
-        + '<input class="fi" id="s-lrd-rate" type="number" placeholder="' + lrdRate + '" value="' + lrdRate + '" '
-        + 'min="1" oninput="Sales.calcLrd()" style="font-weight:700;color:var(--in)"></div>'
-        + '<div class="fg" style="margin:0"><label class="fl">Amount in LRD</label>'
-        + '<input class="fi" id="s-lrd-amt" type="number" placeholder="Enter LRD amount" min="0" '
-        + 'oninput="Sales.calcLrd()" style="font-weight:700;color:var(--in)"></div>'
-        + '</div>'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:var(--r8);padding:10px 14px">'
-        + '<span style="font-size:12px;color:var(--t2)">= USD equivalent</span>'
-        + '<span id="s-lrd-result" style="font-size:18px;font-weight:800;color:var(--in);font-family:var(--fm)">$0.00</span>'
-        + '<button onclick="Sales.useLrdAmount()" class="btn-ghost btn-sm" style="color:var(--in);border-color:var(--inbd)">Use this amount</button>'
-        + '</div>'
-        + '</div>'
-
         + '</div>'
         + '<div class="fg"><label class="fl">Notes (optional)</label>'
         + '<input class="fi" id="s-notes" placeholder="Any extra information..."></div>',
@@ -4701,6 +4716,97 @@ var Sales = {
     var nameEl = Utils.get('s-cust-name');
     if (nameEl) nameEl.value = 'Walk-in Customer';
     this.updateTotals();
+  },
+
+  // ── EDIT EXISTING SALE ───────────────────────────────────────────────────
+  editingSaleId: null,
+  openEditSale: function(id) {
+    var s = DB.getSales().find(function(x){ return x.id===id; });
+    if (!s) { Toast.show('Sale not found','err'); return; }
+    this.editingSaleId = id;
+    // Seed the cart from the existing sale's items (deep copy so we don't
+    // mutate the stored sale until Save is pressed)
+    this.cart = (s.items||[]).map(function(i){
+      return { id:i.id, name:i.name, price:parseFloat(i.price)||0, cost:parseFloat(i.cost)||0, qty:parseInt(i.qty)||1 };
+    });
+    this.discount = parseFloat(s.discount)||0;
+
+    Modal.open({
+      title:'Edit Sale', sub:s.id, barColor:'var(--wa)',
+      body:
+        // ── Customer ─────────────────────────────────────────────
+        '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">👤 Customer</div>'
+        + '<div class="form-row" style="margin-bottom:0">'
+
+        // Customer name with smart search
+        + '<div class="fg" style="margin:0"><label class="fl">Customer Name</label>'
+        + '<div style="position:relative">'
+        + '<input class="fi" id="s-cust-name" placeholder="Type name or phone..." value="'+Utils.esc(s.customer||'')+'" '
+        + 'oninput="Sales.onCustNameInput(this.value)" autocomplete="off" style="font-weight:600">'
+        + '<div id="s-cust-suggestions" style="position:absolute;top:100%;left:0;right:0;'
+        + 'background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);'
+        + 'z-index:200;max-height:200px;overflow-y:auto;display:none;box-shadow:var(--sh2)"></div>'
+        + '</div>'
+        + '<div id="s-cust-tag" style="display:none;font-size:11px;color:var(--ok);font-weight:600;margin-top:5px"></div>'
+        + '</div>'
+
+        + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
+        + '<input class="fi" id="s-date" type="date" value="' + (s.date||Utils.today()) + '"></div>'
+        + '</div>'
+        + '<div class="form-row" style="margin-top:10px;margin-bottom:0">'
+        + '<div class="fg" style="margin:0"><label class="fl">Contact Number</label>'
+        + '<input class="fi" id="s-cust-phone" type="tel" placeholder="+231 ..." value="'+Utils.esc(s.customerPhone||'')+'" autocomplete="off"></div>'
+        + '</div>'
+        + '<input type="hidden" id="s-cust-id" value="'+Utils.esc(s.customerId||'')+'">'
+        + '</div>'
+
+        // ── Products ──────────────────────────────────────────────
+        + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📦 Products</div>'
+        + '<div class="fg" style="margin-bottom:10px"><label class="fl">Search Products</label>'
+        + '<div style="display:flex;gap:6px">'
+        + '<div style="position:relative;flex:1">'
+        + '<input class="fi" id="s-prod-search" placeholder="Type name, SKU or barcode..." '
+        + 'oninput="Sales.onProdSearch(this.value)" autocomplete="off">'
+        + '<div id="s-prod-suggestions" style="position:absolute;top:100%;left:0;right:0;'
+        + 'background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);'
+        + 'z-index:200;max-height:240px;overflow-y:auto;display:none;box-shadow:var(--sh2)"></div>'
+        + '</div>'
+        + '<button type="button" class="btn-ghost" onclick="Products.openScanner()" style="padding:0 16px;font-size:18px;flex-shrink:0" title="Scan barcode">📷</button>'
+        + '</div></div>'
+        + '<div id="s-cart-wrap"></div>'
+        + '</div>'
+
+        // ── Totals ────────────────────────────────────────────────
+        + '<div id="s-totals"></div>'
+
+        // ── Payment ───────────────────────────────────────────────
+        + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">💳 Payment</div>'
+        + '<div class="form-row" style="margin-bottom:12px">'
+        + '<div class="fg" style="margin:0"><label class="fl">Discount %</label>'
+        + '<input class="fi" id="s-disc" type="number" placeholder="0" min="0" max="100" value="'+(s.discount||0)+'" '
+        + 'oninput="Sales.updateTotals()"></div>'
+        + '<div class="fg" style="margin:0"><label class="fl">Payment Method</label>'
+        + '<select class="fi" id="s-method">'
+        + ['Cash','Mobile Money','Bank Transfer','Credit'].map(function(m){ return '<option'+(s.payment===m?' selected':'')+'>'+m+'</option>'; }).join('')
+        + '</select></div>'
+        + '</div>'
+
+        + '<div class="fg" style="margin-bottom:10px"><label class="fl">Amount Paid (USD)</label>'
+        + '<input class="fi" id="s-amt-paid" type="number" placeholder="" min="0" step="0.01" value="'+(parseFloat(s.amountPaid)||0)+'" '
+        + 'oninput="Sales.updateTotals()" style="font-size:16px;font-weight:700;color:var(--ok)"></div>'
+
+        + '</div>'
+        + '<div class="fg"><label class="fl">Notes (optional)</label>'
+        + '<input class="fi" id="s-notes" placeholder="Any extra information..." value="'+Utils.esc(s.notes||'')+'"></div>',
+
+      footer: '<button class="btn-ghost" onclick="Sales.editingSaleId=null;Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Sales.saveSale(\'close\')">💾 Save Changes</button>',
+    });
+
+    this.renderCart();
   },
 
 
@@ -4753,16 +4859,18 @@ var Sales = {
       var found = DB.getCustomers().find(function(x){ return x.id===c_id; });
       if (found) { c_phone=found.phone; c_addr=found.address; c_email=found.email; }
     }
-    var nameEl = Utils.get('s-cust-name');
-    var idEl   = Utils.get('s-cust-id');
-    var sugg   = Utils.get('s-cust-suggestions');
-    if (nameEl) nameEl.value = c_name || '';
-    if (idEl)   idEl.value   = c_id   || '';
-    if (sugg)   sugg.style.display = 'none';
+    var nameEl  = Utils.get('s-cust-name');
+    var idEl    = Utils.get('s-cust-id');
+    var phoneEl = Utils.get('s-cust-phone');
+    var sugg    = Utils.get('s-cust-suggestions');
+    if (nameEl)  nameEl.value  = c_name  || '';
+    if (idEl)    idEl.value    = c_id    || '';
+    if (phoneEl) phoneEl.value = c_phone || '';
+    if (sugg)    sugg.style.display = 'none';
     var tag=Utils.get('s-cust-tag');
     // Show customer info panel
-    var c = DB.getCustomers().find(function(x){ return x.id===id; });
-    var allSales = DB.getSales().filter(function(s){ return s.customerId===id||s.customer===name; });
+    var c = DB.getCustomers().find(function(x){ return x.id===c_id; });
+    var allSales = DB.getSales().filter(function(s){ return s.customerId===c_id||s.customer===c_name; });
     var openBal  = allSales.filter(function(s){ return s.status!=='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.balance)||0); },0);
     var cur = DB.getSettings().currency||'$';
     var lastSale = allSales[0];
@@ -4911,28 +5019,6 @@ var Sales = {
   removeItem: function(i){ this.cart.splice(i,1); this.renderCart(); },
 
   // ── TOTALS ─────────────────────────────────────────────────────────────────
-  calcLrd: function(){
-    var rateEl = Utils.get('s-lrd-rate');
-    var amtEl  = Utils.get('s-lrd-amt');
-    var resEl  = Utils.get('s-lrd-result');
-    if (!rateEl || !amtEl || !resEl) return;
-    var rate = parseFloat(rateEl.value) || (DB.getSettings().lrdRate || 198);
-    var lrd  = parseFloat(amtEl.value) || 0;
-    var usd  = rate > 0 ? lrd / rate : 0;
-    resEl.textContent = Utils.cur(usd, '$');
-  },
-
-  useLrdAmount: function(){
-    var resEl = Utils.get('s-lrd-result');
-    if (!resEl) return;
-    var usdVal = parseFloat(resEl.textContent.replace(/[^0-9.]/g,'')) || 0;
-    if (!usdVal) { Toast.show('Enter an LRD amount first','err'); return; }
-    var paidEl = Utils.get('s-amt-paid');
-    if (paidEl) paidEl.value = usdVal.toFixed(2);
-    Toast.show('Amount applied: '+Utils.cur(usdVal,'$'),'ok');
-    Sales.updateTotals();
-  },
-
   //─────────────────────────────────────────────────────────────────────────
   updateTotals: function(){
     var totEl=Utils.get('s-totals');
@@ -4975,10 +5061,12 @@ var Sales = {
 
   // ── SAVE SALE ──────────────────────────────────────────────────────────────
   saveSale: function(action){
+    if (this.editingSaleId) { this.updateExistingSale(); return; }
     action=action||'close';
     if(!this.cart.length){ Toast.show('Add at least one product','err'); return; }
-    var custName = Utils.val('s-cust-name').trim()||'Walk-in Customer';
-    var custId   = Utils.val('s-cust-id')||null;
+    var custName  = Utils.val('s-cust-name').trim()||'Walk-in Customer';
+    var custId    = Utils.val('s-cust-id')||null;
+    var custPhone = (Utils.val('s-cust-phone')||'').trim();
     var method   = (Utils.get('s-method')||{value:'Cash'}).value||'Cash';
     var sub      = this.cart.reduce(function(a,i){ return a+(parseFloat(i.price)||0)*(parseInt(i.qty)||0); },0);
     var discAmt  = sub*(this.discount/100);
@@ -4991,13 +5079,18 @@ var Sales = {
 
     var finalCustId = custId;
     if (!finalCustId && custName && custName.toLowerCase()!=='walk-in customer') {
-      var nc = DB.findOrCreateCustomer(custName);
+      var nc = DB.findOrCreateCustomer(custName, custPhone);
       if (nc) finalCustId = nc.id;
     }
     var cust = finalCustId ? DB.getCustomers().find(function(c){ return c.id===finalCustId; }) : null;
+    // Backfill phone onto an existing customer record if it didn't have one yet
+    if (cust && custPhone && !cust.phone) {
+      DB.updateCustomer(finalCustId, { phone: custPhone });
+      cust.phone = custPhone;
+    }
 
     var sale = DB.addSale({
-      customer:custName, customerId:finalCustId||null,
+      customer:custName, customerId:finalCustId||null, customerPhone:custPhone||(cust&&cust.phone)||'',
       items:this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
       subtotal:sub, discount:this.discount, total:total,
       amountPaid:status==='Paid'?total:paid,
@@ -5027,6 +5120,7 @@ var Sales = {
       this.cart=[]; this.discount=0;
       var n=Utils.get('s-cust-name'); if(n) n.value='Walk-in Customer';
       Utils.get('s-cust-id').value='';
+      var ph=Utils.get('s-cust-phone'); if(ph) ph.value='';
       Utils.get('s-cust-tag').style.display='none';
       var d=Utils.get('s-disc'); if(d) d.value='0';
       var p2=Utils.get('s-amt-paid'); if(p2) p2.value='0';
@@ -5041,6 +5135,97 @@ var Sales = {
       var sid = sale.id;
       setTimeout(function(){ Sales.showPrintPrompt(sid,'invoice'); }, 350);
     }
+  },
+
+  // ── UPDATE EXISTING SALE (Edit) ───────────────────────────────────────────
+  updateExistingSale: function() {
+    var id = this.editingSaleId;
+    var old = DB.getSales().find(function(x){ return x.id===id; });
+    if (!old) { Toast.show('Original sale not found','err'); this.editingSaleId=null; return; }
+    if (!this.cart.length) { Toast.show('Add at least one product','err'); return; }
+
+    var custName  = Utils.val('s-cust-name').trim()||'Walk-in Customer';
+    var custId    = Utils.val('s-cust-id')||null;
+    var custPhone = (Utils.val('s-cust-phone')||'').trim();
+    var method    = (Utils.get('s-method')||{value:'Cash'}).value||'Cash';
+    var sub       = this.cart.reduce(function(a,i){ return a+(parseFloat(i.price)||0)*(parseInt(i.qty)||0); },0);
+    var discount  = parseFloat(Utils.val('s-disc')||0);
+    var discAmt   = sub*(discount/100);
+    var total     = sub-discAmt;
+    var _amtStr   = Utils.val('s-amt-paid').trim();
+    var paidRaw   = _amtStr === '' ? total : (parseFloat(_amtStr)||0);
+    var paid      = Math.min(paidRaw, total);
+    var balance   = Math.max(0, total-paid);
+    var status    = paid>0&&balance>0?'Partial':(paid<=0&&method==='Credit')?'Credit':'Paid';
+
+    var finalCustId = custId;
+    if (!finalCustId && custName && custName.toLowerCase()!=='walk-in customer') {
+      var nc = DB.findOrCreateCustomer(custName, custPhone);
+      if (nc) finalCustId = nc.id;
+    }
+    var cust = finalCustId ? DB.getCustomers().find(function(c){ return c.id===finalCustId; }) : null;
+    if (cust && custPhone && !cust.phone) {
+      DB.updateCustomer(finalCustId, { phone: custPhone });
+      cust.phone = custPhone;
+    }
+
+    // ── Inventory reconciliation ──────────────────────────────────────────
+    // Step 1: restore stock from the OLD items (undo the original deduction)
+    (old.items||[]).forEach(function(item){
+      var p = DB.getProducts().find(function(x){ return x.id===item.id; });
+      if (p) DB.updateProduct(item.id, { qty:(p.qty||0)+(parseInt(item.qty)||0) });
+    });
+    // Step 2: deduct stock for the NEW (edited) items
+    this.cart.forEach(function(item){
+      var p = DB.getProducts().find(function(x){ return x.id===item.id; });
+      if (p) DB.updateProduct(item.id, { qty:Math.max(0,(p.qty||0)-(parseInt(item.qty)||0)) });
+    });
+
+    // ── Customer totalSpent / purchases: adjust by delta, no blind re-add ─
+    var oldTotal = parseFloat(old.total)||0;
+    if (old.customerId && old.customerId !== finalCustId) {
+      // Customer changed on this sale: remove the old total/purchase from
+      // whoever it used to belong to, and add the new total/purchase to
+      // whoever it belongs to now.
+      var oldCust = DB.getCustomers().find(function(c){ return c.id===old.customerId; });
+      if (oldCust) DB.updateCustomer(old.customerId, {
+        totalSpent:Math.max(0,(oldCust.totalSpent||0)-oldTotal),
+        purchases:Math.max(0,(oldCust.purchases||0)-1),
+      });
+      if (cust) DB.updateCustomer(finalCustId, {
+        totalSpent:(cust.totalSpent||0)+total,
+        purchases:(cust.purchases||0)+1,
+      });
+    } else if (cust) {
+      // Same customer as before: just adjust totalSpent by the price delta.
+      // Purchases count is unchanged since it's still the same invoice.
+      DB.updateCustomer(finalCustId, { totalSpent:Math.max(0,(cust.totalSpent||0)-oldTotal+total) });
+    }
+
+    // ── Update the sale record in place — same ID, no duplicate ──────────
+    var newAmountPaid = status==='Paid'?total:paid;
+    DB.updateSale(id, {
+      customer:custName, customerId:finalCustId||null, customerPhone:custPhone||(cust&&cust.phone)||'',
+      items:this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
+      subtotal:sub, discount:discount, total:total,
+      amountPaid:newAmountPaid,
+      balance:status==='Paid'?0:balance,
+      payment:method, status:status,
+      date:Utils.val('s-date')||old.date||Utils.today(),
+      notes:Utils.val('s-notes'),
+    });
+    // NOTE: we intentionally do NOT log this change to the payments ledger
+    // (DB.getPayments()). Dashboard cash-flow ("debt collections") sums that
+    // ledger separately from sale.amountPaid/total — adding an entry here
+    // would double-count the adjustment. The sale record itself is the
+    // single source of truth for amountPaid after an edit.
+
+    Toast.show('Invoice '+id+' updated ✓','ok');
+    Notifs.check();
+    this.editingSaleId = null;
+    this.cart = [];
+    Modal.close();
+    this.render();
   },
 
   // ── VIEW INVOICE + FULL PAYMENT HISTORY ───────────────────────────────────
@@ -5082,6 +5267,7 @@ var Sales = {
       title:'Invoice '+s.id, sub:Utils.date(s.date), barColor:barColor,
       body: '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:14px;margin-bottom:12px">'
           + '<div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:3px">'+Utils.esc(s.customer||'Walk-in')+'</div>'
+          + (s.customerPhone ? '<div style="font-size:11px;color:var(--t2);margin-bottom:3px">📞 '+Utils.esc(s.customerPhone)+'</div>' : '')
           + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+s.id+' · '+Utils.date(s.date)+' · '+(s.payment||'Cash')+'</div>'
           + '</div>'
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px;margin-bottom:12px">'
@@ -5096,6 +5282,7 @@ var Sales = {
           + paymentsHtml,
       footer: '<button class="btn-ghost" onclick="Modal.close()">Close</button>'
             + '<button class="btn-ghost" onclick="Sales._printById(this)" data-id="'+id+'" style="padding:10px 14px">🖨 Print</button>'
+            + '<button class="btn-ghost" onclick="Modal.close();Sales.openEditSale(\''+id+'\')" style="padding:10px 14px">✏️ Edit</button>'
             + footerPayBtn,
     });
   },
