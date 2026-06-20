@@ -1629,6 +1629,48 @@ var DB = {
     this._data.sales = this.get('sales').filter(function(x){ return x.id!==id; }); this.save();
     this._pushDelete('biz_sales', id);
   },
+  // Rename an invoice/sale ID (e.g. correcting an imported invoice number).
+  // This is more than a field edit: the sale's id is also the cloud row's
+  // primary key, so a straight updateSale() would leave Supabase storing
+  // the OLD id forever while the local copy thinks it changed. Instead we:
+  //   1. create a new cloud row under the new id (same data, id swapped)
+  //   2. soft-delete the old cloud row
+  //   3. swap the id in the local array (no duplicate created)
+  //   4. cascade the new id onto every payment record that referenced
+  //      the old id, so payment history doesn't go silently missing
+  // Returns {ok:true} on success, or {ok:false, error:'...'} if the new
+  // id is empty, unchanged, or already used by another sale.
+  renameSaleId: function(oldId, newId) {
+    newId = (newId||'').trim();
+    if (!newId) return { ok:false, error:'Invoice number cannot be empty' };
+    if (newId === oldId) return { ok:false, error:'Invoice number unchanged' };
+    var arr = this.get('sales');
+    if (arr.some(function(x){ return x.id===newId; })) {
+      return { ok:false, error:'Invoice number "'+newId+'" is already in use' };
+    }
+    var i = arr.findIndex(function(x){ return x.id===oldId; });
+    if (i < 0) return { ok:false, error:'Original sale not found' };
+
+    var renamed = Object.assign({}, arr[i], { id:newId });
+    arr[i] = renamed;
+    this.save();
+    // Cloud: new row under newId, soft-delete the old row under oldId
+    this._push('biz_sales', newId, renamed);
+    this._pushDelete('biz_sales', oldId);
+
+    // Cascade to every payment that referenced the old sale id
+    var self = this;
+    var payArr = this.get('payments');
+    payArr.forEach(function(p) {
+      if (p.saleId === oldId) {
+        p.saleId = newId;
+        self._push('biz_payments', p.id, p);
+      }
+    });
+    this.save();
+
+    return { ok:true };
+  },
 
   // ── Customers ─────────────────────────────────────────────────────────────
   getCustomers: function() { return this.get('customers') || []; },
@@ -3838,7 +3880,9 @@ var Dashboard = {
       return Math.floor(h/24)+' days ago';
     }
 
-    var recentRows = sales.slice(0,10).map(function(sale) {
+    var recentRows = sales.slice().sort(function(a,b){
+      return (b.date||'').localeCompare(a.date||'');
+    }).slice(0,10).map(function(sale) {
       var items = (sale.items||[]).map(function(i){ return i.name; }).join(', ');
       if (items.length>40) items=items.slice(0,38)+'…';
       var bc = sale.status==='Paid'?'var(--ok)':sale.status==='Partial'?'var(--wa)':'var(--er)';
@@ -5268,7 +5312,9 @@ var Sales = {
       body: '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:14px;margin-bottom:12px">'
           + '<div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:3px">'+Utils.esc(s.customer||'Walk-in')+'</div>'
           + (s.customerPhone ? '<div style="font-size:11px;color:var(--t2);margin-bottom:3px">📞 '+Utils.esc(s.customerPhone)+'</div>' : '')
-          + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+s.id+' · '+Utils.date(s.date)+' · '+(s.payment||'Cash')+'</div>'
+          + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+s.id+' '
+          + '<span onclick="Sales.promptRenameInvoice(\''+id+'\')" style="cursor:pointer;color:var(--g);font-weight:700" title="Edit invoice number">✏️</span>'
+          + ' · '+Utils.date(s.date)+' · '+(s.payment||'Cash')+'</div>'
           + '</div>'
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px;margin-bottom:12px">'
           + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px">Items</div>'
@@ -5285,6 +5331,30 @@ var Sales = {
             + '<button class="btn-ghost" onclick="Modal.close();Sales.openEditSale(\''+id+'\')" style="padding:10px 14px">✏️ Edit</button>'
             + footerPayBtn,
     });
+  },
+
+  // ── EDIT INVOICE NUMBER ───────────────────────────────────────────────────
+  promptRenameInvoice: function(id) {
+    var s = DB.getSales().find(function(x){ return x.id===id; });
+    if (!s) return;
+    Modal.open({
+      title:'Edit Invoice Number', sub:'Current: '+s.id, barColor:'var(--wa)',
+      body: '<div class="fg"><label class="fl">New Invoice Number</label>'
+          + '<input class="fi" id="ren-inv-id" value="'+Utils.esc(s.id)+'" autocomplete="off" '
+          + 'style="font-family:var(--fm);font-weight:700"></div>'
+          + '<div style="font-size:11px;color:var(--t3);margin-top:6px">Useful for correcting imported invoice numbers. Must be unique — payment history will move with the new number automatically.</div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close();Sales.viewInvoice(\''+id+'\')">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Sales.confirmRenameInvoice(\''+id+'\')">💾 Save</button>',
+    });
+  },
+  confirmRenameInvoice: function(oldId) {
+    var newId = (Utils.val('ren-inv-id')||'').trim();
+    var result = DB.renameSaleId(oldId, newId);
+    if (!result.ok) { Toast.show(result.error,'err'); return; }
+    Toast.show('Invoice renamed to '+newId+' ✓','ok');
+    Modal.close();
+    this.render();
+    Sales.viewInvoice(newId);
   },
 
   // ── PAY BALANCE ────────────────────────────────────────────────────────────
@@ -5870,6 +5940,7 @@ var Customers = {
       const custSales = allSales.filter(s => s.customerId === c.id || s.customer === c.name);
       const openBal   = custSales.filter(s => s.status !== 'Paid').reduce((a,s)=>a+(parseFloat(s.balance)||0),0);
       const initials  = (c.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      const lastSale  = custSales.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
 
       return `
       <div class="list-item" onclick="Customers.viewProfile('${c.id}')">
@@ -5886,6 +5957,7 @@ var Customers = {
           </div>
           <div class="list-meta">
             ${custSales.length} invoice${custSales.length!==1?'s':''} · ${Utils.cur(c.totalSpent||0,cur)} total
+            ${lastSale?` · Last: ${Utils.date(lastSale.date)}`:''}
           </div>
         </div>
         <div class="list-right">
