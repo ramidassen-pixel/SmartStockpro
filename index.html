@@ -977,7 +977,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
           <div class="pw-wrap" style="width:100%;box-sizing:border-box"><input class="fi" id="j-pass" type="password" placeholder="Min 6 characters" style="width:100%;box-sizing:border-box"><span class="pw-eye" onclick="Auth.togglePw('j-pass')">👁</span></div></div>
         <div class="fg"><label class="fl">Confirm Password *</label>
           <div class="pw-wrap" style="width:100%;box-sizing:border-box"><input class="fi" id="j-pass-conf" type="password" placeholder="Repeat password" style="width:100%;box-sizing:border-box"><span class="pw-eye" onclick="Auth.togglePw('j-pass-conf')">👁</span></div></div>
-        <button class="btn-primary btn-full" onclick="Auth.joinBusiness()" style="width:100%">📤 Request to Join</button>
+        <button class="btn-primary btn-full" id="join-submit-btn" onclick="Auth.joinBusiness()" style="width:100%">📤 Request to Join</button>
         <div style="text-align:center;margin-top:12px;font-size:12px;color:rgba(255,255,255,.4)">
           New business owner? <span onclick="Auth.showTab('up')" style="color:#D4A843;font-weight:700;cursor:pointer">Create your account →</span>
         </div>
@@ -2133,22 +2133,35 @@ var Auth = {
 
       var authUserId = result.data.id || (result.data.user && result.data.user.id);
 
-      // Create the matching business + user rows in our own tables
-      var biz  = { id: bizId, name: bizName, owner_name: name, owner_email: email, owner_phone: phone, status: 'active' };
-      var user = { id: authUserId, business_id: bizId, name: name, email: email, phone: phone, role: 'primary_admin', status: 'active' };
-
-      fetch(SUPABASE_URL + '/rest/v1/platform_businesses', {
-        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(biz),
-      }).catch(function(){});
-      fetch(SUPABASE_URL + '/rest/v1/platform_users', {
-        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(user),
-      }).catch(function(){});
-
-      DB.saveSettings({ bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email });
-      try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
-
-      // Supabase sends its own confirmation email automatically on signup.
-      Auth._showCheckEmailScreen(email);
+      // Create the matching business + user rows via a SECURITY DEFINER
+      // function — at this point there is no usable session yet (Supabase
+      // doesn't issue one until the user confirms their email), so this
+      // can't be done as an authenticated insert. The function re-checks
+      // the same safety rules RLS would have (real user, business_id not
+      // already taken) before creating anything.
+      fetch(SUPABASE_URL + '/rest/v1/rpc/register_business', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON },
+        body: JSON.stringify({
+          p_user_id: authUserId, p_business_id: bizId, p_business_name: bizName,
+          p_owner_name: name, p_owner_email: email, p_owner_phone: phone,
+        }),
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+      .then(function(regResult){
+        if (!regResult.ok) {
+          Auth._err('signup-err', '❌ Could not finish creating your account: ' + (regResult.data && regResult.data.message || 'Unknown error') + '. Please try again or contact support.');
+          if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
+          return;
+        }
+        DB.saveSettings({ bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email });
+        try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
+        Auth._showCheckEmailScreen(email);
+      })
+      .catch(function(){
+        Auth._err('signup-err', '❌ Network error creating your account. Please try again.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
+      });
     })
     .catch(function(err) {
       if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
@@ -2188,6 +2201,9 @@ var Auth = {
     if (pw.length < 8) { Auth._err('join-err', '⚠️ Password must be at least 8 characters'); return; }
     if (pw !== pwConf)  { Auth._err('join-err', '⚠️ Passwords do not match'); return; }
 
+    var btn = Utils.get('join-submit-btn');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Searching…'; }
+
     Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
     fetch(SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status', {
       headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON },
@@ -2195,6 +2211,7 @@ var Auth = {
     .then(function(r){ return r.json(); })
     .then(function(results) {
       if (!results || !results.length) {
+        if (btn) { btn.disabled = false; btn.textContent = '📤 Request to Join'; }
         Auth._err('join-err',
           '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
           + '<strong>Is this your first time?</strong><br>'
@@ -2203,14 +2220,15 @@ var Auth = {
         );
         return;
       }
-      Auth._continueJoin(results[0], name, email, phone, pw);
+      Auth._continueJoin(results[0], name, email, phone, pw, btn);
     })
     .catch(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '📤 Request to Join'; }
       Auth._err('join-err', '❌ Could not search for that business. Check your connection and try again.');
     });
   },
 
-  _continueJoin: function(biz, name, email, phone, pw) {
+  _continueJoin: function(biz, name, email, phone, pw, btn) {
     var userMeta = { name: name, business_id: biz.id, role: 'sales_employee' };
 
     fetch(SUPABASE_AUTH_URL + '/signup', {
@@ -2221,6 +2239,7 @@ var Auth = {
     .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
     .then(function(result) {
       if (!result.ok) {
+        if (btn) { btn.disabled = false; btn.textContent = '📤 Request to Join'; }
         var msg = (result.data && result.data.msg) || 'Sign up failed';
         if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
           Auth._err('join-err', '❌ An account with this email already exists.');
@@ -2231,17 +2250,30 @@ var Auth = {
       }
 
       var authUserId = result.data.id || (result.data.user && result.data.user.id);
-      var user = { id: authUserId, business_id: biz.id, name: name, email: email, phone: phone, role: 'sales_employee', status: 'pending' };
 
-      fetch(SUPABASE_URL + '/rest/v1/platform_users', {
-        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(user),
-      }).catch(function(){});
-
-      try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + biz.name); } catch(e) {}
-      Auth._showCheckEmailScreen(email);
-      Toast.show('Request sent — confirm your email, then wait for approval', 'ok');
+      fetch(SUPABASE_URL + '/rest/v1/rpc/request_join_business', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON },
+        body: JSON.stringify({ p_user_id: authUserId, p_business_id: biz.id, p_name: name, p_email: email, p_phone: phone }),
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+      .then(function(joinResult){
+        if (!joinResult.ok) {
+          if (btn) { btn.disabled = false; btn.textContent = '📤 Request to Join'; }
+          Auth._err('join-err', '❌ Could not send join request: ' + (joinResult.data && joinResult.data.message || 'Unknown error'));
+          return;
+        }
+        try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + biz.name); } catch(e) {}
+        Auth._showCheckEmailScreen(email);
+        Toast.show('Request sent — confirm your email, then wait for approval', 'ok');
+      })
+      .catch(function(){
+        if (btn) { btn.disabled = false; btn.textContent = '📤 Request to Join'; }
+        Auth._err('join-err', '❌ Network error sending join request. Please try again.');
+      });
     })
     .catch(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = '📤 Request to Join'; }
       Auth._err('join-err', '❌ Network error: ' + err.message);
     });
   },
@@ -2272,13 +2304,16 @@ var Auth = {
       body: '<div class="fg"><label class="fl">Email Address</label>'
           + '<input class="fi" id="fp-email" type="email" placeholder="your@email.com"></div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Auth.sendResetCode()">📧 Send Reset Link</button>',
+            + '<button class="btn-primary" id="reset-submit-btn" style="flex:1" onclick="Auth.sendResetCode()">📧 Send Reset Link</button>',
     });
   },
 
   sendResetCode: function() {
     var email = Utils.val('fp-email').trim().toLowerCase();
     if (!email || !email.includes('@')) { Toast.show('Enter a valid email', 'err'); return; }
+
+    var btn = Utils.get('reset-submit-btn');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Sending…'; }
 
     fetch(SUPABASE_AUTH_URL + '/recover', {
       method: 'POST',
@@ -2290,6 +2325,7 @@ var Auth = {
       Toast.show('If an account exists for that email, a reset link has been sent.', 'ok');
     })
     .catch(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reset Link'; }
       Toast.show('Network error — try again', 'err');
     });
   },
@@ -4921,7 +4957,7 @@ var Sales = {
         var div = document.createElement('div');
         div.style.cssText = 'padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bd)';
         div.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--t1)">'+Utils.esc(c.name)+'</div>'
-          + '<div style="font-size:11px;color:var(--t2)">'+(c.phone||'')+debt+'</div>';
+          + '<div style="font-size:11px;color:var(--t2)">'+Utils.esc(c.phone||'')+debt+'</div>';
         div.setAttribute('data-cid', c.id||'');
         div.setAttribute('data-cname', c.name||'');
         div.addEventListener('click', function(){
