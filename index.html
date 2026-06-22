@@ -316,8 +316,13 @@ img { max-width:100%; display:block; }
 /* ── TOAST ───────────────────────────────────────── */
 .toast-container {
   position:fixed;
-  bottom:calc(var(--botH) + var(--sb) + 16px);
-  left:14px; right:14px; z-index:9000;
+  /* Anchored from the TOP, not the bottom. A bottom-anchored toast gets
+     hidden behind the on-screen keyboard whenever it's open — which is
+     exactly the moment a form-validation error toast (e.g. "invoice
+     number unchanged") most needs to be visible, since the user just
+     tapped Save while the keyboard was still up. */
+  top:calc(var(--sb) + 16px);
+  left:14px; right:14px; z-index:9500;
   display:flex; flex-direction:column; gap:9px;
   pointer-events:none; max-width:420px; margin:0 auto;
 }
@@ -1046,6 +1051,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
     <div class="page" id="pg-superadmin"></div>
     <div class="page" id="pg-support"></div>
     <div class="page" id="pg-stock"></div>
+    <div class="page" id="pg-notifcenter"></div>
   </main>
 
   <!-- Bottom Nav -->
@@ -1170,7 +1176,11 @@ var Toast = {
     el.innerHTML = '<span>' + (icons[type||'info']||'ℹ️') + '</span><span>' + (Utils.esc(msg)) + '</span>';
     var c = Utils.get('toast-container');
     if (c) c.appendChild(el);
-    setTimeout(function() { var e=Utils.get(id); if(e) e.remove(); }, dur||3500);
+    // Error messages need more time to actually read than a quick
+    // "saved ✓" confirmation does — default to 6s for errors unless the
+    // caller explicitly passed a duration, instead of the standard 3.5s.
+    var defaultDur = (type==='err') ? 6000 : 3500;
+    setTimeout(function() { var e=Utils.get(id); if(e) e.remove(); }, dur||defaultDur);
   },
 };
 
@@ -1186,11 +1196,12 @@ var Modal = {
   close() {
     var ov = Utils.get('modal-overlay');
     if (ov) { ov.classList.add('hidden'); ov.innerHTML = ''; }
-    // Guard: if a Sales edit was in progress and the modal was closed via
-    // the X button or backdrop click (not the dedicated Cancel handler),
-    // clear the edit-mode flag so a later "New Sale" doesn't accidentally
-    // route into update mode for a stale invoice ID.
+    // Guard: if a Sales/Expenses edit was in progress and the modal was
+    // closed via the X button or backdrop click (not the dedicated Cancel
+    // handler), clear the edit-mode flag so reopening "Add" later doesn't
+    // accidentally route into update mode for a stale id.
     if (typeof Sales !== 'undefined') Sales.editingSaleId = null;
+    if (typeof Expenses !== 'undefined') Expenses.editingExpenseId = null;
   },
 };
 
@@ -1298,6 +1309,7 @@ var DB = {
       ['biz_supplier_bills','supplierBills'],
       ['biz_stock_movements','stockMovements'],
       ['biz_monthly_statements','monthlyStatements'],
+      ['biz_notifications','notifications'],
     ];
 
     // Supabase/PostgREST caps every response at 1000 rows server-side.
@@ -1369,7 +1381,18 @@ var DB = {
         if (Array.isArray(rows) && rows.length > 0) {
           self._data.productCategories = rows[0].categories;
         }
-      }).catch(function(){})
+      }).catch(function(){}),
+
+      // Pull which notifications THIS user has already read. RLS on
+      // biz_notification_reads only ever returns the caller's own rows,
+      // so no extra filtering needed here.
+      (Auth.currentUser ? fetch(self._rest('biz_notification_reads') + '?select=notification_id', { headers: self._hdr() })
+      .then(function(r){ return r.json(); })
+      .then(function(rows) {
+        if (Array.isArray(rows)) {
+          self._data.notificationReadIds = rows.map(function(r){ return r.notification_id; });
+        }
+      }).catch(function(){}) : Promise.resolve())
     );
 
     return Promise.all(fetches).then(function() {
@@ -1684,7 +1707,7 @@ var DB = {
     // this one. Manually typed numbers should use a clearly different
     // pattern (e.g. a corrected imported number) instead.
     if (/^INV-\d+$/i.test(newId)) {
-      return { ok:false, error:'"'+newId+'" looks like an auto-generated invoice number and is reserved for the automatic sequence. Please use a different format.' };
+      return { ok:false, error:'Numbers like "INV-#" are reserved for auto-numbering. Try a different format, e.g. "IMP-S-9999".' };
     }
     var arr = this.get('sales');
     if (arr.some(function(x){ return x.id===newId; })) {
@@ -1762,6 +1785,10 @@ var DB = {
     this._push('biz_expenses', e.id, e);
     return e;
   },
+  updateExpense: function(id, data) {
+    var arr = this.get('expenses'), i = arr.findIndex(function(x){ return x.id===id; });
+    if (i > -1) { arr[i] = Object.assign({}, arr[i], data); this.save(); this._push('biz_expenses', id, arr[i]); }
+  },
   deleteExpense: function(id) {
     this._data.expenses = this.get('expenses').filter(function(x){ return x.id!==id; }); this.save();
     this._pushDelete('biz_expenses', id);
@@ -1822,6 +1849,92 @@ var DB = {
   },
   getPaymentsForSale: function(saleId) { return this.getPayments().filter(function(p){ return p.saleId === saleId; }); },
   getPaymentsForCustomer: function(custId) { return this.getPayments().filter(function(p){ return p.customerId === custId; }); },
+
+  // ── Notifications ──────────────────────────────────────────────────────
+  // Maps each notification "type" to the permission key that gates whether
+  // a given role is allowed to receive it (matches PERMISSIONS/ROLE_PRESETS).
+  NOTIF_TYPE_PERM: {
+    new_sale:          'notif_sales',
+    new_expense:       'notif_expenses',
+    inventory_added:   'notif_inventory',
+    inventory_reduced: 'notif_inventory',
+    low_stock:         'notif_inventory',
+    customer_credit:   'notif_customers',
+    customer_payment:  'notif_customers',
+    salary_payment:    'notif_financial',
+    user_login:        'notif_system',
+    data_import:       'notif_system',
+    report_generated:  'notif_financial',
+    system_announcement:'notif_system',
+  },
+
+  getNotifications: function() { return this.get('notifications') || []; },
+
+  // Creates a notification and pushes it to the cloud so every device
+  // logged into this business picks it up on its next sync. Does NOT
+  // target specific users directly — every notification is visible to
+  // the whole business in storage, and each viewer's own role/permissions
+  // decide whether it's actually shown to them (see Notifs.visibleTo).
+  // This mirrors how role-based UI restrictions already work everywhere
+  // else in this app (a feature for legitimate users, not a hard
+  // security boundary enforced by RLS).
+  notify: function(type, title, body, meta) {
+    var n = {
+      id: Utils.uid('NTF'),
+      type: type,
+      title: title,
+      body: body||'',
+      meta: meta||{},
+      createdAt: new Date().toISOString(),
+      createdBy: (Auth.currentUser && Auth.currentUser.id) || null,
+      createdByName: (Auth.currentUser && Auth.currentUser.name) || 'System',
+    };
+    var arr = this.get('notifications');
+    arr.unshift(n);
+    // Cap local history so this array can't grow forever on every device —
+    // older notifications are still safely in the cloud (deleted=false),
+    // just not all re-pulled into memory at once. The Notification Center
+    // can page further back if needed later.
+    if (arr.length > 500) arr.length = 500;
+    this.save();
+    this._push('biz_notifications', n.id, n);
+    return n;
+  },
+
+  // Marks a notification read BY THE CURRENT USER. Read-state is per-user
+  // (see biz_notification_reads) since one notification can be read by
+  // the Owner and still unread by the Manager.
+  markNotificationRead: function(notifId) {
+    var self = this;
+    if (!self._bizId || !self._token || !Auth.currentUser) return;
+    var userId = Auth.currentUser.id;
+    var readSet = this.get('notificationReadIds') || [];
+    if (readSet.indexOf(notifId) === -1) {
+      readSet.push(notifId);
+      this.set('notificationReadIds', readSet);
+    }
+    fetch(self._rest('biz_notification_reads'), {
+      method: 'POST',
+      headers: Object.assign({}, self._hdr(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ notification_id: notifId, business_id: self._bizId, user_id: userId }),
+    }).catch(function(){});
+  },
+
+  markAllNotificationsRead: function(notifIds) {
+    var self = this;
+    notifIds.forEach(function(id){ self.markNotificationRead(id); });
+  },
+
+  isNotificationRead: function(notifId) {
+    var readSet = this.get('notificationReadIds') || [];
+    return readSet.indexOf(notifId) > -1;
+  },
+
+  deleteNotification: function(notifId) {
+    this._data.notifications = this.getNotifications().filter(function(x){ return x.id!==notifId; });
+    this.save();
+    this._pushDelete('biz_notifications', notifId);
+  },
 
   // ── Allocations ───────────────────────────────────────────────────────────
   getAllocations: function() { return this.get('allocations') || []; },
@@ -2058,6 +2171,21 @@ var Auth = {
         try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
         try { if (typeof Platform !== 'undefined') Platform.pingLogin(user, row.business_id); } catch(e) {}
 
+        // Check whether this business has a pending account deletion
+        // scheduled, so the warning banner in Settings shows correctly
+        // even on a fresh login, not just within the session it was
+        // requested in.
+        fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(row.business_id) + '&select=status,deletion_scheduled_for', { headers: hdr })
+          .then(function(r){ return r.json(); })
+          .then(function(bizRows) {
+            var biz = Array.isArray(bizRows) && bizRows[0];
+            if (biz && biz.status === 'pending_deletion') {
+              Auth.currentUser.deletionPending = true;
+              Auth.currentUser.deletionScheduledFor = biz.deletion_scheduled_for;
+              try { if (Router.current === Settings) Settings.render(); } catch(e) {}
+            }
+          }).catch(function(){});
+
         // ── Stage 2B: Init cloud sync ──────────────────────────────────────
         try {
           DB.init(row.business_id, Auth._session.access_token);
@@ -2069,6 +2197,13 @@ var Auth = {
                 Router.current.render();
               }
             } catch(e) {}
+            var todayStr = Utils.today();
+            var alreadyLoggedToday = DB.getNotifications().some(function(n){
+              return n.type==='user_login' && n.meta && n.meta.userId===user.id && (n.createdAt||'').slice(0,10)===todayStr;
+            });
+            if (!alreadyLoggedToday) {
+              DB.notify('user_login', 'User Logged In', user.name+' ('+(ROLE_PRESETS[user.role]&&ROLE_PRESETS[user.role].label||user.role)+') signed in', { userId:user.id, userName:user.name, role:user.role });
+            }
             if (user.role === 'primary_admin') {
               var pendingCount = 0;
               try { pendingCount = (DB.get('users') || []).filter(function(u){ return u.status === 'pending'; }).length; } catch(e){}
@@ -2723,7 +2858,7 @@ var Router = {
 
   go: function(page){
     if (!PAGES.includes(page)) page = 'dashboard';
-    this.current = page;
+    this.currentPage = page;
     // Hide all pages
     PAGES.forEach(function(p){
       var el = Utils.get('pg-' + p);
@@ -2763,7 +2898,23 @@ var Router = {
       stock:      () => Stock.render(),
       settings:  () => Settings.render(),
       more:      () => MorePage.render(),
+      notifcenter: () => Notifs.renderCenter(),
     };
+    // Module reference for the current page, for code elsewhere that
+    // wants to call Router.current.render() to soft-refresh whatever
+    // page the user happens to be on (e.g. after a realtime push, or
+    // after cloud sync completes). This used to just be the page name
+    // STRING, which silently broke every place that expected the actual
+    // module object — fixed to resolve to the right module here, once,
+    // rather than patch every call site separately.
+    var moduleMap = {
+      dashboard: Dashboard, products: Products, sales: Sales, customers: Customers,
+      suppliers: Suppliers, supply: Supply, quotations: Quotations, expenses: Expenses,
+      salary: Salary, finance: Finance, reports: Reports, ai: AI, usermgmt: UserMgmt,
+      closing: ClosingReport, support: Support, stock: Stock, settings: Settings,
+      more: MorePage, notifcenter: Notifs,
+    };
+    this.current = moduleMap[page] || null;
     try {
       if (renders[page]) renders[page]();
     } catch(e) {
@@ -2775,28 +2926,163 @@ var Router = {
 
 /* === notifications.js === */
 var Notifs = {
+  // Icons per notification type, used in both the dropdown and the center
+  TYPE_ICON: {
+    new_sale:'💰', new_expense:'💸', inventory_added:'📦', inventory_reduced:'📤',
+    low_stock:'⚠️', customer_credit:'🧾', customer_payment:'✅', salary_payment:'👤',
+    user_login:'🔑', data_import:'📥', report_generated:'📊', system_announcement:'📢',
+  },
+
+  // A notification is visible to the current user if their role/custom
+  // permissions include the permission key that gates its type. Same
+  // trust model as every other Perms.can() check in this app — this is
+  // a feature for legitimate users navigating the UI, not a hard
+  // security boundary (RLS only scopes by business, same as everywhere
+  // else here).
+  visibleTo: function(n) {
+    var permKey = DB.NOTIF_TYPE_PERM[n.type];
+    if (!permKey) return true; // unknown type — show rather than hide silently
+    return Perms.can(permKey);
+  },
+
+  // Real persisted notifications this user is allowed to see, newest first
+  myNotifications: function() {
+    return DB.getNotifications().filter(this.visibleTo, this).sort(function(a,b){
+      return (b.createdAt||'').localeCompare(a.createdAt||'');
+    });
+  },
+
+  // ── Bell icon dropdown: live computed warnings + recent real notifications
   check() {
     const list = [];
     const stats = DB.stats();
-    stats.lowStock.forEach(p => list.push({ type:'warn', title:`Low stock: ${p.name}`, body:`Only ${p.qty} left`, time: Utils.today() }));
-    stats.outStock.forEach(p => list.push({ type:'err', title:`Out of stock: ${p.name}`, body:'Reorder needed', time: Utils.today() }));
+    if (Perms.can('notif_inventory')) {
+      stats.lowStock.forEach(p => list.push({ type:'warn', title:`Low stock: ${p.name}`, body:`Only ${p.qty} left`, time: Utils.today() }));
+      stats.outStock.forEach(p => list.push({ type:'err', title:`Out of stock: ${p.name}`, body:'Reorder needed', time: Utils.today() }));
+    }
     // Salary due
-    const emps = DB.getEmployees();
-    const paid = DB.getPayroll().filter(p=>p.month===Utils.today().slice(0,7)).map(p=>p.employeeId);
-    const unpaid = emps.filter(e=>!paid.includes(e.id)&&e.status==='active');
-    if (unpaid.length > 0) list.push({ type:'info', title:`${unpaid.length} salary payment(s) due`, body:'This month', time:Utils.today() });
+    if (Perms.can('notif_financial')) {
+      const emps = DB.getEmployees();
+      const paid = DB.getPayroll().filter(p=>p.month===Utils.today().slice(0,7)).map(p=>p.employeeId);
+      const unpaid = emps.filter(e=>!paid.includes(e.id)&&e.status==='active');
+      if (unpaid.length > 0) list.push({ type:'info', title:`${unpaid.length} salary payment(s) due`, body:'This month', time:Utils.today() });
+    }
+
+    var real = this.myNotifications();
+    var unreadCount = real.filter(function(n){ return !DB.isNotificationRead(n.id); }).length;
+    var totalBadge = list.length + unreadCount;
+
     const badge = Utils.get('notif-badge');
     if (badge) {
-      if (list.length > 0) { badge.classList.remove('hidden'); badge.textContent = list.length > 9 ? '9+' : list.length; }
+      if (totalBadge > 0) { badge.classList.remove('hidden'); badge.textContent = totalBadge > 9 ? '9+' : totalBadge; }
       else badge.classList.add('hidden');
     }
-    Utils.set('notif-list', list.length > 0 ? list.map(n => `
+
+    var liveHtml = list.map(n => `
       <div class="notif-item">
         <div class="notif-item-title">${Utils.esc(n.title)}</div>
         <div style="font-size:12px;color:var(--text2)">${Utils.esc(n.body||'')}</div>
         <div class="notif-item-time">${n.time}</div>
-      </div>`).join('') : '<div class="notif-empty">All caught up! 🎉</div>');
+      </div>`).join('');
+
+    var recentHtml = real.slice(0,8).map(n => {
+      var unread = !DB.isNotificationRead(n.id);
+      return `
+      <div class="notif-item" onclick="Notifs.openFromDropdown('${n.id}')" style="cursor:pointer;${unread?'border-left:3px solid var(--g)':''}">
+        <div class="notif-item-title">${this.TYPE_ICON[n.type]||'🔔'} ${Utils.esc(n.title)}</div>
+        <div style="font-size:12px;color:var(--text2)">${Utils.esc(n.body||'')}</div>
+        <div class="notif-item-time">${Utils.date(n.createdAt)}</div>
+      </div>`;
+    }, this).join('');
+
+    var footer = '<div style="padding:10px;text-align:center;border-top:1px solid var(--bd)"><span style="font-size:12px;color:var(--g);font-weight:700;cursor:pointer" onclick="Utils.hide(\'notif-panel\');Router.go(\'notifcenter\')">View all in Notification Center →</span></div>';
+
+    var combined = liveHtml + recentHtml;
+    Utils.set('notif-list', combined ? (combined + footer) : '<div class="notif-empty">All caught up! 🎉</div>'+footer);
     return list;
+  },
+
+  openFromDropdown: function(id) {
+    DB.markNotificationRead(id);
+    Utils.hide('notif-panel');
+    Router.go('notifcenter');
+  },
+
+  // ── Full Notification Center page ─────────────────────────────────────
+  filter: 'all', // 'all' | 'unread' | a specific type key
+
+  renderCenter: function() {
+    var pg = Utils.get('pg-notifcenter');
+    if (!pg) return;
+    var all = this.myNotifications();
+    var f = this.filter;
+    var list = f==='all' ? all
+      : f==='unread' ? all.filter(function(n){ return !DB.isNotificationRead(n.id); })
+      : all.filter(function(n){ return n.type===f; });
+
+    var typeOptions = Object.keys(DB.NOTIF_TYPE_PERM)
+      .filter(function(t){ return Perms.can(DB.NOTIF_TYPE_PERM[t]); })
+      .map(function(t){ return '<option value="'+t+'"'+(f===t?' selected':'')+'>'+(Notifs.TYPE_ICON[t]||'🔔')+' '+t.replace(/_/g,' ')+'</option>'; }).join('');
+
+    var unreadTotal = all.filter(function(n){ return !DB.isNotificationRead(n.id); }).length;
+
+    var rows = list.map(function(n) {
+      var unread = !DB.isNotificationRead(n.id);
+      return '<div class="list-item" style="'+(unread?'border-left:3px solid var(--g)':'')+'" onclick="Notifs.openDetail(\''+n.id+'\')">'
+        + '<div style="font-size:22px;width:36px;text-align:center;flex-shrink:0">'+(Notifs.TYPE_ICON[n.type]||'🔔')+'</div>'
+        + '<div class="list-info">'
+        + '<div class="list-name">'+Utils.esc(n.title)+(unread?' <span class="badge badge-gold" style="font-size:9px">NEW</span>':'')+'</div>'
+        + '<div class="list-meta">'+Utils.esc(n.body||'')+'</div>'
+        + '<div class="list-meta" style="opacity:.6">'+Utils.date(n.createdAt)+' · '+Utils.esc(n.createdByName||'System')+'</div>'
+        + '</div>'
+        + '<div class="list-actions">'
+        + '<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Notifs.deleteOne(\''+n.id+'\')" title="Delete">🗑</button>'
+        + '</div></div>';
+    }).join('');
+
+    pg.innerHTML = '<div class="page-header">'
+      + '<div><div class="page-title">Notification Center</div><div class="page-sub">'+all.length+' total · '+unreadTotal+' unread</div></div>'
+      + '<div class="page-actions">'
+      + (unreadTotal>0 ? '<button class="btn-ghost btn-sm" onclick="Notifs.markAllRead()">✓ Mark all read</button>' : '')
+      + '</div></div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">'
+      + '<div class="chip'+(f==='all'?' active':'')+'" onclick="Notifs.setFilter(\'all\')">All ('+all.length+')</div>'
+      + '<div class="chip'+(f==='unread'?' active':'')+'" onclick="Notifs.setFilter(\'unread\')">Unread ('+unreadTotal+')</div>'
+      + '<select class="fi" style="width:auto;display:inline-block;padding:6px 10px;font-size:12px" onchange="Notifs.setFilter(this.value)">'
+      + '<option value="">Filter by type…</option>' + typeOptions + '</select>'
+      + '</div>'
+      + '<div class="sec">'+(list.length ? '<div class="card">'+rows+'</div>' : '<div class="empty"><div class="empty-icon">🔔</div><div class="empty-title">No notifications</div><div class="empty-sub">You\'re all caught up</div></div>')+'</div>';
+  },
+
+  setFilter: function(f) { if (f) this.filter = f; this.renderCenter(); },
+
+  openDetail: function(id) {
+    var n = DB.getNotifications().find(function(x){ return x.id===id; });
+    if (!n) return;
+    DB.markNotificationRead(id);
+    Modal.open({
+      title: (this.TYPE_ICON[n.type]||'🔔')+' '+n.title, sub: Utils.date(n.createdAt), barColor:'var(--in)',
+      body: '<div style="font-size:14px;color:var(--t1);line-height:1.6;margin-bottom:14px">'+Utils.esc(n.body||'')+'</div>'
+          + '<div style="font-size:11px;color:var(--t3)">From: '+Utils.esc(n.createdByName||'System')+'</div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Close</button>'
+            + '<button class="btn-danger" style="flex:1" onclick="Notifs.deleteOne(\''+id+'\');Modal.close()">🗑 Delete</button>',
+    });
+    this.renderCenter();
+  },
+
+  deleteOne: function(id) {
+    DB.deleteNotification(id);
+    Toast.show('Notification deleted','warn');
+    this.renderCenter();
+    this.check();
+  },
+
+  markAllRead: function() {
+    var unreadIds = this.myNotifications().filter(function(n){ return !DB.isNotificationRead(n.id); }).map(function(n){ return n.id; });
+    DB.markAllNotificationsRead(unreadIds);
+    Toast.show('All marked as read ✓','ok');
+    this.renderCenter();
+    this.check();
   },
 };
 
@@ -3061,6 +3347,13 @@ var PERMISSIONS = {
   manage_branches:     'Manage Branches',
   manage_roles:        'Manage Roles',
   transfer_ownership:  'Transfer Ownership',
+  // Notifications
+  notif_sales:         'Receive Sales Notifications',
+  notif_expenses:      'Receive Expense Notifications',
+  notif_inventory:     'Receive Inventory Notifications',
+  notif_customers:     'Receive Customer Notifications',
+  notif_financial:     'Receive Financial Notifications',
+  notif_system:        'Receive System Notifications',
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -3089,6 +3382,8 @@ var ROLE_PRESETS = {
       create_quotations:true, manage_purchases:true,
       access_settings:true, access_ai:true,
       manage_branches:true, view_audit_logs:true,
+      notif_sales:true, notif_expenses:true, notif_inventory:true,
+      notif_customers:true, notif_financial:true, notif_system:true,
     },
   },
   accountant: {
@@ -3100,6 +3395,7 @@ var ROLE_PRESETS = {
       view_reports:true, export_reports:true, view_financial:true,
       manage_expenses:true, manage_payroll:true,
       create_quotations:true, access_ai:true,
+      notif_expenses:true, notif_financial:true, notif_customers:true,
     },
   },
   store_manager: {
@@ -3111,6 +3407,7 @@ var ROLE_PRESETS = {
       create_products:true, edit_products:true, manage_inventory:true,
       manage_suppliers:true, manage_purchases:true,
       view_reports:true, create_quotations:true,
+      notif_inventory:true,
     },
   },
   sales_employee: {
@@ -3121,6 +3418,7 @@ var ROLE_PRESETS = {
     permissions: {
       create_sales:true, create_quotations:true,
       manage_customers:true,
+      notif_sales:true, notif_customers:true,
     },
   },
   viewer: {
@@ -5244,6 +5542,15 @@ var Sales = {
       });
       if(cust) DB.updateCustomer(finalCustId,{totalSpent:(cust.totalSpent||0)+total,purchases:(cust.purchases||0)+1});
 
+      DB.notify('new_sale', 'New Sale Recorded',
+        'Invoice: '+sale.id+' · Customer: '+(custName||'Walk-in')+' · Amount: '+Utils.cur(total, DB.getSettings().currency||'$'),
+        { invoiceId: sale.id, customer: custName, amount: total, recordedBy: (Auth.currentUser&&Auth.currentUser.name)||'Unknown' });
+      if (status === 'Credit' || (status === 'Partial' && balance > 0)) {
+        DB.notify('customer_credit', 'Customer Credit Recorded',
+          (custName||'Customer')+' owes '+Utils.cur(balance,DB.getSettings().currency||'$')+' on '+sale.id,
+          { invoiceId: sale.id, customer: custName, balance: balance });
+      }
+
       Toast.show('Invoice '+sale.id+' saved ✓','ok');
       Notifs.check();
       self._saving = false;
@@ -5509,6 +5816,9 @@ var Sales = {
     var newStatus=newBal<=0?'Paid':'Partial';
     DB.updateSale(id,{amountPaid:newPaid,balance:newBal,status:newStatus});
     var pmt=DB.addPayment({saleId:id,customerId:s.customerId||null,amount:paying,method:method,note:note,invoiceRef:'PMT-'+id});
+    DB.notify('customer_payment', 'Customer Payment Received',
+      (s.customer||'Customer')+' paid '+Utils.cur(paying,DB.getSettings().currency||'$')+' on '+id+(newBal>0?(' · Balance: '+Utils.cur(newBal,DB.getSettings().currency||'$')):' · Fully paid'),
+      { invoiceId:id, customer:s.customer, amount:paying, newBalance:newBal });
     Modal.close();
     Toast.show(newStatus==='Paid'?'Invoice fully paid! ✅':'Payment recorded ✓','ok');
     this.render();
@@ -5519,8 +5829,12 @@ var Sales = {
 
   markPaid: function(id){
     var s=DB.getSales().find(function(x){ return x.id===id; }); if(!s) return;
+    var settledAmount = s.balance||0;
     DB.updateSale(id,{status:'Paid',amountPaid:s.total,balance:0});
-    DB.addPayment({saleId:id,customerId:s.customerId||null,amount:s.balance||0,method:'Cash',note:'Full settlement'});
+    DB.addPayment({saleId:id,customerId:s.customerId||null,amount:settledAmount,method:'Cash',note:'Full settlement'});
+    DB.notify('customer_payment', 'Customer Payment Received',
+      (s.customer||'Customer')+' settled '+id+' in full ('+Utils.cur(settledAmount,DB.getSettings().currency||'$')+')',
+      { invoiceId:id, customer:s.customer, amount:settledAmount });
     Toast.show('Marked as fully paid ✓','ok'); this.render();
   },
 
@@ -7214,7 +7528,10 @@ var Expenses = {
         + '</div>'
         + '<div class="list-right">'
         + '<div class="list-val" style="color:var(--er)">'+Utils.cur(e.amount,cur)+'</div>'
-        + '<div class="list-actions"><button class="btn-danger btn-sm btn-icon" onclick="Expenses.del(\''+e.id+'\')">🗑</button></div>'
+        + '<div class="list-actions">'
+        + '<button class="btn-ghost btn-sm btn-icon" onclick="Expenses.openEditModal(\''+e.id+'\')" title="Edit">✏️</button>'
+        + '<button class="btn-danger btn-sm btn-icon" onclick="Expenses.del(\''+e.id+'\')">🗑</button>'
+        + '</div>'
         + '</div></div>';
     }).join('') : '<div class="empty" style="padding:20px"><div class="empty-icon">💸</div><div class="empty-title">No manual expenses yet</div></div>';
 
@@ -7266,8 +7583,11 @@ var Expenses = {
       + '</div>';
   },
 
-  // ── ADD EXPENSE ────────────────────────────────────────────────────────────
+  // ── ADD / EDIT EXPENSE ───────────────────────────────────────────────────
+  editingExpenseId: null,
+
   openAddModal: function() {
+    this.editingExpenseId = null;
     Modal.open({
       title: 'Add Expense', barColor: 'var(--er)',
       body: '<div class="form-row">'
@@ -7289,16 +7609,54 @@ var Expenses = {
     });
   },
 
+  openEditModal: function(id) {
+    var e = DB.getExpenses().find(function(x){ return x.id===id; });
+    if (!e) { Toast.show('Expense not found','err'); return; }
+    this.editingExpenseId = id;
+    var categories = ['Rent','Utilities','Salaries','Marketing','Maintenance','Transport','Insurance','Stock Purchase','Other'];
+    Modal.open({
+      title: 'Edit Expense', sub: id, barColor: 'var(--er)',
+      body: '<div class="form-row">'
+          + '<div class="fg"><label class="fl">Category *</label>'
+          + '<select class="fi" id="ef-cat">' + categories.map(function(c){ return '<option'+(e.category===c?' selected':'')+'>'+c+'</option>'; }).join('') + '</select></div>'
+          + '<div class="fg"><label class="fl">Amount *</label>'
+          + '<input class="fi" id="ef-amt" type="number" step="0.01" value="'+(parseFloat(e.amount)||0)+'"></div>'
+          + '</div>'
+          + '<div class="fg"><label class="fl">Description</label>'
+          + '<input class="fi" id="ef-desc" placeholder="What was this for?" value="'+Utils.esc(e.description||'')+'"></div>'
+          + '<div class="form-row">'
+          + '<div class="fg"><label class="fl">Date</label>'
+          + '<input class="fi" id="ef-date" type="date" value="'+(e.date||Utils.today())+'"></div>'
+          + '<div class="fg"><label class="fl">Recurring?</label>'
+          + '<select class="fi" id="ef-rec"><option value="0"'+(!e.recurring?' selected':'')+'>No</option><option value="1"'+(e.recurring?' selected':'')+'>Yes — Monthly</option></select></div>'
+          + '</div>',
+      footer: '<button class="btn-ghost" onclick="Expenses.editingExpenseId=null;Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Expenses.save()">💾 Save Changes</button>',
+    });
+  },
+
   save: function() {
     var amt = parseFloat(Utils.val('ef-amt')||0);
     if (!amt) { Toast.show('Amount is required','err'); return; }
-    DB.addExpense({
-      category: (Utils.get('ef-cat')||{value:'Other'}).value,
-      description: Utils.val('ef-desc'),
-      amount: amt,
-      date: Utils.val('ef-date') || Utils.today(),
-      recurring: !!parseInt(Utils.val('ef-rec')||'0'),
-    });
+    var category = (Utils.get('ef-cat')||{value:'Other'}).value;
+    var description = Utils.val('ef-desc');
+    var date = Utils.val('ef-date') || Utils.today();
+    var recurring = !!parseInt(Utils.val('ef-rec')||'0');
+
+    if (this.editingExpenseId) {
+      var id = this.editingExpenseId;
+      DB.updateExpense(id, { category:category, description:description, amount:amt, date:date, recurring:recurring });
+      Toast.show('Expense updated ✓','ok');
+      this.editingExpenseId = null;
+      Modal.close();
+      this.render();
+      return;
+    }
+
+    var exp = DB.addExpense({ category:category, description:description, amount:amt, date:date, recurring:recurring });
+    DB.notify('new_expense', 'New Expense Added',
+      Utils.cur(amt, DB.getSettings().currency||'$')+' · '+(exp.category||'Other')+(exp.description?(' · '+exp.description):''),
+      { expenseId: exp.id, amount: amt, category: exp.category });
     Toast.show('Expense saved ✓','ok');
     Modal.close();
     this.render();
@@ -7964,6 +8322,9 @@ var Salary = {
       paidAt: new Date().toISOString(), date: Utils.today(),
     };
     DB.addPayroll(record);
+    DB.notify('salary_payment', 'Salary Payment Processed',
+      e.name+' was paid '+Utils.cur(netPay,cur)+' for '+month,
+      { employeeId:id, employeeName:e.name, amount:netPay, month:month });
 
     // Update each loan balance & history
     if (loanDeductions.length) {
@@ -9879,6 +10240,9 @@ var Reports = {
     a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
     a.download='smartstock_reports_'+Utils.today()+'.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    DB.notify('report_generated', 'Report Generated',
+      (Auth.currentUser&&Auth.currentUser.name||'A user')+' exported the sales report ('+sales.length+' records)',
+      { reportType:'sales_csv', recordCount: sales.length });
     Toast.show('CSV exported \u2713','ok');
   },
 };
@@ -11086,6 +11450,12 @@ var Settings = {
       + '<div class="settings-info"><div class="settings-name">Invoice Number</div>'
       + '<div class="settings-desc">Tap to set which number the next sale starts from</div></div>'
       + '<div class="settings-arrow">›</div></div>'
+      + (Perms.can('manage_users') ?
+      '<div class="settings-item" onclick="Settings.openAnnouncementModal()">'
+      + '<div class="settings-icon" style="background:var(--inb)">📢</div>'
+      + '<div class="settings-info"><div class="settings-name">Send Announcement</div>'
+      + '<div class="settings-desc">Notify your whole team about something</div></div>'
+      + '<div class="settings-arrow">›</div></div>' : '')
       + '<div class="settings-item" onclick="Settings.openLowStockModal()">'
       + '<div class="settings-icon" style="background:var(--wab)">⚠️</div>'
       + '<div class="settings-info"><div class="settings-name">Low Stock Alert Level</div>'
@@ -11133,8 +11503,83 @@ var Settings = {
       + '</div></div>'
 
       + '<div class="sec" style="padding-top:0">'
+      + (Auth.currentUser && Auth.currentUser.deletionPending ?
+          '<div style="background:rgba(255,77,106,.08);border:1px solid var(--erbd);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+          + '<div style="font-weight:800;color:var(--er);margin-bottom:6px">⚠️ Account deletion scheduled</div>'
+          + '<div style="font-size:12px;color:var(--t2);margin-bottom:10px">This business and ALL its data will be permanently deleted on <strong>'+Utils.date(Auth.currentUser.deletionScheduledFor)+'</strong>.</div>'
+          + '<button class="btn-primary btn-full" onclick="Settings.cancelDeleteAccount()">↩️ Cancel Deletion</button>'
+          + '</div>' : '')
       + '<button class="btn-danger btn-full" onclick="Auth.logout()">🚪 Sign Out</button>'
+      + (Perms.can('manage_businesses') ?
+          '<button class="btn-danger btn-full" style="margin-top:10px;opacity:.85" onclick="Settings.openDeleteAccountModal()">🗑️ Delete Account</button>' : '')
       + '</div>';
+  },
+
+  // ═══ DELETE ACCOUNT ═══════════════════════════════════════════════════
+  openDeleteAccountModal: function() {
+    var bizName = (DB.getSettings().bizName) || (Auth.currentUser && Auth.currentUser.businessName) || 'your business';
+    Modal.open({
+      title: '🗑️ Delete Account', barColor: 'var(--er)',
+      body: '<div style="background:rgba(255,77,106,.08);border:1px solid var(--erbd);border-radius:var(--r12);padding:14px;margin-bottom:16px">'
+          + '<div style="font-weight:800;color:var(--er);margin-bottom:6px">This cannot be undone after the grace period</div>'
+          + '<div style="font-size:12px;color:var(--t2);line-height:1.6">All sales, customers, expenses, products, employees, and every other record for <strong>'+Utils.esc(bizName)+'</strong> will be permanently deleted — for everyone with access to this business, not just you.</div>'
+          + '</div>'
+          + '<div style="font-size:12px;color:var(--t2);margin-bottom:14px">Your account will be scheduled for deletion in <strong>48 hours</strong>. You can cancel any time before then from this same Settings page.</div>'
+          + '<div class="fg"><label class="fl">Type the business name to confirm: <strong>'+Utils.esc(bizName)+'</strong></label>'
+          + '<input class="fi" id="del-acct-confirm" placeholder="Type exactly as shown above" autocomplete="off"></div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-danger" style="flex:1" onclick="Settings.confirmDeleteAccount()">🗑️ Schedule Deletion</button>',
+    });
+  },
+
+  confirmDeleteAccount: function() {
+    var typed = (Utils.val('del-acct-confirm')||'').trim();
+    var bizId = DB._bizId;
+    if (!bizId) { Toast.show('Could not identify your business','err'); return; }
+    fetch(DB._rpc('request_account_deletion'), {
+      method:'POST', headers:DB._hdrRpc(),
+      body: JSON.stringify({ p_business_id: bizId, p_confirm_name: typed, p_grace_hours: 48 }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+    .then(function(result){
+      if (!result.ok) {
+        var msg = (result.data && (result.data.message||result.data)) || 'Could not schedule deletion';
+        Toast.show(typeof msg === 'string' ? msg : 'Could not schedule deletion — check the business name matches exactly','err');
+        return;
+      }
+      Toast.show('Deletion scheduled. You can cancel any time in the next 48 hours.','warn');
+      Modal.close();
+      if (Auth.currentUser) {
+        Auth.currentUser.deletionPending = true;
+        Auth.currentUser.deletionScheduledFor = result.data.scheduled_for;
+      }
+      Settings.render();
+    })
+    .catch(function(){
+      Toast.show('Network error — check your connection and try again','err');
+    });
+  },
+
+  cancelDeleteAccount: function() {
+    var bizId = DB._bizId;
+    if (!bizId) return;
+    fetch(DB._rpc('cancel_account_deletion'), {
+      method:'POST', headers:DB._hdrRpc(),
+      body: JSON.stringify({ p_business_id: bizId }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+    .then(function(result){
+      if (!result.ok) { Toast.show('Could not cancel — check your connection','err'); return; }
+      Toast.show('Deletion cancelled ✓','ok');
+      if (Auth.currentUser) {
+        Auth.currentUser.deletionPending = false;
+        Auth.currentUser.deletionScheduledFor = null;
+      }
+      Settings.render();
+    })
+    .catch(function(){
+      Toast.show('Network error — check your connection','err');
+    });
   },
 
   // ═══ BUSINESS LOGO ═══════════════════════════════════════════════════════
@@ -11379,6 +11824,29 @@ var Settings = {
     .catch(function(err){
       Toast.show(err.message || 'Could not save — check your connection','err');
     });
+  },
+
+  // ═══ SYSTEM ANNOUNCEMENT ═══════════════════════════════════════════════
+  openAnnouncementModal: function() {
+    Modal.open({
+      title: '📢 Send Announcement', barColor: 'var(--in)',
+      body: '<div class="fg"><label class="fl">Title</label>'
+          + '<input class="fi" id="ann-title" placeholder="e.g. Store closing early Friday" maxlength="80"></div>'
+          + '<div class="fg"><label class="fl">Message</label>'
+          + '<textarea class="fi" id="ann-body" rows="3" placeholder="Details for your team..." style="resize:vertical"></textarea></div>'
+          + '<div style="font-size:11px;color:var(--t3)">Everyone on your team with system notifications enabled will see this in their Notification Center.</div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Settings.sendAnnouncement()">📢 Send to Team</button>',
+    });
+  },
+
+  sendAnnouncement: function() {
+    var title = Utils.val('ann-title').trim();
+    var body  = Utils.val('ann-body').trim();
+    if (!title) { Toast.show('Enter a title','err'); return; }
+    DB.notify('system_announcement', title, body, { sentBy: (Auth.currentUser&&Auth.currentUser.name)||'Admin' });
+    Toast.show('Announcement sent ✓','ok');
+    Modal.close();
   },
 
   // ═══ LOW STOCK ═══════════════════════════════════════════════════════════
@@ -11655,6 +12123,7 @@ var MorePage = {
         label: 'Finance',
         items: [
           { icon:'📊', label:'Finance Overview',   desc:'P&L, Cash Flow, margins',          bg:'var(--inb)', action:"Router.go('finance')" },
+          { icon:'💰', label:'Expenses',            desc:'Add, edit & track all expenses',   bg:'var(--erb)', action:"Router.go('expenses')" },
           { icon:'📋', label:'Reports',            desc:'Financial performance reports',    bg:'var(--wab)', action:"Router.go('reports')" },
           { icon:'🔒', label:'Daily Closing',        desc:'End of day cash count & summary',   bg:'var(--gb)',  action:"Router.go('closing')", badge:'NEW' },
           { icon:'📅', label:'Daily Report',       desc:"Print today's daily report",       bg:'var(--gb)',  action:"Reports.switchToDaily ? Reports.switchToDaily() : null; Router.go('reports')" },
@@ -11665,7 +12134,7 @@ var MorePage = {
         label: 'System',
         items: [
           { icon:'⚙️', label:'Settings',           desc:'App configuration & profile',      bg:'var(--gb)',  action:"Router.go('settings')" },
-          { icon:'🔔', label:'Notifications',      desc:'Stock & salary alerts',            bg:'var(--erb)', action:"Notifs.check();UI.toggleNotifPanel()" },
+          { icon:'🔔', label:'Notification Center', desc:'All alerts, sales & system updates', bg:'var(--erb)', action:"Router.go('notifcenter')", badge:'NEW' },
           { icon:'📥', label:'Export Data',        desc:'Download backup as JSON',          bg:'var(--okb)', action:"Settings.exportData()" },
           { icon:'🌙', label:'Toggle Theme',       desc:'Switch dark / light mode',         bg:'var(--bg3)', action:"Settings.toggleTheme()" },
           { icon:'🚪', label:'Sign Out',           desc:'Log out of this account',          bg:'var(--erb)', action:"Auth.logout()", danger:true },
@@ -11805,6 +12274,7 @@ var UserMgmt = {
           + '<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;background:' + (u.status==='active'?'var(--okb)':'var(--erb)') + ';color:' + (u.status==='active'?'var(--ok)':'var(--er)') + '">' + (u.status||'active').toUpperCase() + '</span>'
           + '<div class="list-actions">'
           + (!isSelf && Perms.can('manage_roles') && current.role === 'primary_admin' ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openPromote(\'' + u.id + '\')">⬆️ Role</button>' : '')
+          + (Perms.can('manage_roles') && current.role === 'primary_admin' ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openNotifPerms(\'' + u.id + '\')">🔔 Alerts</button>' : '')
           + '</div></div></div>';
       }).join('');
 
@@ -11826,6 +12296,86 @@ var UserMgmt = {
   rejectUser: function(userId) {
     Auth.rejectUser(userId);
     setTimeout(function(){ UserMgmt._renderTab(); }, 600);
+  },
+
+  // ── NOTIFICATION PERMISSIONS ───────────────────────────────────────────
+  // Unlike the local-only "users" array elsewhere, this reads/writes the
+  // REAL platform_users.permissions field — the same one Perms.can()
+  // actually checks for the logged-in user — so these toggles genuinely
+  // take effect, not just look like they do.
+  openNotifPerms: function(userId) {
+    var token = (Auth._session && Auth._session.access_token) || SUPABASE_ANON;
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(userId) + '&select=*', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      var u = Array.isArray(rows) && rows[0];
+      if (!u) { Toast.show('Could not load user','err'); return; }
+      var rolePreset = ROLE_PRESETS[u.role] || { permissions:{} };
+      var custom = u.permissions || {};
+      var notifKeys = [
+        ['notif_sales','Sales'], ['notif_expenses','Expenses'], ['notif_inventory','Inventory'],
+        ['notif_customers','Customers'], ['notif_financial','Financial'], ['notif_system','System'],
+      ];
+      var rowsHtml = notifKeys.map(function(pair){
+        var key = pair[0], label = pair[1];
+        // Custom override wins if explicitly set; otherwise fall back to
+        // the role's default — same precedence Perms.can() already uses.
+        var checked = (custom[key] !== undefined) ? !!custom[key] : !!rolePreset.permissions[key];
+        return '<label style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">'
+          + '<span style="font-size:13px;color:var(--t1)">Receive '+label+' Notifications</span>'
+          + '<input type="checkbox" id="np-'+key+'" '+(checked?'checked':'')+' style="width:20px;height:20px">'
+          + '</label>';
+      }).join('');
+
+      Modal.open({
+        title: '🔔 Notification Permissions', sub: Utils.esc(u.name)+' · '+Perms.getRoleInfo(u.role).label, barColor:'var(--in)',
+        body: '<div style="margin-bottom:10px">'+rowsHtml+'</div>'
+            + '<div style="font-size:11px;color:var(--t3);margin-top:10px">These override the default permissions for this person\'s role. Unchecking a box means they will not see that type of notification, even if their role normally would.</div>',
+        footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+              + '<button class="btn-primary" style="flex:1" onclick="UserMgmt.saveNotifPerms(\''+userId+'\')">💾 Save</button>',
+      });
+      UserMgmt._notifPermsKeys = notifKeys.map(function(p){ return p[0]; });
+    })
+    .catch(function(){ Toast.show('Could not load user — check connection','err'); });
+  },
+
+  saveNotifPerms: function(userId) {
+    var token = (Auth._session && Auth._session.access_token) || SUPABASE_ANON;
+    // Fetch the current row again so we only ever merge into its existing
+    // permissions object, never clobber unrelated permission keys that
+    // might be set elsewhere (e.g. manage_roles overrides).
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(userId) + '&select=permissions', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      var existing = (Array.isArray(rows) && rows[0] && rows[0].permissions) || {};
+      var merged = Object.assign({}, existing);
+      (UserMgmt._notifPermsKeys||[]).forEach(function(key){
+        var el = Utils.get('np-'+key);
+        if (el) merged[key] = el.checked;
+      });
+      return fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(userId), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON,
+          'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify({ permissions: merged }),
+      });
+    })
+    .then(function(r){
+      if (!r.ok) throw new Error('Save failed');
+      try { if (typeof AuditLog !== 'undefined') AuditLog.record('NOTIF_PERMS_CHANGE', 'Updated notification permissions for user: '+userId); } catch(e) {}
+      Toast.show('Notification permissions saved ✓','ok');
+      Modal.close();
+    })
+    .catch(function(){
+      Toast.show('Could not save — check your connection','err');
+    });
   },
 
   showAddUserInfo: function() {
@@ -13998,6 +14548,17 @@ var Stock = {
       createdAt:   new Date().toISOString(),
     };
     if (DB.addStockMovement) DB.addStockMovement(mv);
+
+    DB.notify(qty>0?'inventory_added':'inventory_reduced',
+      qty>0?'Inventory Added':'Inventory Reduced',
+      prods[idx].name+': '+oldQty+' → '+newQty+' ('+(qty>0?'+':'')+qty+')',
+      { productId: prodId, productName: prods[idx].name, qtyBefore: oldQty, qtyAfter: newQty, change: qty });
+
+    if (newQty <= (prods[idx].lowLevel||5) && newQty > 0) {
+      DB.notify('low_stock', 'Low Stock Alert',
+        prods[idx].name+' is down to '+newQty+' units',
+        { productId: prodId, productName: prods[idx].name, qty: newQty });
+    }
 
     Toast.show(prods[idx].name + ': ' + oldQty + ' → ' + newQty + ' ✓', 'ok');
     Modal.close();
