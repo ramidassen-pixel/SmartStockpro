@@ -4958,6 +4958,8 @@ var Products = {
 var Sales = {
   filter: 'All',
   sortBy: 'date_desc',
+  page: 1,
+  pageSize: 50,
   cart: [],
   discount: 0,
 
@@ -4976,12 +4978,25 @@ var Sales = {
       amount_asc:  function(a,b){ return (parseFloat(a.total)||0) - (parseFloat(b.total)||0); },
     };
     filtered.sort(sortFns[this.sortBy] || sortFns.date_desc);
+
+    // Pagination: only the current page's slice ever gets turned into
+    // HTML. With 1000+ sales, building/parsing DOM for every single one
+    // on every render was the actual cause of the slow Sales tab and the
+    // slow-feeling Save (Save re-renders this same list right after).
+    // The summary numbers below still use the full array — that's cheap
+    // arithmetic over already-loaded data, not the bottleneck.
+    var totalPages = Math.max(1, Math.ceil(filtered.length / this.pageSize));
+    if (this.page > totalPages) this.page = totalPages;
+    if (this.page < 1) this.page = 1;
+    var pageStart = (this.page - 1) * this.pageSize;
+    var pageItems = filtered.slice(pageStart, pageStart + this.pageSize);
+
     var totalRev    = all.reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
     var collected   = all.filter(function(s){ return s.status==='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
     var partPaid    = all.filter(function(s){ return s.status==='Partial'; }).reduce(function(a,s){ return a+(parseFloat(s.amountPaid)||0); }, 0);
     var outstanding = all.filter(function(s){ return s.status!=='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.balance)||0); }, 0);
 
-    var rows = filtered.map(function(s) {
+    var rows = pageItems.map(function(s) {
       var progress = s.status==='Partial'
         ? '<div style="margin-top:5px"><div class="progress"><div class="progress-fill" style="width:'+Math.min(100,Math.round(((parseFloat(s.amountPaid)||0)/(parseFloat(s.total)||1))*100))+'%;background:var(--wa)"></div></div>'
           + '<div style="font-size:10px;color:var(--wa);margin-top:3px;font-family:var(--fm)">Paid '+Utils.cur(s.amountPaid||0,cur)+' · Bal '+Utils.cur(s.balance||0,cur)+'</div></div>'
@@ -5027,6 +5042,14 @@ var Sales = {
       + sortOptions.map(function(o){ return '<option value="'+o[0]+'"'+(Sales.sortBy===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
       + '</select>';
 
+    var pagination = totalPages > 1 ? (
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:0 4px">'
+      + '<button class="btn-ghost btn-sm" '+(this.page<=1?'disabled':'')+' onclick="Sales.goToPage('+(this.page-1)+')">‹ Prev</button>'
+      + '<span style="font-size:12px;color:var(--t2)">Page '+this.page+' of '+totalPages+' · '+filtered.length+' sales</span>'
+      + '<button class="btn-ghost btn-sm" '+(this.page>=totalPages?'disabled':'')+' onclick="Sales.goToPage('+(this.page+1)+')">Next ›</button>'
+      + '</div>'
+    ) : '';
+
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Sales</div><div class="page-sub">'+all.length+' invoices total</div></div>'
       + '<div class="page-actions"><button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
@@ -5041,11 +5064,12 @@ var Sales = {
       + '<div class="chips" style="margin-bottom:0">'+chips+'</div>'
       + sortSelect
       + '</div>'
-      + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>' : emptyState)+'</div>';
+      + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>'+pagination : emptyState)+'</div>';
   },
 
-  setFilter: function(f) { this.filter=f; this.render(); },
-  setSortBy: function(v) { this.sortBy=v; this.render(); },
+  setFilter: function(f) { this.filter=f; this.page=1; this.render(); },
+  setSortBy: function(v) { this.sortBy=v; this.page=1; this.render(); },
+  goToPage: function(p) { this.page=p; this.render(); },
 
   // ── NEW SALE FORM ──────────────────────────────────────────────────────────
   openNewSale: function() {
