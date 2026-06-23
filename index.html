@@ -1200,7 +1200,7 @@ var Modal = {
     // closed via the X button or backdrop click (not the dedicated Cancel
     // handler), clear the edit-mode flag so reopening "Add" later doesn't
     // accidentally route into update mode for a stale id.
-    if (typeof Sales !== 'undefined') Sales.editingSaleId = null;
+    if (typeof Sales !== 'undefined') { Sales.editingSaleId = null; Sales._reservedInvoiceId = null; }
     if (typeof Expenses !== 'undefined') Expenses.editingExpenseId = null;
   },
 };
@@ -1654,10 +1654,23 @@ var DB = {
   // by design, there is no offline fallback/placeholder for this.
   // Returns a Promise that resolves to the created sale, or rejects with
   // an Error if offline / the server call fails.
+  // If s.id is already set (e.g. reserved when the New Sale form opened,
+  // or a custom number the user typed and we've already validated as
+  // unique), use it directly and skip the RPC entirely. Falls back to
+  // reserving a fresh number via next_invoice_number() when no id is
+  // provided — this keeps the Quotations-to-invoice conversion flow
+  // working exactly as before, since it never shows an editable
+  // invoice field and doesn't pre-reserve anything.
   addSale: function(s) {
     var self = this;
     if (!self._bizId || !self._token) {
       return Promise.reject(new Error('You must be logged in to create a sale.'));
+    }
+    if (s.id) {
+      s.createdAt = Utils.today();
+      var arr2 = self.get('sales'); arr2.unshift(s); self.save();
+      self._push('biz_sales', s.id, s);
+      return Promise.resolve(s);
     }
     return fetch(self._rpc('next_invoice_number'), {
       method:'POST', headers:self._hdrRpc(),
@@ -5102,6 +5115,11 @@ var Sales = {
         + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
         + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '"></div>'
         + '</div>'
+        + '<div class="fg" style="margin-top:10px;margin-bottom:0"><label class="fl">Invoice Number</label>'
+        + '<input class="fi" id="s-inv-number" placeholder="Reserving…" disabled '
+        + 'style="font-family:var(--fm);font-weight:700;color:var(--g)" '
+        + 'onchange="Sales.onInvoiceNumberChange()" oninput="Sales.onInvoiceNumberChange()">'
+        + '<div id="s-inv-warning" style="font-size:10px;color:var(--er);margin-top:4px;display:none"></div></div>'
         + '<div class="form-row" style="margin-top:10px;margin-bottom:0">'
         + '<div class="fg" style="margin:0"><label class="fl">Contact Number</label>'
         + '<input class="fi" id="s-cust-phone" type="tel" placeholder="+231 ..." autocomplete="off"></div>'
@@ -5152,14 +5170,72 @@ var Sales = {
         + '<input class="fi" id="s-notes" placeholder="Any extra information..."></div>',
 
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-ghost" onclick="Sales.saveSale(\'new\')" style="color:var(--g);border-color:rgba(201,168,67,.3)">💾 Save &amp; New</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Sales.saveSale(\'close\')">🧾 Save Invoice</button>',
+            + '<button class="btn-ghost" id="s-save-new-btn" onclick="Sales.saveSale(\'new\')" style="color:var(--g);border-color:rgba(201,168,67,.3)">💾 Save &amp; New</button>'
+            + '<button class="btn-primary" id="s-save-close-btn" style="flex:1" onclick="Sales.saveSale(\'close\')">🧾 Save Invoice</button>',
     });
 
     // Set default customer
     var nameEl = Utils.get('s-cust-name');
     if (nameEl) nameEl.value = 'Walk-in Customer';
     this.updateTotals();
+    this._reserveInvoiceNumber();
+  },
+
+  // Reserves the next sequential number right when the form opens, so
+  // it's visible immediately rather than only appearing at Save time.
+  // If the user is offline or the reservation fails, the field shows a
+  // clear error instead of silently staying blank — Save is still
+  // blocked in that case (DB.addSale requires an id or a working
+  // connection), consistent with "no internet = no new sale" from the
+  // sequential numbering feature.
+  _reservedInvoiceId: null,
+  _reserveInvoiceNumber: function() {
+    var self = this;
+    if (!DB._bizId || !DB._token) {
+      var inp = Utils.get('s-inv-number');
+      if (inp) { inp.value = ''; inp.placeholder = 'Login required'; inp.disabled = false; }
+      return;
+    }
+    fetch(DB._rpc('next_invoice_number'), {
+      method:'POST', headers:DB._hdrRpc(),
+      body: JSON.stringify({ p_business_id: DB._bizId }),
+    })
+    .then(function(r){ if (!r.ok) throw new Error(); return r.json(); })
+    .then(function(invoiceNumber){
+      self._reservedInvoiceId = invoiceNumber;
+      var el = Utils.get('s-inv-number');
+      if (el) { el.value = invoiceNumber; el.disabled = false; el.placeholder = ''; }
+    })
+    .catch(function(){
+      var el = Utils.get('s-inv-number');
+      if (el) { el.value = ''; el.placeholder = 'Could not reserve — check connection'; el.disabled = false; }
+    });
+  },
+
+  // Live uniqueness check as the user edits the invoice number. Warns
+  // immediately if it collides with an existing sale OR looks like an
+  // auto-numbered value that wasn't actually reserved (same protection
+  // as the rename feature uses, for the same reason: a typed-in
+  // "INV-000050" could later collide with the real counter reaching 50).
+  onInvoiceNumberChange: function() {
+    var inp = Utils.get('s-inv-number');
+    var warn = Utils.get('s-inv-warning');
+    if (!inp || !warn) return;
+    var val = inp.value.trim();
+    if (!val) { warn.style.display='none'; return; }
+    if (val === this._reservedInvoiceId) { warn.style.display='none'; return; }
+    var existing = DB.getSales().find(function(s){ return s.id === val; });
+    if (existing) {
+      warn.textContent = '⚠️ This invoice number already exists';
+      warn.style.display = 'block';
+      return;
+    }
+    if (/^INV-\d+$/i.test(val) && val !== this._reservedInvoiceId) {
+      warn.textContent = '⚠️ This looks auto-generated and may collide with a future invoice. Consider a different format.';
+      warn.style.display = 'block';
+      return;
+    }
+    warn.style.display = 'none';
   },
 
   // ── EDIT EXISTING SALE ───────────────────────────────────────────────────
@@ -5263,34 +5339,63 @@ var Sales = {
     if (!q) { sugg.style.display='none'; if(info) info.style.display='none'; return; }
     var custs = DB.getCustomers();
     var matches = custs.filter(function(c){
-      return c.name.toLowerCase().includes(q)
-          || (c.phone && c.phone.includes(q))
+      return (c.name && c.name.toLowerCase().includes(q))
+          || (c.phone && c.phone.toLowerCase().includes(q))
+          || (c.id && c.id.toLowerCase().includes(q))
           || (c.email && c.email.toLowerCase().includes(q));
-    }).slice(0, 8);
+    });
+    // Closest matches first: exact name match, then name starts-with,
+    // then name contains, then everything else (phone/id/email hits),
+    // so typing "Ot" puts "Otis" above someone whose email happens to
+    // contain "ot" somewhere in the middle.
+    matches.sort(function(a,b){
+      function rank(c) {
+        var n = (c.name||'').toLowerCase();
+        if (n === q) return 0;
+        if (n.indexOf(q) === 0) return 1;
+        if (n.includes(q)) return 2;
+        return 3;
+      }
+      return rank(a) - rank(b);
+    });
+    matches = matches.slice(0, 8);
+
     if (!matches.length) {
       sugg.innerHTML = '<div style="padding:10px 14px;font-size:12px;color:var(--t3)">No customer found</div>'
-        + '<div onclick="Sales.selectWalkin()" style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use as walk-in</div>';
-        + 'style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use "'+Utils.esc(val)+'" as walk-in</div>';
+        + '<div onclick="Sales.selectWalkin(\''+Utils.esc(val).replace(/'/g,"\\'")+'\')" style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use "'+Utils.esc(val)+'" as walk-in</div>';
       sugg.style.display = 'block';
     } else {
       sugg.innerHTML = matches.map(function(c){
         var debt = '';
         try { if (c.balance>0) debt = ' · Owes: '+Utils.cur(c.balance, DB.getSettings().currency||'$'); } catch(e){}
-        var div = document.createElement('div');
-        div.style.cssText = 'padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bd)';
-        div.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--t1)">'+Utils.esc(c.name)+'</div>'
-          + '<div style="font-size:11px;color:var(--t2)">'+Utils.esc(c.phone||'')+debt+'</div>';
-        div.setAttribute('data-cid', c.id||'');
-        div.setAttribute('data-cname', c.name||'');
-        div.addEventListener('click', function(){
-          Sales.selectCust(this.getAttribute('data-cid'), this.getAttribute('data-cname'));
-        });
-        return div.outerHTML;
+        // Inline onclick (not addEventListener) — this HTML is set via
+        // innerHTML, and listeners attached with addEventListener don't
+        // survive serialization through outerHTML/innerHTML, so the old
+        // version's click handler never actually existed on the
+        // rendered elements. This is the real single-tap fix.
+        return '<div onclick="Sales.selectCust(\''+(c.id||'').replace(/'/g,"\\'")+'\',\''+(c.name||'').replace(/'/g,"\\'")+'\')" '
+          + 'style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bd)">'
+          + '<div style="font-size:13px;font-weight:600;color:var(--t1)">'+Utils.esc(c.name)+'</div>'
+          + '<div style="font-size:11px;color:var(--t2)">'+Utils.esc(c.phone||'')+debt+'</div>'
+          + '</div>';
       }).join('');
       sugg.style.display = 'block';
     }
   },
 
+
+  selectWalkin: function(typedName) {
+    var nameEl  = Utils.get('s-cust-name');
+    var idEl    = Utils.get('s-cust-id');
+    var phoneEl = Utils.get('s-cust-phone');
+    var sugg    = Utils.get('s-cust-suggestions');
+    var tag     = Utils.get('s-cust-tag');
+    if (nameEl)  nameEl.value  = typedName || nameEl.value || '';
+    if (idEl)    idEl.value    = '';
+    if (phoneEl) phoneEl.value = '';
+    if (sugg)    sugg.style.display = 'none';
+    if (tag)     tag.style.display = 'none';
+  },
 
   selectCust: function(custOrId, name) {
     // Accept either object {name,phone,address,email,id} or (id, name)
@@ -5511,6 +5616,9 @@ var Sales = {
     if (this._saving) return; // guard against double-submit while the
                                // invoice number is being reserved (async)
     this._saving = true;
+    var btnNew = Utils.get('s-save-new-btn'), btnClose = Utils.get('s-save-close-btn');
+    if (btnNew)   { btnNew.disabled = true; }
+    if (btnClose) { btnClose.disabled = true; btnClose.textContent = '⏳ Saving…'; }
 
     var custName  = Utils.val('s-cust-name').trim()||'Walk-in Customer';
     var custId    = Utils.val('s-cust-id')||null;
@@ -5542,7 +5650,28 @@ var Sales = {
                                    // changes it before the promise resolves
     var self = this;
 
+    var invoiceId = (Utils.val('s-inv-number')||'').trim() || this._reservedInvoiceId;
+    if (!invoiceId) {
+      this._saving = false;
+      if (btnNew) btnNew.disabled = false;
+      if (btnClose) { btnClose.disabled = false; btnClose.textContent = '🧾 Save Invoice'; }
+      Toast.show('Invoice number missing — check your connection and reopen New Sale','err');
+      return;
+    }
+    // Final guard right before save: if the user edited the field to
+    // something that now collides with a sale created by someone else
+    // in the meantime (or just typed something already in use), stop
+    // here rather than create a duplicate id.
+    if (DB.getSales().some(function(s){ return s.id === invoiceId; })) {
+      this._saving = false;
+      if (btnNew) btnNew.disabled = false;
+      if (btnClose) { btnClose.disabled = false; btnClose.textContent = '🧾 Save Invoice'; }
+      Toast.show('Invoice number "'+invoiceId+'" already exists — please use a different one','err');
+      return;
+    }
+
     DB.addSale({
+      id: invoiceId,
       customer:custName, customerId:finalCustId||null, customerPhone:custPhone||(cust&&cust.phone)||'',
       items:cartSnapshot.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
       subtotal:sub, discount:this.discount, total:total,
@@ -5578,6 +5707,7 @@ var Sales = {
       Toast.show('Invoice '+sale.id+' saved ✓','ok');
       Notifs.check();
       self._saving = false;
+      var btnNewDone = Utils.get('s-save-new-btn'), btnCloseDone = Utils.get('s-save-close-btn');
 
       if(action==='new'){
         self.cart=[]; self.discount=0;
@@ -5588,9 +5718,16 @@ var Sales = {
         var d=Utils.get('s-disc'); if(d) d.value='0';
         var p2=Utils.get('s-amt-paid'); if(p2) p2.value='0';
         var nt=Utils.get('s-notes'); if(nt) nt.value='';
+        self._reservedInvoiceId = null;
+        var invEl = Utils.get('s-inv-number');
+        if (invEl) { invEl.value=''; invEl.disabled=true; invEl.placeholder='Reserving…'; }
+        var invWarn = Utils.get('s-inv-warning'); if (invWarn) invWarn.style.display='none';
+        if (btnNewDone) btnNewDone.disabled = false;
+        if (btnCloseDone) { btnCloseDone.disabled = false; btnCloseDone.textContent = '🧾 Save Invoice'; }
         self.renderCart();
         Toast.show('Ready for next sale','ok');
         self.render();
+        self._reserveInvoiceNumber();
       } else {
         Modal.close();
         self.render();
@@ -5601,6 +5738,9 @@ var Sales = {
     })
     .catch(function(err){
       self._saving = false;
+      var btnNewErr = Utils.get('s-save-new-btn'), btnCloseErr = Utils.get('s-save-close-btn');
+      if (btnNewErr) btnNewErr.disabled = false;
+      if (btnCloseErr) { btnCloseErr.disabled = false; btnCloseErr.textContent = '🧾 Save Invoice'; }
       Toast.show(err.message || 'Could not save sale — check your connection','err');
     });
   },
