@@ -2843,7 +2843,7 @@ var QuickCreate = {
 
   // ── QUICK PRODUCT ──────────────────────────────────────────────────────────
   // callbackFn receives the new product object after save
-  quickProduct: function(callbackFn, returnToSaleDraft) {
+  quickProduct: function(callbackFn, returnToSaleDraft, prefillName) {
     var suppliers = DB.getSuppliers();
     var suppOpts = '<option value="">— select supplier —</option>'
       + suppliers.map(function(s){ return '<option value="'+s.id+'">'+Utils.esc(s.name)+'</option>'; }).join('');
@@ -2855,7 +2855,7 @@ var QuickCreate = {
       barColor: 'var(--ok)',
       body: '<div class="form-row">'
           + '<div class="fg" style="flex:2"><label class="fl">Product Name *</label>'
-          + '<input class="fi" id="qp-name" placeholder="e.g. Ceramic Floor Tile 60x60"></div>'
+          + '<input class="fi" id="qp-name" placeholder="e.g. Ceramic Floor Tile 60x60" value="'+Utils.esc(prefillName||'')+'"></div>'
           + '<div class="fg"><label class="fl">Category</label>'
           + '<select class="fi" id="qp-cat">'
           + cats.map(function(c){ return '<option>'+c+'</option>'; }).join('')
@@ -5300,6 +5300,8 @@ var Sales = {
       invEl.placeholder = '';
     }
     this._reservedInvoiceId = d.reservedInvoiceId || null;
+    var skipBtnRestore = Utils.get('s-skip-inv-btn');
+    if (skipBtnRestore) skipBtnRestore.disabled = (invEl ? invEl.value.trim() : '') !== this._reservedInvoiceId || !this._reservedInvoiceId;
     this.renderCart();
     this.updateTotals();
   },
@@ -5374,9 +5376,13 @@ var Sales = {
         + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '" onchange="Sales.scheduleDraftSave()"></div>'
         + '</div>'
         + '<div class="fg" style="margin-top:10px;margin-bottom:0"><label class="fl">Invoice Number</label>'
-        + '<input class="fi" id="s-inv-number" placeholder="Reserving…" disabled '
-        + 'style="font-family:var(--fm);font-weight:700;color:var(--g)" '
+        + '<div style="display:flex;gap:8px">'
+        + '<input class="fi" id="s-inv-number" placeholder="Reserving…" disabled style="flex:1;'
+        + 'font-family:var(--fm);font-weight:700;color:var(--g)" '
         + 'onchange="Sales.onInvoiceNumberChange();Sales.scheduleDraftSave()" oninput="Sales.onInvoiceNumberChange();Sales.scheduleDraftSave()">'
+        + '<button type="button" class="btn-ghost btn-sm" id="s-skip-inv-btn" onclick="Sales.skipInvoiceNumber()" '
+        + 'style="flex-shrink:0;white-space:nowrap" disabled title="Reserve a fresh number, skipping this one">⏭ Skip Invoice</button>'
+        + '</div>'
         + '<div id="s-inv-warning" style="font-size:10px;color:var(--er);margin-top:4px;display:none"></div></div>'
         + '<div class="form-row" style="margin-top:10px;margin-bottom:0">'
         + '<div class="fg" style="margin:0"><label class="fl">Contact Number</label>'
@@ -5449,6 +5455,8 @@ var Sales = {
   _reservedInvoiceId: null,
   _reserveInvoiceNumber: function() {
     var self = this;
+    var skipBtn = Utils.get('s-skip-inv-btn');
+    if (skipBtn) skipBtn.disabled = true;
     if (!DB._bizId || !DB._token) {
       var inp = Utils.get('s-inv-number');
       if (inp) { inp.value = ''; inp.placeholder = 'Login required'; inp.disabled = false; }
@@ -5463,10 +5471,52 @@ var Sales = {
       self._reservedInvoiceId = invoiceNumber;
       var el = Utils.get('s-inv-number');
       if (el) { el.value = invoiceNumber; el.disabled = false; el.placeholder = ''; }
+      var sb = Utils.get('s-skip-inv-btn'); if (sb) sb.disabled = false;
     })
     .catch(function(){
       var el = Utils.get('s-inv-number');
       if (el) { el.value = ''; el.placeholder = 'Could not reserve — check connection'; el.disabled = false; }
+    });
+  },
+
+  // Permanently retires the currently-reserved invoice number (logged
+  // to biz_skipped_invoices so the gap is documented, not just inferred
+  // from the sequence jumping) and reserves a fresh one in its place.
+  // Disabled while editing an existing sale, or if the field has been
+  // manually overridden to something other than the reserved number —
+  // skipping only makes sense for a number the auto-counter actually
+  // issued.
+  skipInvoiceNumber: function() {
+    var self = this;
+    var inp = Utils.get('s-inv-number');
+    var skipBtn = Utils.get('s-skip-inv-btn');
+    var current = inp ? inp.value.trim() : '';
+    if (!current || current !== this._reservedInvoiceId) {
+      Toast.show('Skip only works on the auto-generated number shown — edit the field directly for a custom one','err');
+      return;
+    }
+    if (!DB._bizId || !DB._token) { Toast.show('You must be logged in','err'); return; }
+    if (skipBtn) skipBtn.disabled = true;
+    if (inp) { inp.disabled = true; inp.placeholder = 'Skipping…'; inp.value = ''; }
+    fetch(DB._rpc('skip_invoice_number'), {
+      method:'POST', headers:DB._hdrRpc(),
+      body: JSON.stringify({ p_business_id: DB._bizId, p_skipped_number: current }),
+    })
+    .then(function(r){ if (!r.ok) throw new Error(); return r.json(); })
+    .then(function(newInvoiceNumber){
+      self._reservedInvoiceId = newInvoiceNumber;
+      if (inp) { inp.value = newInvoiceNumber; inp.disabled = false; inp.placeholder = ''; }
+      if (skipBtn) skipBtn.disabled = false;
+      Toast.show(current+' skipped — now on '+newInvoiceNumber,'ok');
+      self.scheduleDraftSave();
+    })
+    .catch(function(){
+      // Restore the original number rather than leaving the field
+      // blank — the skip didn't go through, so the old number is
+      // still the genuinely reserved one.
+      if (inp) { inp.value = current; inp.disabled = false; inp.placeholder = ''; }
+      if (skipBtn) skipBtn.disabled = false;
+      Toast.show('Could not skip — check your connection and try again','err');
     });
   },
 
@@ -5478,8 +5528,10 @@ var Sales = {
   onInvoiceNumberChange: function() {
     var inp = Utils.get('s-inv-number');
     var warn = Utils.get('s-inv-warning');
+    var skipBtn = Utils.get('s-skip-inv-btn');
     if (!inp || !warn) return;
     var val = inp.value.trim();
+    if (skipBtn) skipBtn.disabled = (val !== this._reservedInvoiceId) || !val;
     if (!val) { warn.style.display='none'; return; }
     if (val === this._reservedInvoiceId) { warn.style.display='none'; return; }
     var existing = DB.getSales().find(function(s){ return s.id === val; });
@@ -5725,7 +5777,9 @@ var Sales = {
       addNew.innerHTML = '<span style="font-size:18px">+</span> Add New Product';
       addNew.addEventListener('click', function() {
         sugg.style.display = 'none';
-        var s = Utils.get('s-prod-search'); if(s) s.value = '';
+        var s = Utils.get('s-prod-search');
+        var typedName = s ? s.value.trim() : '';
+        if (s) s.value = '';
         // This app only ever shows one modal at a time — opening the
         // "Add New Product" modal completely replaces the New Sale
         // modal's DOM, not just covers it. Save a draft of the sale
@@ -5736,7 +5790,7 @@ var Sales = {
         if (!Sales.editingSaleId) Sales.saveDraft();
         QuickCreate.quickProduct(function(p){
           Sales.addToCartById(p.id);
-        }, !Sales.editingSaleId);
+        }, !Sales.editingSaleId, typedName);
       });
       sugg.appendChild(addNew);
       return;
@@ -5998,6 +6052,7 @@ var Sales = {
         self._reservedInvoiceId = null;
         var invEl = Utils.get('s-inv-number');
         if (invEl) { invEl.value=''; invEl.disabled=true; invEl.placeholder='Reserving…'; }
+        var skipBtnReset = Utils.get('s-skip-inv-btn'); if (skipBtnReset) skipBtnReset.disabled = true;
         var invWarn = Utils.get('s-inv-warning'); if (invWarn) invWarn.style.display='none';
         if (btnNewDone) btnNewDone.disabled = false;
         if (btnCloseDone) { btnCloseDone.disabled = false; btnCloseDone.textContent = '🧾 Save Invoice'; }
