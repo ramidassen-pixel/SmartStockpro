@@ -1231,8 +1231,32 @@ var DB = {
   _bizId: null,   // set by DB.init(bizId, token) after login
   _token: null,   // Supabase access token
   _syncStatus: 'synced',
+  _syncDetail: null,
   _realtimeSub: null,
-  _pendingUploads: [], // offline queue
+  _retryTimer: null,
+
+  // The offline queue used to be a plain in-memory array (_pendingUploads:
+  // []) — meaning closing the tab, the browser crashing, or even just the
+  // phone's OS killing the background tab between "save failed" and
+  // "connection restored" would silently drop every queued write with no
+  // trace. Persisting it to its own localStorage key (kept separate from
+  // the main business-data blob, since it's pure sync infrastructure, not
+  // data that should ever get backed up/exported) closes that gap.
+  _PENDING_KEY: 'ssp_v5_pending_uploads',
+  _getPending: function() {
+    try { return JSON.parse(localStorage.getItem(this._PENDING_KEY)) || []; }
+    catch(e) { return []; }
+  },
+  _setPending: function(arr) {
+    try { localStorage.setItem(this._PENDING_KEY, JSON.stringify(arr)); } catch(e) {}
+  },
+  _queuePending: function(cloudTable, id, data, isDelete) {
+    var q = this._getPending();
+    var idx = q.findIndex(function(item){ return item.cloudTable===cloudTable && item.id===id; });
+    var entry = { cloudTable: cloudTable, id: id, data: data||null, isDelete: !!isDelete, queuedAt: new Date().toISOString() };
+    if (idx > -1) q[idx] = entry; else q.push(entry);
+    this._setPending(q);
+  },
 
   // ── Supabase helpers ─────────────────────────────────────────────────────
   _url() { return 'https://ovbtqkpvhivqnnxojjwu.supabase.co'; },
@@ -1258,14 +1282,33 @@ var DB = {
   },
 
   // ── Sync status indicator ────────────────────────────────────────────────
-  _setStatus(s) {
+  _setStatus(s, detail) {
     this._syncStatus = s;
+    this._syncDetail = detail || null;
     var el = document.getElementById('sync-status-indicator');
     if (!el) return;
-    var map = { synced:'✅ Synced', syncing:'🔄 Syncing…', offline:'📴 Offline', error:'⚠️ Sync Error' };
+    var map = { synced:'🟢 Synced', syncing:'🟡 Syncing', offline:'⚪ Offline', error:'🔴 Sync Error' };
     var col = { synced:'#2ecc71', syncing:'#f39c12', offline:'#95a5a6', error:'#e74c3c' };
     el.textContent = map[s] || s;
     el.style.color = col[s] || '#fff';
+    el.title = detail || '';
+    // Make the indicator tappable to see what actually went wrong and
+    // how many writes are still waiting to sync, instead of just a
+    // generic icon with no explanation.
+    el.style.cursor = 'pointer';
+    el.onclick = function(){ if (typeof DB !== 'undefined' && DB.showSyncDetail) DB.showSyncDetail(); };
+  },
+
+  // Shows what's actually queued and why, instead of leaving "Sync
+  // Error" as an unexplained dead end.
+  showSyncDetail: function() {
+    var n = this._pendingUploads.length;
+    var lines = [];
+    if (this._syncStatus === 'error') lines.push('Last attempt failed: ' + (this._syncDetail || 'Unknown server error'));
+    if (this._syncStatus === 'offline') lines.push('No connection to the server right now.');
+    if (n > 0) lines.push(n + ' change' + (n===1?'':'s') + ' waiting to sync — nothing is lost, this will upload automatically once back online.');
+    else if (this._syncStatus === 'synced') lines.push('Everything is saved and up to date.');
+    if (typeof Toast !== 'undefined') Toast.show(lines.join(' '), this._syncStatus==='error'?'err':'info', 5000);
   },
 
   // ── Initialise after login ───────────────────────────────────────────────
@@ -1275,14 +1318,33 @@ var DB = {
     this.load(); // always load local cache first so UI is instant
     this._injectSyncIndicator();
     this._startRealtime();
+    this._startRetryTimer();
+    this._listenForConnectivity();
+  },
+
+  // Browser-native signal that connectivity just came back — flush
+  // immediately rather than waiting for the next 30s retry tick or the
+  // next login. Listener is only attached once per page load.
+  _connectivityListenerAttached: false,
+  _listenForConnectivity: function() {
+    var self = this;
+    if (self._connectivityListenerAttached) return;
+    self._connectivityListenerAttached = true;
+    window.addEventListener('online', function(){
+      self._setStatus('syncing', 'Connection restored — syncing...');
+      self._flushPending();
+    });
+    window.addEventListener('offline', function(){
+      self._setStatus('offline', 'No internet connection.');
+    });
   },
 
   _injectSyncIndicator: function() {
     if (document.getElementById('sync-status-indicator')) return;
     var el = document.createElement('div');
     el.id = 'sync-status-indicator';
-    el.style.cssText = 'position:fixed;bottom:60px;right:12px;z-index:9999;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);pointer-events:none;transition:opacity .4s';
-    el.textContent = '✅ Synced';
+    el.style.cssText = 'position:fixed;bottom:60px;right:12px;z-index:9999;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);transition:opacity .4s';
+    el.textContent = '🟢 Synced';
     el.style.color = '#2ecc71';
     document.body.appendChild(el);
   },
@@ -1409,7 +1471,7 @@ var DB = {
   _push: function(cloudTable, id, data) {
     var self = this;
     if (!self._bizId || !self._token) {
-      self._pendingUploads.push({ cloudTable: cloudTable, id: id, data: data });
+      self._queuePending(cloudTable, id, data);
       self._setStatus('offline');
       return;
     }
@@ -1422,32 +1484,50 @@ var DB = {
     })
     .then(function(r) {
       if (r.ok || r.status === 409) { self._setStatus('synced'); }
-      else { self._setStatus('error'); self._pendingUploads.push({ cloudTable: cloudTable, id: id, data: data }); }
+      else {
+        r.text().then(function(t){
+          self._setStatus('error', 'Server rejected the update (' + r.status + ')' + (t ? ': ' + t.slice(0,120) : ''));
+        }).catch(function(){ self._setStatus('error', 'Server rejected the update (' + r.status + ')'); });
+        self._queuePending(cloudTable, id, data);
+      }
     })
     .catch(function() {
-      self._setStatus('offline');
-      self._pendingUploads.push({ cloudTable: cloudTable, id: id, data: data });
+      self._setStatus('offline', 'No connection — this change is saved locally and will sync automatically.');
+      self._queuePending(cloudTable, id, data);
     });
   },
 
   // ── Soft-delete a record in cloud ────────────────────────────────────────
   _pushDelete: function(cloudTable, id) {
     var self = this;
-    if (!self._bizId || !self._token) return;
+    if (!self._bizId || !self._token) {
+      self._queuePending(cloudTable, id, null, true);
+      self._setStatus('offline');
+      return;
+    }
     self._setStatus('syncing');
     fetch(self._rest(cloudTable) + '?id=eq.' + encodeURIComponent(id) + '&business_id=eq.' + encodeURIComponent(self._bizId), {
       method: 'PATCH',
       headers: self._hdr(),
       body: JSON.stringify({ deleted: true }),
     })
-    .then(function(r){ self._setStatus(r.ok ? 'synced' : 'error'); })
-    .catch(function(){ self._setStatus('offline'); });
+    .then(function(r){
+      if (r.ok) { self._setStatus('synced'); }
+      else {
+        self._setStatus('error', 'Could not sync a deletion (' + r.status + ')');
+        self._queuePending(cloudTable, id, null, true);
+      }
+    })
+    .catch(function(){
+      self._setStatus('offline', 'No connection — this deletion is saved locally and will sync automatically.');
+      self._queuePending(cloudTable, id, null, true);
+    });
   },
 
   // ── Push settings to cloud ───────────────────────────────────────────────
   _pushSettings: function() {
     var self = this;
-    if (!self._bizId || !self._token) return;
+    if (!self._bizId || !self._token) { self._queuePending('biz_settings', self._bizId, self._data.settings); self._setStatus('offline'); return; }
     self._setStatus('syncing');
     var payload = { business_id: self._bizId, data: self._data.settings };
     fetch(self._rest('biz_settings'), {
@@ -1455,30 +1535,62 @@ var DB = {
       headers: self._hdr(),
       body: JSON.stringify(payload),
     })
-    .then(function(r){ self._setStatus(r.ok ? 'synced' : 'error'); })
-    .catch(function(){ self._setStatus('offline'); });
+    .then(function(r){
+      if (r.ok) self._setStatus('synced');
+      else { self._setStatus('error', 'Could not save settings (' + r.status + ')'); self._queuePending('biz_settings', self._bizId, self._data.settings); }
+    })
+    .catch(function(){ self._setStatus('offline', 'No connection — settings will sync automatically.'); self._queuePending('biz_settings', self._bizId, self._data.settings); });
   },
 
   // ── Push categories to cloud ─────────────────────────────────────────────
   _pushCategories: function() {
     var self = this;
-    if (!self._bizId || !self._token) return;
-    var payload = { business_id: self._bizId, categories: self._data.productCategories || [] };
+    var cats = self._data.productCategories || [];
+    if (!self._bizId || !self._token) { self._queuePending('biz_categories', self._bizId, cats); return; }
     fetch(self._rest('biz_categories'), {
       method: 'POST',
       headers: self._hdr(),
-      body: JSON.stringify(payload),
-    }).catch(function(){});
+      body: JSON.stringify({ business_id: self._bizId, categories: cats }),
+    }).then(function(r){
+      if (!r.ok) self._queuePending('biz_categories', self._bizId, cats);
+    }).catch(function(){ self._queuePending('biz_categories', self._bizId, cats); });
   },
 
   // ── Flush offline queue ───────────────────────────────────────────────────
   _flushPending: function() {
     var self = this;
-    var queue = self._pendingUploads.slice();
-    self._pendingUploads = [];
+    var queue = self._getPending();
+    if (!queue.length) return;
+    self._setPending([]); // each item re-queues itself individually if it
+                           // fails again, via the same _push/_pushDelete
+                           // path used for a fresh write — so clearing
+                           // here first is safe, nothing is lost even if
+                           // some of these fail again.
     queue.forEach(function(item) {
-      self._push(item.cloudTable, item.id, item.data);
+      if (item.cloudTable === 'biz_settings') {
+        self._data.settings = item.data; self._pushSettings();
+      } else if (item.cloudTable === 'biz_categories') {
+        self._data.productCategories = item.data; self._pushCategories();
+      } else if (item.isDelete) {
+        self._pushDelete(item.cloudTable, item.id);
+      } else {
+        self._push(item.cloudTable, item.id, item.data);
+      }
     });
+  },
+
+  // Periodic safety-net retry, since browser online/offline events aren't
+  // always reliable (e.g. "online" per the OS but the API endpoint itself
+  // is still unreachable). Runs every 30s, but only actually does
+  // anything when there's something queued and we're not mid-flush.
+  _startRetryTimer: function() {
+    var self = this;
+    if (self._retryTimer) return;
+    self._retryTimer = setInterval(function(){
+      if (self._getPending().length > 0 && self._bizId && self._token) {
+        self._flushPending();
+      }
+    }, 30000);
   },
 
   // ── Realtime subscriptions (Supabase Realtime via websocket) ─────────────
@@ -2731,7 +2843,7 @@ var QuickCreate = {
 
   // ── QUICK PRODUCT ──────────────────────────────────────────────────────────
   // callbackFn receives the new product object after save
-  quickProduct: function(callbackFn) {
+  quickProduct: function(callbackFn, returnToSaleDraft) {
     var suppliers = DB.getSuppliers();
     var suppOpts = '<option value="">— select supplier —</option>'
       + suppliers.map(function(s){ return '<option value="'+s.id+'">'+Utils.esc(s.name)+'</option>'; }).join('');
@@ -2777,9 +2889,11 @@ var QuickCreate = {
             + '<button class="btn-primary" style="flex:1" onclick="QuickCreate._saveProduct()">✓ Save &amp; Add to Order</button>',
     });
     QuickCreate._prodCallback = callbackFn;
+    QuickCreate._returnToSaleDraft = !!returnToSaleDraft;
   },
 
   _prodCallback: null,
+  _returnToSaleDraft: false,
 
   _saveProduct: function() {
     var name  = Utils.val('qp-name').trim();
@@ -2803,9 +2917,27 @@ var QuickCreate = {
     });
     Modal.close();
     Toast.show('✓ Product "'+Utils.esc(prod.name)+'" added to inventory and all databases', 'ok');
+    var shouldReturnToSale = QuickCreate._returnToSaleDraft;
     if (typeof QuickCreate._prodCallback === 'function') {
       QuickCreate._prodCallback(prod);
       QuickCreate._prodCallback = null;
+    }
+    if (shouldReturnToSale) {
+      QuickCreate._returnToSaleDraft = false;
+      // The callback above just added the new product into Sales.cart
+      // in memory, but the New Sale modal's DOM was destroyed when this
+      // product modal opened — so Sales.saveDraft() can't be called
+      // here, it reads from DOM fields that no longer exist and would
+      // overwrite the good draft (customer, payment info, invoice
+      // number) with empty values. Instead, patch the cart directly
+      // into the draft that was already saved right before this
+      // product modal opened, then reopen the form from it.
+      var existingDraft = Sales.getDraft();
+      if (existingDraft) {
+        existingDraft.cart = Sales.cart;
+        try { localStorage.setItem(Sales._DRAFT_KEY, JSON.stringify(existingDraft)); } catch(e) {}
+      }
+      Sales.continueDraft();
     }
   },
 
@@ -5085,7 +5217,133 @@ var Sales = {
   goToPage: function(p) { this.page=p; this.render(); },
 
   // ── NEW SALE FORM ──────────────────────────────────────────────────────────
+  // ── SALE DRAFT (auto-save / restore unfinished sales) ─────────────────
+  // Persisted to its own localStorage key, separate from the main
+  // business-data blob — this is transient UI state, not a real sale,
+  // and should never get pulled into backups/exports or synced to the
+  // cloud. No database row is ever created for a draft; it only becomes
+  // a real sale the moment the user actually taps Save.
+  _DRAFT_KEY: 'ssp_v5_sale_draft',
+  _draftAutoSaveTimer: null,
+
+  _captureDraft: function() {
+    return {
+      custName:  Utils.val('s-cust-name'),
+      custId:    Utils.val('s-cust-id'),
+      custPhone: Utils.val('s-cust-phone'),
+      date:      Utils.val('s-date'),
+      invNumber: Utils.val('s-inv-number'),
+      reservedInvoiceId: this._reservedInvoiceId,
+      cart:      this.cart,
+      discount:  this.discount,
+      method:    (Utils.get('s-method')||{}).value,
+      amtPaid:   Utils.val('s-amt-paid'),
+      notes:     Utils.val('s-notes'),
+      savedAt:   new Date().toISOString(),
+    };
+  },
+
+  saveDraft: function() {
+    // Don't save an empty draft — if nothing's actually been entered yet
+    // (no customer typed, no items, no notes), there's nothing worth
+    // restoring and we'd otherwise prompt the user on every fresh open.
+    var d = this._captureDraft();
+    var isEmpty = (!d.custName || d.custName === 'Walk-in Customer')
+      && (!d.cart || !d.cart.length) && !d.notes && (!d.amtPaid);
+    if (isEmpty) { this.clearDraft(); return; }
+    try { localStorage.setItem(this._DRAFT_KEY, JSON.stringify(d)); } catch(e) {}
+  },
+
+  // Debounced auto-save: called from every field's existing oninput
+  // handler. Coalesces rapid changes (e.g. typing a name character by
+  // character) into one write every ~600ms instead of one per keystroke.
+  scheduleDraftSave: function() {
+    var self = this;
+    if (this._draftAutoSaveTimer) clearTimeout(this._draftAutoSaveTimer);
+    this._draftAutoSaveTimer = setTimeout(function(){ self.saveDraft(); }, 600);
+  },
+
+  getDraft: function() {
+    try { return JSON.parse(localStorage.getItem(this._DRAFT_KEY)); } catch(e) { return null; }
+  },
+
+  hasDraft: function() {
+    var d = this.getDraft();
+    return !!(d && ((d.cart && d.cart.length) || (d.custName && d.custName !== 'Walk-in Customer') || d.notes || d.amtPaid));
+  },
+
+  clearDraft: function() {
+    try { localStorage.removeItem(this._DRAFT_KEY); } catch(e) {}
+  },
+
+  // Applies a saved draft's values into the already-open New Sale form.
+  // Reuses the SAME reserved invoice number from when the draft was
+  // captured, rather than reserving a fresh one — otherwise resuming a
+  // draft would silently burn a second number and leave the original
+  // orphaned.
+  _applyDraftToForm: function(d) {
+    this.cart = d.cart || [];
+    this.discount = d.discount || 0;
+    var set = function(id, val){ var el = Utils.get(id); if (el) el.value = val||''; };
+    set('s-cust-name', d.custName);
+    set('s-cust-id', d.custId);
+    set('s-cust-phone', d.custPhone);
+    set('s-date', d.date || Utils.today());
+    set('s-disc', d.discount);
+    set('s-amt-paid', d.amtPaid);
+    set('s-notes', d.notes);
+    var methodEl = Utils.get('s-method'); if (methodEl && d.method) methodEl.value = d.method;
+    var invEl = Utils.get('s-inv-number');
+    if (invEl) {
+      invEl.value = d.invNumber || d.reservedInvoiceId || '';
+      invEl.disabled = false;
+      invEl.placeholder = '';
+    }
+    this._reservedInvoiceId = d.reservedInvoiceId || null;
+    this.renderCart();
+    this.updateTotals();
+  },
+
   openNewSale: function() {
+    if (this.hasDraft()) {
+      this._promptRestoreDraft();
+      return;
+    }
+    this._openNewSaleForm();
+  },
+
+  _promptRestoreDraft: function() {
+    var d = this.getDraft();
+    var itemCount = (d.cart||[]).length;
+    Modal.open({
+      title:'Restore Previous Sale Draft?', barColor:'var(--wa)',
+      body: '<div style="font-size:13px;color:var(--t2);line-height:1.6">'
+          + 'You left an unfinished sale'+(d.custName && d.custName!=='Walk-in Customer' ? ' for <strong>'+Utils.esc(d.custName)+'</strong>' : '')
+          + (itemCount ? ' with <strong>'+itemCount+' item'+(itemCount!==1?'s':'')+'</strong> added' : '')+'.'
+          + '</div>',
+      footer: '<button class="btn-danger" onclick="Sales.discardDraft()">Discard Draft</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Sales.continueDraft()">Continue Draft</button>',
+    });
+  },
+
+  continueDraft: function() {
+    var d = this.getDraft();
+    Modal.close();
+    if (!d) { this._openNewSaleForm(); return; }
+    this._openNewSaleForm(true);
+    this._applyDraftToForm(d);
+  },
+
+  discardDraft: function() {
+    this.clearDraft();
+    Modal.close();
+    this._openNewSaleForm();
+  },
+
+  // skipDraftPrompt: true when called from continueDraft(), so the form
+  // builder doesn't also try to reserve a brand new invoice number —
+  // the draft already has one.
+  _openNewSaleForm: function(skipDraftPrompt) {
     this.editingSaleId = null;
     this.cart=[]; this.discount=0;
     var settings = DB.getSettings();
@@ -5104,7 +5362,7 @@ var Sales = {
         + '<div class="fg" style="margin:0"><label class="fl">Customer Name</label>'
         + '<div style="position:relative">'
         + '<input class="fi" id="s-cust-name" placeholder="Type name or phone..." '
-        + 'oninput="Sales.onCustNameInput(this.value)" autocomplete="off" style="font-weight:600">'
+        + 'oninput="Sales.onCustNameInput(this.value);Sales.scheduleDraftSave()" autocomplete="off" style="font-weight:600">'
         + '<div id="s-cust-suggestions" style="position:absolute;top:100%;left:0;right:0;'
         + 'background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);'
         + 'z-index:200;max-height:200px;overflow-y:auto;display:none;box-shadow:var(--sh2)"></div>'
@@ -5113,16 +5371,16 @@ var Sales = {
         + '</div>'
 
         + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
-        + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '"></div>'
+        + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '" onchange="Sales.scheduleDraftSave()"></div>'
         + '</div>'
         + '<div class="fg" style="margin-top:10px;margin-bottom:0"><label class="fl">Invoice Number</label>'
         + '<input class="fi" id="s-inv-number" placeholder="Reserving…" disabled '
         + 'style="font-family:var(--fm);font-weight:700;color:var(--g)" '
-        + 'onchange="Sales.onInvoiceNumberChange()" oninput="Sales.onInvoiceNumberChange()">'
+        + 'onchange="Sales.onInvoiceNumberChange();Sales.scheduleDraftSave()" oninput="Sales.onInvoiceNumberChange();Sales.scheduleDraftSave()">'
         + '<div id="s-inv-warning" style="font-size:10px;color:var(--er);margin-top:4px;display:none"></div></div>'
         + '<div class="form-row" style="margin-top:10px;margin-bottom:0">'
         + '<div class="fg" style="margin:0"><label class="fl">Contact Number</label>'
-        + '<input class="fi" id="s-cust-phone" type="tel" placeholder="+231 ..." autocomplete="off"></div>'
+        + '<input class="fi" id="s-cust-phone" type="tel" placeholder="+231 ..." autocomplete="off" oninput="Sales.scheduleDraftSave()"></div>'
         + '</div>'
         + '<input type="hidden" id="s-cust-id" value="">'
         + '</div>'
@@ -5153,9 +5411,9 @@ var Sales = {
         + '<div class="form-row" style="margin-bottom:12px">'
         + '<div class="fg" style="margin:0"><label class="fl">Discount %</label>'
         + '<input class="fi" id="s-disc" type="number" placeholder="0" min="0" max="100" '
-        + 'oninput="Sales.updateTotals()"></div>'
+        + 'oninput="Sales.updateTotals();Sales.scheduleDraftSave()"></div>'
         + '<div class="fg" style="margin:0"><label class="fl">Payment Method</label>'
-        + '<select class="fi" id="s-method">'
+        + '<select class="fi" id="s-method" onchange="Sales.scheduleDraftSave()">'
         + '<option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option><option>Credit</option>'
         + '</select></div>'
         + '</div>'
@@ -5163,11 +5421,11 @@ var Sales = {
         // Amount paid — no zero placeholder
         + '<div class="fg" style="margin-bottom:10px"><label class="fl">Amount Paid (USD) — leave blank for full payment</label>'
         + '<input class="fi" id="s-amt-paid" type="number" placeholder="" min="0" step="0.01" '
-        + 'oninput="Sales.updateTotals()" style="font-size:16px;font-weight:700;color:var(--ok)"></div>'
+        + 'oninput="Sales.updateTotals();Sales.scheduleDraftSave()" style="font-size:16px;font-weight:700;color:var(--ok)"></div>'
 
         + '</div>'
         + '<div class="fg"><label class="fl">Notes (optional)</label>'
-        + '<input class="fi" id="s-notes" placeholder="Any extra information..."></div>',
+        + '<input class="fi" id="s-notes" placeholder="Any extra information..." oninput="Sales.scheduleDraftSave()"></div>',
 
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
             + '<button class="btn-ghost" id="s-save-new-btn" onclick="Sales.saveSale(\'new\')" style="color:var(--g);border-color:rgba(201,168,67,.3)">💾 Save &amp; New</button>'
@@ -5178,7 +5436,7 @@ var Sales = {
     var nameEl = Utils.get('s-cust-name');
     if (nameEl) nameEl.value = 'Walk-in Customer';
     this.updateTotals();
-    this._reserveInvoiceNumber();
+    if (!skipDraftPrompt) this._reserveInvoiceNumber();
   },
 
   // Reserves the next sequential number right when the form opens, so
@@ -5395,6 +5653,7 @@ var Sales = {
     if (phoneEl) phoneEl.value = '';
     if (sugg)    sugg.style.display = 'none';
     if (tag)     tag.style.display = 'none';
+    if (!this.editingSaleId) this.scheduleDraftSave();
   },
 
   selectCust: function(custOrId, name) {
@@ -5434,6 +5693,7 @@ var Sales = {
       + '</div>'
       + (openBal>0?'<div style="font-size:10px;color:var(--wa);margin-top:6px;font-weight:600">⚠️ This customer has an outstanding balance of '+Utils.cur(openBal,cur)+'</div>':'')
       + '</div>';
+    if (!this.editingSaleId) this.scheduleDraftSave();
   },
 
   // ── CART ───────────────────────────────────────────────────────────────────
@@ -5466,7 +5726,17 @@ var Sales = {
       addNew.addEventListener('click', function() {
         sugg.style.display = 'none';
         var s = Utils.get('s-prod-search'); if(s) s.value = '';
-        QuickCreate.quickProduct(function(p){ Sales.addToCartById(p.id); });
+        // This app only ever shows one modal at a time — opening the
+        // "Add New Product" modal completely replaces the New Sale
+        // modal's DOM, not just covers it. Save a draft of the sale
+        // first, so we can reopen the exact same form afterward instead
+        // of leaving the user looking at nothing once the product modal
+        // takes over (the old behavior: the new item silently landed in
+        // Sales.cart in memory, but the form itself was already gone).
+        if (!Sales.editingSaleId) Sales.saveDraft();
+        QuickCreate.quickProduct(function(p){
+          Sales.addToCartById(p.id);
+        }, !Sales.editingSaleId);
       });
       sugg.appendChild(addNew);
       return;
@@ -5498,6 +5768,7 @@ var Sales = {
     else { this.cart.push({ id:p.id, name:p.name, qty:1, price:p.price, cost:p.cost||0, unit:p.unit||'Pcs', discount:0 }); }
     this.renderCart();
     this.updateTotals();
+    if (!this.editingSaleId) this.scheduleDraftSave();
     Toast.show(p.name + ' added ✓', 'ok');
   },
 
@@ -5508,6 +5779,7 @@ var Sales = {
       if (prodSel) prodSel.innerHTML = QuickCreate.productOptions();
       Sales.cart.push({id:newProd.id,name:newProd.name,price:newProd.price,cost:newProd.cost||0,qty:1,maxQty:newProd.qty||0});
       Sales.renderCart();
+      if (!Sales.editingSaleId) Sales.scheduleDraftSave();
     })) return;
     var id=sel.value; if(!id) return;
     var p=DB.getProducts().find(function(x){ return x.id===id; }); if(!p) return;
@@ -5515,6 +5787,7 @@ var Sales = {
     var ex=this.cart.find(function(i){ return i.id===id; });
     if(ex) ex.qty++; else this.cart.push({id:p.id,name:p.name,price:p.price,cost:p.cost||0,qty:1,maxQty:p.qty});
     this.renderCart();
+    if (!this.editingSaleId) this.scheduleDraftSave();
   },
 
   renderCart: function() {
@@ -5547,7 +5820,7 @@ var Sales = {
     this.updateTotals();
   },
 
-  changeQty: function(i,d){ if(this.cart[i]){this.cart[i].qty=Math.max(1,(this.cart[i].qty||1)+d);this.renderCart();} },
+  changeQty: function(i,d){ if(this.cart[i]){this.cart[i].qty=Math.max(1,(this.cart[i].qty||1)+d);this.renderCart(); if(!this.editingSaleId) this.scheduleDraftSave();} },
 
   setQty: function(i,val){
     var n=parseInt(val); if(!this.cart[i]||isNaN(n)||n<1) return;
@@ -5555,6 +5828,7 @@ var Sales = {
     var cur=DB.getSettings().currency||'$';
     var el=Utils.get('lt-'+i); if(el) el.textContent=Utils.cur(this.cart[i].price*n,cur);
     this.updateTotals();
+    if (!this.editingSaleId) this.scheduleDraftSave();
   },
 
   setPrice: function(i,val){
@@ -5563,9 +5837,10 @@ var Sales = {
     var cur=DB.getSettings().currency||'$';
     var el=Utils.get('lt-'+i); if(el) el.textContent=Utils.cur(n*this.cart[i].qty,cur);
     this.updateTotals();
+    if (!this.editingSaleId) this.scheduleDraftSave();
   },
 
-  removeItem: function(i){ this.cart.splice(i,1); this.renderCart(); },
+  removeItem: function(i){ this.cart.splice(i,1); this.renderCart(); if (!this.editingSaleId) this.scheduleDraftSave(); },
 
   // ── TOTALS ─────────────────────────────────────────────────────────────────
   //─────────────────────────────────────────────────────────────────────────
@@ -5655,7 +5930,8 @@ var Sales = {
       this._saving = false;
       if (btnNew) btnNew.disabled = false;
       if (btnClose) { btnClose.disabled = false; btnClose.textContent = '🧾 Save Invoice'; }
-      Toast.show('Invoice number missing — check your connection and reopen New Sale','err');
+      this.saveDraft();
+      Toast.show('No connection — could not finalize the invoice number. Your sale is saved as a draft and nothing is lost; try Save again once you\'re back online.','err',6000);
       return;
     }
     // Final guard right before save: if the user edited the field to
@@ -5707,6 +5983,7 @@ var Sales = {
       Toast.show('Invoice '+sale.id+' saved ✓','ok');
       Notifs.check();
       self._saving = false;
+      self.clearDraft();
       var btnNewDone = Utils.get('s-save-new-btn'), btnCloseDone = Utils.get('s-save-close-btn');
 
       if(action==='new'){
