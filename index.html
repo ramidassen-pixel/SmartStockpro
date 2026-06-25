@@ -5197,7 +5197,9 @@ var Sales = {
 
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Sales</div><div class="page-sub">'+all.length+' invoices total</div></div>'
-      + '<div class="page-actions"><button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
+      + '<div class="page-actions">'
+      + (this.hasDraft() ? '<button class="btn-ghost btn-sm" onclick="Sales.openPreviousSave()" style="color:var(--wa);border-color:rgba(245,158,11,.3)">↩️ Previous Save</button>' : '')
+      + '<button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
       + '</div>'
       + '<div class="sec"><div class="kpi-grid">'
       + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value">'+Utils.cur(totalRev,cur)+'</div><div class="kpi-sub">'+all.length+' invoices</div></div>'
@@ -5312,6 +5314,18 @@ var Sales = {
       return;
     }
     this._openNewSaleForm();
+  },
+
+  // Direct entry point for the "Previous Save" button on the Sales page.
+  // Unlike openNewSale(), there's no ambiguity to prompt about here —
+  // tapping this button IS the request to resume, so go straight in.
+  openPreviousSave: function() {
+    if (!this.hasDraft()) {
+      Toast.show('No saved draft to resume','info');
+      this.render();
+      return;
+    }
+    this.continueDraft();
   },
 
   _promptRestoreDraft: function() {
