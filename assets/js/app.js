@@ -1,3 +1,4 @@
+/* === app.js === */
 var UI = {
   toggleNotifPanel: function() {
     var p = Utils.get('notif-panel');
@@ -53,19 +54,12 @@ var App = {
 
   boot: function() {
     try { DB.load(); } catch(e) { console.error('DB:', e); }
-    var loggedIn = false;
-    try {
-      var sess = Utils.storage.get('ssp_session');
-      if (sess && sess.uid) {
-        var users = DB.get('users') || [];
-        for (var i = 0; i < users.length; i++) {
-          if (users[i].id === sess.uid && users[i].status !== 'pending') {
-            Auth.currentUser = users[i]; loggedIn = true; break;
-          }
-        }
-      }
-    } catch(e) { console.error('session:', e); }
-    if (loggedIn) App.showShell();
-    else App.showLogin();
+    var attemptingRestore = false;
+    try { attemptingRestore = Auth.bootSync(); } catch(e) { console.error('session:', e); }
+    // Auth.bootSync() either:
+    //  - returns false (no/invalid stored session) → show login now, or
+    //  - returns true and asynchronously calls App.showShell() itself once
+    //    the session is validated/refreshed and the profile is loaded.
+    if (!attemptingRestore) App.showLogin();
   },
 };

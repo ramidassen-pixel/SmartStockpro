@@ -1,3 +1,4 @@
+/* === notifications.js === */
 var Notifs = {
   check() {
     const list = [];

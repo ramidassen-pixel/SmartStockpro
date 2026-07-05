@@ -1,3 +1,4 @@
+/* === rbac.js === */
 /* SmartStock Pro V5 — RBAC, Multi-Business & Activity System */
 
 /* ═══════════════════════════════════════════════════════════

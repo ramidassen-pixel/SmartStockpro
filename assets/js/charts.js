@@ -1,3 +1,4 @@
+/* === charts.js === */
 /* SmartStock Pro V5 — Charts (Real Data) */
 var Charts = {
 

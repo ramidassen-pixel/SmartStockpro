@@ -1,7 +1,9 @@
+/* === platform.js === */
 /* SmartStock Pro V5 — Platform Sync & Super Admin */
 
 var SUPABASE_URL  = 'https://ovbtqkpvhivqnnxojjwu.supabase.co';
 var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnRxa3B2aGl2cW5ueG9qand1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTQ1NDEsImV4cCI6MjA5Njc5MDU0MX0.TZ_B5NBC3uIyqMYs442umeoi3o78CCwTZW6YgHS9efw';
+var ADMIN_FN_URL  = SUPABASE_URL + '/functions/v1/admin-data';
 
 /* ══════════════════════════════════════════════════════════════
    PLATFORM SYNC — sends registration & activity to Supabase
@@ -76,21 +78,11 @@ var Platform = {
   // Call this on login — updates last_active
   pingLogin: function(user, bizId) {
     if (!user) return;
-    // Update last_login_at
-    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(user.id), {
-      method:  'PATCH',
-      headers: Platform._hdr(),
-      body:    JSON.stringify({ last_login_at: new Date().toISOString() }),
+    fetch(ADMIN_FN_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'ping', userId: user.id, bizId: bizId || null }),
     }).catch(function(){});
-
-    // Update business last_active
-    if (bizId) {
-      fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(bizId), {
-        method:  'PATCH',
-        headers: Platform._hdr(),
-        body:    JSON.stringify({ last_active_at: new Date().toISOString() }),
-      }).catch(function(){});
-    }
 
     // Log activity event
     fetch(SUPABASE_URL + '/rest/v1/platform_activity', {
@@ -181,20 +173,29 @@ var SuperAdmin = {
       + '</div>'
       + '<div id="sa-content"><div style="text-align:center;padding:40px;color:var(--t3)">Loading platform data...</div></div>';
 
-    // Fetch from Supabase
-    var hdr = {
-      'apikey':         SUPABASE_ANON,
-      'Authorization': 'Bearer ' + SUPABASE_ANON,
+    // Fetch through the PIN-protected admin-data Edge Function — the
+    // browser never holds a key capable of reading these tables directly.
+    var fnHdr = {
+      'Content-Type': 'application/json',
+      'x-owner-pin':  SuperAdmin._pin,
     };
 
+    function fetchTable(table, filter) {
+      return fetch(ADMIN_FN_URL, {
+        method: 'POST',
+        headers: fnHdr,
+        body: JSON.stringify({ action: 'select', table: table, filter: filter }),
+      }).then(function(r){ return r.json(); });
+    }
+
     Promise.all([
-      fetch(SUPABASE_URL + '/rest/v1/platform_businesses?select=*&order=registered_at.desc', {headers:hdr}).then(function(r){return r.json();}),
-      fetch(SUPABASE_URL + '/rest/v1/platform_users?select=*&order=registered_at.desc',      {headers:hdr}).then(function(r){return r.json();}),
-      fetch(SUPABASE_URL + '/rest/v1/platform_activity?select=*&order=created_at.desc&limit=50', {headers:hdr}).then(function(r){return r.json();}),
+      fetchTable('platform_businesses', 'order=registered_at.desc'),
+      fetchTable('platform_users',      'order=registered_at.desc'),
+      fetchTable('platform_activity',   'order=created_at.desc&limit=50'),
     ]).then(function(results) {
-      var businesses = results[0] || [];
-      var users      = results[1] || [];
-      var activity   = results[2] || [];
+      var businesses = Array.isArray(results[0]) ? results[0] : [];
+      var users      = Array.isArray(results[1]) ? results[1] : [];
+      var activity   = Array.isArray(results[2]) ? results[2] : [];
       SuperAdmin._renderDashboard(businesses, users, activity);
     }).catch(function(err) {
       Utils.get('sa-content').innerHTML = '<div style="padding:20px;color:var(--er)">Error loading data: ' + err.message + '</div>';

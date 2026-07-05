@@ -1,3 +1,4 @@
+/* === quickcreate.js === */
 // ══════════════════════════════════════════════════════════════════════════
 // QUICKCREATE — Inline Supplier & Product creation from any transaction screen
 // Called from: Supply (PO, GRN, Bills, Reorder), Sales
