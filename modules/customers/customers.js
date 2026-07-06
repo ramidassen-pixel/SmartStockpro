@@ -1,3 +1,4 @@
+/* === customers.js === */
 var Customers = {
   editId: null,
   search: '',
