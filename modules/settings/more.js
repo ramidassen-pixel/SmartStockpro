@@ -1,3 +1,4 @@
+/* === more.js === */
 var MorePage = {
   render: function() {
     var pg = Utils.get('pg-more');
@@ -7,6 +8,9 @@ var MorePage = {
         label: 'Business',
         items: [
           { icon:'📄', label:'Quotations',         desc:'Create & manage client quotations', bg:'var(--inb)', action:"Router.go('quotations')", badge:'NEW' },
+          { icon:'📦', label:'Stock History',   desc:'Stock in/out & adjustments',         bg:'var(--inb)', action:"Router.go('stock')",          badge:'' },
+          { icon:'⚠️', label:'Debt Report',    desc:'Customer outstanding balances',       bg:'var(--erb)', action:'Customers.debtReport()',      badge:'' },
+          { icon:'💾', label:'Data Backup',    desc:'Download & restore your data',        bg:'var(--okb)', action:'Backup._openBackupModal()',    badge:'SAFE' },
           { icon:'🎫', label:'Support Center',          desc:'Help, feedback & issue tickets',    bg:'var(--inb)', action:"Router.go('support')",   badge:'NEW' },
           { icon:'👥', label:'Team & Access',         desc:'Users, roles & permissions',       bg:'var(--gb)',  action:"Router.go('usermgmt')",  badge:'NEW' },
           { icon:'🤖', label:'AI Assistant',        desc:'Ask Claude about your business',   bg:'var(--gb)',  action:"Router.go('ai')" },

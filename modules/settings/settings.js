@@ -1,3 +1,4 @@
+/* === settings.js === */
 var Settings = {
 
 
@@ -104,6 +105,11 @@ var Settings = {
       + '<div class="settings-icon" style="background:var(--gb)">💱</div>'
       + '<div class="settings-info"><div class="settings-name">Currency</div>'
       + '<div class="settings-desc">'+Utils.esc(s.currency||'$')+'</div></div>'
+      + '<div class="settings-arrow">›</div></div>'
+      + '<div class="settings-item" onclick="Settings.openExchangeRateModal()">'
+      + '<div class="settings-icon" style="background:var(--gb)">💵</div>'
+      + '<div class="settings-info"><div class="settings-name">LRD Exchange Rate</div>'
+      + '<div class="settings-desc">'+(s.lrdRate?'1 USD = L$'+s.lrdRate:'Tap to set rate for dual currency')+'</div></div>'
       + '<div class="settings-arrow">›</div></div>'
       + '<div class="settings-item" onclick="Settings.openLowStockModal()">'
       + '<div class="settings-icon" style="background:var(--wab)">⚠️</div>'
@@ -323,6 +329,32 @@ var Settings = {
     Settings.render();
   },
 
+  // ═══ EXCHANGE RATE (dual currency: LRD ↔ USD) ════════════════════════════
+  openExchangeRateModal: function() {
+    var s = DB.getSettings();
+    Modal.open({
+      title: '💵 LRD Exchange Rate', barColor: 'var(--g)',
+      body:
+        '<div style="background:var(--gb3);border:1px solid rgba(212,168,67,.2);border-radius:var(--r12);padding:14px 16px;margin-bottom:16px">'
+        + '<div style="font-size:12px;color:var(--t2);line-height:1.7">Set how many <strong>Liberian Dollars (LRD)</strong> equal <strong>1 US Dollar</strong>. Products stay priced in USD — customers can pay in either currency, and the sales screen will show the LRD equivalent.</div>'
+        + '</div>'
+        + '<div class="fg"><label class="fl">1 USD ($) equals how many LRD (L$)? *</label>'
+        + '<input class="fi" id="set-rate" type="number" step="0.01" min="0" placeholder="e.g. 198" value="'+(s.lrdRate||'')+'" style="font-size:18px;font-weight:700;text-align:center"></div>'
+        + '<div style="text-align:center;font-size:11px;color:var(--t3);margin-top:-6px;margin-bottom:14px">Check today\'s rate with your bank or money changer</div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Settings.saveExchangeRate()">💾 Save Rate</button>',
+    });
+  },
+
+  saveExchangeRate: function() {
+    var rate = parseFloat(Utils.val('set-rate'));
+    if (!rate || rate <= 0) { Toast.show('Enter a valid exchange rate','err'); return; }
+    DB.saveSettings({ lrdRate: rate });
+    Toast.show('Exchange rate saved — 1 USD = L$'+rate+' ✓','ok');
+    Modal.close();
+    Settings.render();
+  },
+
   // ═══ LOW STOCK ═══════════════════════════════════════════════════════════
   openLowStockModal: function() {
     var s=DB.getSettings();
@@ -357,27 +389,56 @@ var Settings = {
     Modal.open({
       title:'Change Password', barColor:'var(--wa)',
       body:'<div class="fg"><label class="fl">Current Password</label><input class="fi" id="pw-old" type="password"></div>'
-          +'<div class="fg"><label class="fl">New Password (min 6)</label><input class="fi" id="pw-new" type="password"></div>'
+          +'<div class="fg"><label class="fl">New Password (min 8, with upper/lower/number)</label><input class="fi" id="pw-new" type="password"></div>'
           +'<div class="fg"><label class="fl">Confirm New Password</label><input class="fi" id="pw-conf" type="password"></div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
             +'<button class="btn-primary" style="flex:1" onclick="Settings.changePassword()">Update</button>',
     });
   },
 
-  changePassword: async function() {
+  changePassword: function() {
     var oldPw=Utils.val('pw-old'), newPw=Utils.val('pw-new'), conf=Utils.val('pw-conf');
     if(!oldPw||!newPw){ Toast.show('All fields required','err'); return; }
-    if(newPw.length<6){ Toast.show('Min 6 characters','err'); return; }
+    if(newPw.length<8){ Toast.show('Min 8 characters','err'); return; }
     if(newPw!==conf){ Toast.show('Passwords do not match','err'); return; }
-    var user=Auth.currentUser;
-    var ok=await Auth._verifyPw(oldPw,user.password);
-    if(!ok){ Toast.show('Current password is wrong','err'); return; }
-    var hashed=await Auth._hashPw(newPw);
-    var users=DB.get('users');
-    for(var i=0;i<users.length;i++){ if(users[i].id===user.id){ users[i].password=hashed; break; } }
-    DB.set('users',users);
-    Toast.show('Password updated ✓','ok');
-    Modal.close();
+    if(!Auth._strongPw(newPw)){ Toast.show('Password needs uppercase, lowercase and a number','err'); return; }
+
+    var session = Auth._session;
+    if (!session || !session.access_token) { Toast.show('Session expired — please sign in again','err'); return; }
+
+    // Re-verify identity by attempting a fresh login with the OLD password —
+    // this confirms the person changing the password actually knows the
+    // current one, without SmartStock Pro ever storing or hashing it itself.
+    fetch(SUPABASE_AUTH_URL + '/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: Auth.currentUser.email, password: oldPw }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(verify) {
+      if (!verify.ok) { Toast.show('Current password is wrong','err'); return; }
+
+      fetch(SUPABASE_AUTH_URL + '/user', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON,
+          'Authorization': 'Bearer ' + session.access_token,
+        },
+        body: JSON.stringify({ password: newPw }),
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+      .then(function(result) {
+        if (!result.ok) {
+          Toast.show('Could not update password: ' + ((result.data && result.data.msg) || 'Unknown error'), 'err');
+          return;
+        }
+        Toast.show('Password updated ✓','ok');
+        Modal.close();
+      })
+      .catch(function(err) { Toast.show('Network error: ' + err.message, 'err'); });
+    })
+    .catch(function(err) { Toast.show('Network error: ' + err.message, 'err'); });
   },
 
   // ═══ EXPORT / IMPORT ═════════════════════════════════════════════════════
