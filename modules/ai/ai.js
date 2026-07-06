@@ -1,8 +1,11 @@
+/* === ai.js === */
 var AI = {
   history: [],
   busy: false,
   inited: false,
-  KEY: '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',
+  // The Anthropic key now lives only inside the ai-proxy Supabase Edge
+  // Function as a server-side secret — it is never present in this file
+  // or shipped to the browser.
 
   render: function() {
     var pg = Utils.get('pg-ai');
@@ -233,16 +236,10 @@ var AI = {
     this._addTyping(tid);
 
     var self = this;
-    fetch('https://api.anthropic.com/v1/messages', {
+    fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': AI.KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{role:'user', content:'Generate the complete Daily Business Management Report now. Be thorough and professional.'}],
@@ -259,11 +256,8 @@ var AI = {
         self._setStatus('Report ready ✓', 'var(--ok)');
         Toast.show('Full business report generated ✓','ok');
       } else {
-        var errMsg = data.error ? (data.error.message + ' [type:' + (data.error.type||'?') + ']') : 'Could not generate report.';
+        var errMsg = data.error ? (data.error + (data.type?' [type:'+data.type+']':'')) : 'Could not generate report.';
         console.error('AI API Error:', JSON.stringify(data));
-        if (errMsg.toLowerCase().includes('api-key') || errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('invalid')) {
-          errMsg = '🔑 API key rejected by Anthropic. Key: ' + AI.KEY.slice(0,20) + '...';
-        }
         self._addBot('⚠️ ' + errMsg);
         self._setStatus('Ready', 'var(--ok)');
       }
@@ -428,16 +422,10 @@ var AI = {
     this._addTyping(tid);
     var self = this;
     try {
-      var res = await fetch('https://api.anthropic.com/v1/messages', {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': AI.KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
           max_tokens: 1024,
           system: 'You are SmartStock AI — expert business assistant and accountant.\n\nLIVE DATA:\n' + this._context() + '\n\nBe concise, practical, and use bullet points. Always give specific numbers from the data.',
           messages: this.history.slice(-10),
@@ -454,11 +442,8 @@ var AI = {
         this.history.push({role:'assistant', content:ans});
         if (this.history.length > 20) this.history = this.history.slice(-20);
       } else {
-        var errMsg2 = data.error ? (data.error.message + ' [type:' + (data.error.type||'?') + ']') : 'No response.';
+        var errMsg2 = data.error ? (data.error + (data.type?' [type:'+data.type+']':'')) : 'No response.';
         console.error('AI Chat Error:', JSON.stringify(data));
-        if (errMsg2.toLowerCase().includes('api-key') || errMsg2.toLowerCase().includes('auth') || errMsg2.toLowerCase().includes('invalid')) {
-          errMsg2 = '🔑 API key rejected. Key starts with: ' + AI.KEY.slice(0,20) + '...';
-        }
         this._addBot('⚠️ ' + errMsg2);
       }
     } catch(err) {
