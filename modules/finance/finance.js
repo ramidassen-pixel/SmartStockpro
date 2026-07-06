@@ -1,3 +1,4 @@
+/* === finance.js === */
 var Finance = {
   render: function() {
     var pg = Utils.get('pg-finance');
