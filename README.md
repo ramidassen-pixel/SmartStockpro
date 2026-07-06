@@ -90,7 +90,9 @@ https://ramidassen-pixel.github.io/SmartStockpro/
 ```
 SmartStockpro/
 │
-├── index.html                    ← Single entry point (all JS bundled inside)
+├── index.html                    ← Entry point (links external CSS + JS)
+├── admin.html                    ← Platform admin portal
+├── sw.js                         ← Service worker (root scope, offline cache)
 ├── README.md
 │
 ├── assets/
@@ -104,18 +106,22 @@ SmartStockpro/
 │   │
 │   └── js/
 │       ├── utils.js              ← Utilities & helpers
-│       ├── database.js           ← localStorage database layer
-│       ├── auth.js               ← Login, signup, password reset
+│       ├── database.js           ← Cloud-sync database engine (Supabase + localStorage)
+│       ├── auth.js               ← Supabase Auth: login, signup, password reset
 │       ├── quickcreate.js        ← Inline supplier/product creation
 │       ├── router.js             ← Page routing
 │       ├── notifications.js      ← Stock & alert system
 │       ├── charts.js             ← Chart helpers
 │       ├── app.js                ← App boot & shell management
-│       └── bundle.js             ← All modules combined (used by index.html)
+│       ├── rbac.js               ← Role-based access control
+│       ├── platform.js           ← Platform/multi-business layer
+│       ├── globalsearch.js       ← Global search
+│       └── boot.js               ← Splash, error guard, SW registration
 │
 ├── modules/
 │   ├── dashboard/dashboard.js    ← KPIs, breakdown card, toggles
 │   ├── products/products.js      ← Product CRUD
+│   ├── products/stock.js         ← Stock movements
 │   ├── sales/sales.js            ← POS, invoicing, receipts
 │   ├── customers/customers.js    ← Customer profiles
 │   ├── suppliers/
@@ -129,15 +135,18 @@ SmartStockpro/
 │   ├── reports/reports.js        ← Financial & daily reports
 │   ├── quotations/quotations.js  ← Quotation system
 │   ├── ai/ai.js                  ← AI assistant & reports
+│   ├── closing/closing.js        ← Day/month closing
+│   ├── support/support.js        ← Support module
+│   ├── users/usermgmt.js         ← User management
 │   └── settings/
 │       ├── settings.js           ← App configuration
-│       └── more.js               ← More menu
+│       ├── more.js               ← More menu
+│       └── backup.js             ← Data export & backup
 │
 └── pwa/
     ├── manifest.json             ← PWA manifest
-    ├── service-worker.js         ← Offline caching
-    ├── icon-192.png              ← App icon (192×192)
-    └── icon-512.png              ← App icon (512×512)
+    ├── icon-192.png              ← App icon (192×192)  ⚠️ add your icons
+    └── icon-512.png              ← App icon (512×512)  ⚠️ add your icons
 ```
 
 ---
