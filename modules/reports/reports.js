@@ -1,3 +1,4 @@
+/* === reports.js === */
 var Reports = {
   period: 'month',
   dailyDate: '',
@@ -12,6 +13,8 @@ var Reports = {
     if (!this.dailyDate) this.dailyDate = Utils.today();
     if (this.view === 'daily') {
       this.renderDailyView(pg);
+    } else if (this.view === 'leaderboard') {
+      this.renderLeaderboardView(pg);
     } else {
       this.renderFinancialView(pg);
     }
@@ -262,13 +265,14 @@ var Reports = {
       + '<button class="btn-ghost" style="flex:1;font-size:12px" onclick="Reports.exportCSV()">📥 Export CSV</button>'
       + '<button class="btn-ghost" style="flex:1;font-size:12px" onclick="Reports.switchToDaily()">📅 Daily Report</button>'
       + '</div>' : '';
+    var lbHtml = '<div class="sec"><button class="btn-ghost btn-full" style="font-size:12px" onclick="Reports.switchToLeaderboard()">🏆 Staff Leaderboard</button></div>';
 
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Reports</div><div class="page-sub">Financial performance</div></div>'
       + '<div class="page-actions"><button class="btn-ghost btn-sm" onclick="Reports.switchToDaily()">📅 Daily</button></div>'
       + '</div>'
       + '<div class="chips">'+chips+'</div>'
-      + kpis + plHtml + chartHtml + payHtml + topProdHtml + topCustHtml + expBreakHtml + debtHtml + suppHtml + exportHtml;
+      + kpis + plHtml + chartHtml + payHtml + topProdHtml + topCustHtml + expBreakHtml + debtHtml + suppHtml + exportHtml + lbHtml;
   },
 
   // ══════════════════════════════════════════════════════════════
@@ -694,11 +698,83 @@ var Reports = {
   setPeriod:         function(p) { this.period=p; this.view='financial'; this.render(); },
   switchToDaily:     function()  { this.view='daily'; this.dailyDate=this.dailyDate||Utils.today(); this.render(); },
   switchToFinancial: function()  { this.view='financial'; this.render(); },
+  switchToLeaderboard: function(){ this.view='leaderboard'; this.lbPeriod=this.lbPeriod||'month'; this.render(); },
+  setLbPeriod: function(p) { this.lbPeriod=p; this.render(); },
   setDailyDate:      function(d) { this.dailyDate=d; this.render(); },
   shiftDay: function(n) {
     var d=new Date(this.dailyDate+'T12:00:00'); d.setDate(d.getDate()+n);
     var nd=d.toISOString().slice(0,10);
     if (nd<=Utils.today()) { this.dailyDate=nd; this.render(); }
+  },
+
+  // ══════════════════════════════════════════════════════════════
+  // STAFF LEADERBOARD VIEW
+  // ══════════════════════════════════════════════════════════════
+  renderLeaderboardView: function(pg) {
+    var settings = DB.getSettings();
+    var cur      = settings.currency || '$';
+    var sales    = DB.getSales();
+    var today    = Utils.today();
+    var period   = this.lbPeriod || 'month';
+
+    var fromStr;
+    if (period === 'today') { fromStr = today; }
+    else if (period === 'week') { var wd=new Date(); wd.setDate(wd.getDate()-6); fromStr=wd.toISOString().slice(0,10); }
+    else if (period === 'month') { fromStr = today.slice(0,7)+'-01'; }
+    else if (period === 'all') { fromStr = '0000-00-00'; }
+    else { fromStr = today.slice(0,7)+'-01'; }
+
+    var filtered = sales.filter(function(s){ return s.date && s.date >= fromStr; });
+
+    // Group by staff member
+    var byStaff = {};
+    filtered.forEach(function(s){
+      var key  = s.createdBy || 'unattributed';
+      var name = s.createdByName || 'Unattributed Sales';
+      if (!byStaff[key]) byStaff[key] = { name: name, revenue: 0, count: 0 };
+      byStaff[key].revenue += (parseFloat(s.total) || 0);
+      byStaff[key].count   += 1;
+    });
+
+    var rows = Object.keys(byStaff).map(function(k){ return byStaff[k]; });
+    // Rank by revenue (primary) — count shown alongside for the "both" view
+    rows.sort(function(a,b){ return b.revenue - a.revenue; });
+
+    var chips = ['today','week','month','all'].map(function(p){
+      var labels = {today:'Today', week:'This Week', month:'This Month', all:'All Time'};
+      return '<div class="chip'+(period===p?' active':'')+'" onclick="Reports.setLbPeriod(\''+p+'\')">'+labels[p]+'</div>';
+    }).join('');
+
+    var medals = ['🥇','🥈','🥉'];
+    var totalRevenue = rows.reduce(function(a,r){ return a+r.revenue; },0);
+
+    var listHtml;
+    if (!rows.length) {
+      listHtml = '<div class="empty"><div class="empty-icon">🏆</div><div class="empty-title">No sales yet</div><div class="empty-sub">Sales will appear here once staff start recording them</div></div>';
+    } else {
+      listHtml = '<div class="card">' + rows.map(function(r, i){
+        var medal = medals[i] || ('#'+(i+1));
+        var share = totalRevenue>0 ? Math.round((r.revenue/totalRevenue)*100) : 0;
+        var rankColor = i===0 ? 'var(--g)' : i===1 ? 'var(--t2)' : i===2 ? '#B87333' : 'var(--t3)';
+        return '<div class="list-item">'
+          + '<div class="list-icon" style="background:var(--goldbg);font-size:18px;color:'+rankColor+'">'+medal+'</div>'
+          + '<div class="list-info">'
+          + '<div class="list-name">'+Utils.esc(r.name)+'</div>'
+          + '<div class="list-meta">'+Utils.num(r.count)+' sale'+(r.count===1?'':'s')+' · '+share+'% of total</div>'
+          + '<div style="margin-top:5px"><div class="progress"><div class="progress-fill" style="width:'+Math.max(3,share)+'%;background:'+rankColor+'"></div></div></div>'
+          + '</div>'
+          + '<div class="list-right"><div class="list-val">'+Utils.cur(r.revenue,cur)+'</div>'
+          + '<div style="font-size:10px;color:var(--t3);margin-top:2px">revenue</div></div>'
+          + '</div>';
+      }).join('') + '</div>';
+    }
+
+    pg.innerHTML = '<div class="page-header">'
+      + '<div><div class="page-title">🏆 Staff Leaderboard</div><div class="page-sub">Ranked by revenue & transactions</div></div>'
+      + '<div class="page-actions"><button class="btn-ghost btn-sm" onclick="Reports.switchToFinancial()">← Back</button></div>'
+      + '</div>'
+      + '<div class="chips">'+chips+'</div>'
+      + listHtml;
   },
 
   exportCSV: function() {
