@@ -1,3 +1,4 @@
+/* === dashboard.js === */
 var Dashboard = {
 
   render: function() {
@@ -502,13 +503,73 @@ var Dashboard = {
   },
 };
 
-// Week chart helper
-function weekChart() {
-  var sales = DB.getSales();
-  var cur   = DB.getSettings().currency || '$';
-  return '<div class="sec"><div class="chart-wrap">'
-    + '<div class="chart-title">This Week\'s Revenue</div>'
-    + '<div class="chart-sub">'+cur+' daily breakdown</div>'
-    + Charts.weekBars(sales)
-    + '</div></div>';
+// ── ANALYTICS SECTION (real data charts) ─────────────────────────────────
+function analyticsSection() {
+  var allSales    = DB.getSales();
+  var allExpenses = DB.getExpenses();
+  var cur         = DB.getSettings().currency || '$';
+
+  // ── 7-day revenue bars
+  var weekHtml = Charts.weekBars(allSales, cur);
+
+  // ── Revenue vs Expenses (6 months)
+  var revExpHtml = Charts.revenueVsExpenses(allSales, allExpenses, cur);
+
+  // ── Top 5 products
+  var topProdHtml = Charts.topProducts(allSales, cur);
+
+  // ── Quick summary numbers for charts
+  var today = Utils.today();
+  var month = today.slice(0,7);
+  var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+  var weekAgoStr = weekAgo.toISOString().slice(0,10);
+
+  var weekTotal = allSales.filter(function(s){ return s.date >= weekAgoStr; })
+                          .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+  var monthTotal= allSales.filter(function(s){ return s.date&&s.date.startsWith(month); })
+                          .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+
+  // Last week for comparison
+  var lastWeekStart = new Date(); lastWeekStart.setDate(lastWeekStart.getDate()-14);
+  var lastWeekEnd   = new Date(); lastWeekEnd.setDate(lastWeekEnd.getDate()-7);
+  var lastWeekStartStr = lastWeekStart.toISOString().slice(0,10);
+  var lastWeekEndStr   = lastWeekEnd.toISOString().slice(0,10);
+  var lastWeekTotal = allSales.filter(function(s){ return s.date>=lastWeekStartStr && s.date<lastWeekEndStr; })
+                              .reduce(function(a,s){ return a+(parseFloat(s.total)||0); }, 0);
+  var weekChange = lastWeekTotal > 0 ? Math.round(((weekTotal-lastWeekTotal)/lastWeekTotal)*100) : 0;
+  var weekTrend  = weekChange >= 0
+    ? '<span style="color:var(--ok);font-size:11px;font-weight:700">▲ '+weekChange+'%</span>'
+    : '<span style="color:var(--er);font-size:11px;font-weight:700">▼ '+Math.abs(weekChange)+'%</span>';
+
+  return '<div class="sec">'
+    // ── WEEK REVENUE CHART ──────────────────────────────────────────────
+    + '<div class="card card-body" style="margin-bottom:12px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'
+    + '<div><div class="chart-title">📈 This Week Revenue</div>'
+    + '<div class="chart-sub">'+cur+' daily breakdown · 7-day total: <strong>'+Utils.cur(weekTotal,cur)+'</strong></div>'
+    + '</div>'
+    + weekTrend
+    + '</div>'
+    + weekHtml
+    + '</div>'
+
+    // ── REVENUE vs EXPENSES ─────────────────────────────────────────────
+    + '<div class="card card-body" style="margin-bottom:12px">'
+    + '<div style="margin-bottom:12px"><div class="chart-title">📊 Revenue vs Expenses</div>'
+    + '<div class="chart-sub">Last 6 months comparison</div>'
+    + '</div>'
+    + revExpHtml
+    + '</div>'
+
+    // ── TOP PRODUCTS ────────────────────────────────────────────────────
+    + '<div class="card card-body">'
+    + '<div style="margin-bottom:14px"><div class="chart-title">🏆 Top Products</div>'
+    + '<div class="chart-sub">By revenue — all time</div>'
+    + '</div>'
+    + topProdHtml
+    + '</div>'
+    + '</div>';
 }
+
+// Keep old weekChart for compatibility
+function weekChart() { return analyticsSection(); }
