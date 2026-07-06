@@ -1,3 +1,4 @@
+/* === closing.js === */
 /* SmartStock Pro V5 — Daily Closing Report */
 var ClosingReport = {
   _usdBills: [100, 50, 20, 10, 5, 1],
@@ -417,7 +418,7 @@ var ClosingReport = {
     var reconColor = Math.abs(diff)<=tolerance?'#16a34a':diff>0?'#d97706':'#dc2626';
     var reconBg    = Math.abs(diff)<=tolerance?'#d1fae5':diff>0?'#fef3c7':'#fee2e2';
 
-    var css = '*{margin:0;padding:0;box-sizing:border-box}'
+    var css = '*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
       + 'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;background:#fff}'
       + '.page{max-width:210mm;margin:0 auto;padding:14mm}'
       + 'h2{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;border-bottom:2px solid #111;padding-bottom:4px;margin:18px 0 10px;color:#333}'
