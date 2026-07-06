@@ -1014,7 +1014,18 @@ var Sales = {
         try {
           f.contentWindow.focus();
           f.contentWindow.print();
-          setTimeout(function() { overlay.remove(); closeBtn.remove(); }, 3000);
+          // IMPORTANT: do NOT auto-remove the iframe on a timer.
+          // On Android, the PDF is rendered only when the user taps
+          // "Save" in the print dialog — if the iframe is gone by then,
+          // Chrome renders the app screen into the PDF instead.
+          // Desktop: close automatically once the print dialog closes.
+          var isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+          if (!isMobile) {
+            f.contentWindow.onafterprint = function() {
+              setTimeout(function() { overlay.remove(); closeBtn.remove(); }, 500);
+            };
+          }
+          // Mobile: the report stays visible; user taps ✕ Close when done.
         } catch(e) {
           overlay.remove(); closeBtn.remove();
           var blob = new Blob([html], {type:'text/html'});
