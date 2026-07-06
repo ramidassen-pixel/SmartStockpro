@@ -1,3 +1,4 @@
+/* === support.js === */
 /* SmartStock Pro V5 — Customer Support & Feedback Module */
 var Support = {
   activeTab: 'my',
@@ -183,11 +184,14 @@ var Support = {
   _renderAllTickets: function(el) {
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading tickets...</div>';
 
-    var hdr = { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer '+SUPABASE_ANON };
-    fetch(SUPABASE_URL + '/rest/v1/support_tickets?select=*&order=created_at.desc', { headers: hdr })
+    fetch(SUPABASE_URL + '/functions/v1/admin-data', {
+      method:  'POST',
+      headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
+      body:    JSON.stringify({ action:'select', table:'support_tickets', filter:'order=created_at.desc' }),
+    })
       .then(function(r){ return r.json(); })
       .then(function(tickets) {
-        if (!tickets || !tickets.length) {
+        if (!tickets || !Array.isArray(tickets) || !tickets.length) {
           el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-title">No tickets yet</div></div>';
           return;
         }
@@ -348,11 +352,15 @@ var Support = {
       });
       Utils.storage.set('support_tickets', tickets);
 
-      // Sync update to Supabase
-      fetch(SUPABASE_URL + '/rest/v1/support_tickets?id=eq.'+encodeURIComponent(ticketId), {
-        method:  'PATCH',
-        headers: hdr,
-        body:    JSON.stringify({ status: newStatus, priority: newPriority, updated_at: new Date().toISOString() }),
+      // Sync update to Supabase via the PIN-gated admin function
+      fetch(SUPABASE_URL + '/functions/v1/admin-data', {
+        method:  'POST',
+        headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
+        body:    JSON.stringify({
+          action: 'update', table: 'support_tickets',
+          filter: 'id=eq.'+encodeURIComponent(ticketId),
+          data:   { status: newStatus, priority: newPriority, updated_at: new Date().toISOString() },
+        }),
       }).catch(function(){});
     }
 
@@ -462,12 +470,15 @@ var Support = {
   },
 
   _renderFeedbackAdmin: function(el) {
-    var hdr = { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer '+SUPABASE_ANON };
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading feedback...</div>';
-    fetch(SUPABASE_URL + '/rest/v1/support_tickets?category=eq.⭐ General Feedback&select=*&order=created_at.desc', { headers: hdr })
+    fetch(SUPABASE_URL + '/functions/v1/admin-data', {
+      method:  'POST',
+      headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
+      body:    JSON.stringify({ action:'select', table:'support_tickets', filter:'category=eq.⭐ General Feedback&order=created_at.desc' }),
+    })
       .then(function(r){ return r.json(); })
       .then(function(feedbacks) {
-        if (!feedbacks.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-title">No feedback yet</div></div>'; return; }
+        if (!feedbacks || !Array.isArray(feedbacks) || !feedbacks.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-title">No feedback yet</div></div>'; return; }
         var avg = feedbacks.filter(function(f){ return f.rating; }).reduce(function(a,f){ return a+f.rating; },0) / feedbacks.filter(function(f){ return f.rating; }).length;
         el.innerHTML = '<div class="sec">'
           + '<div style="text-align:center;background:var(--gb3);border:1px solid rgba(212,168,67,.2);border-radius:var(--r14);padding:20px;margin-bottom:14px">'
