@@ -1,3 +1,4 @@
+/* === quotations.js === */
 var Quotations = {
   filter: 'All',
 
@@ -453,7 +454,7 @@ var Quotations = {
         +'</tr>';
     }).join('');
 
-    var css = '*{margin:0;padding:0;box-sizing:border-box}'
+    var css = '*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
       +'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:13px;color:#111;background:#fff}'
       +'.page{max-width:210mm;margin:0 auto;padding:16mm}'
       +'.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #111}'
