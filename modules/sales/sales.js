@@ -1,3 +1,4 @@
+/* === sales.js === */
 var Sales = {
   filter: 'All',
   cart: [],
@@ -104,12 +105,15 @@ var Sales = {
         + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
         + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📦 Products</div>'
         + '<div class="fg" style="margin-bottom:10px"><label class="fl">Search Products</label>'
-        + '<div style="position:relative">'
+        + '<div style="display:flex;gap:6px">'
+        + '<div style="position:relative;flex:1">'
         + '<input class="fi" id="s-prod-search" placeholder="Type name, SKU or barcode..." '
         + 'oninput="Sales.onProdSearch(this.value)" autocomplete="off">'
         + '<div id="s-prod-suggestions" style="position:absolute;top:100%;left:0;right:0;'
         + 'background:var(--bg2);border:1px solid var(--bd2);border-radius:0 0 var(--r10) var(--r10);'
         + 'z-index:200;max-height:240px;overflow-y:auto;display:none;box-shadow:var(--sh2)"></div>'
+        + '</div>'
+        + '<button type="button" class="btn-ghost" onclick="Products.openScanner()" style="padding:0 16px;font-size:18px;flex-shrink:0" title="Scan barcode">📷</button>'
         + '</div></div>'
         + '<div id="s-cart-wrap"><div style="text-align:center;padding:14px 0;color:var(--t3);font-size:13px">No items added — search above</div></div>'
         + '</div>'
@@ -376,6 +380,29 @@ var Sales = {
   removeItem: function(i){ this.cart.splice(i,1); this.renderCart(); },
 
   // ── TOTALS ─────────────────────────────────────────────────────────────────
+  calcLrd: function(){
+    var rateEl = Utils.get('s-lrd-rate');
+    var amtEl  = Utils.get('s-lrd-amt');
+    var resEl  = Utils.get('s-lrd-result');
+    if (!rateEl || !amtEl || !resEl) return;
+    var rate = parseFloat(rateEl.value) || (DB.getSettings().lrdRate || 198);
+    var lrd  = parseFloat(amtEl.value) || 0;
+    var usd  = rate > 0 ? lrd / rate : 0;
+    resEl.textContent = Utils.cur(usd, '$');
+  },
+
+  useLrdAmount: function(){
+    var resEl = Utils.get('s-lrd-result');
+    if (!resEl) return;
+    var usdVal = parseFloat(resEl.textContent.replace(/[^0-9.]/g,'')) || 0;
+    if (!usdVal) { Toast.show('Enter an LRD amount first','err'); return; }
+    var paidEl = Utils.get('s-amt-paid');
+    if (paidEl) paidEl.value = usdVal.toFixed(2);
+    Toast.show('Amount applied: '+Utils.cur(usdVal,'$'),'ok');
+    Sales.updateTotals();
+  },
+
+  //─────────────────────────────────────────────────────────────────────────
   updateTotals: function(){
     var totEl=Utils.get('s-totals');
     var cur=DB.getSettings().currency||'$';
@@ -403,10 +430,13 @@ var Sales = {
     var paidHtml = showPartial
       ? '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--ok);font-weight:600">✓ Amount Paid</span><span style="font-size:14px;font-weight:700;color:var(--ok);font-family:var(--fm)">'+Utils.cur(paidRaw,cur)+'</span></div>'
         + '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--wa);font-weight:600">⏳ Balance Due</span><span style="font-size:14px;font-weight:700;color:var(--wa);font-family:var(--fm)">'+Utils.cur(balance,cur)+'</span></div>' : '';
+    var rate    = parseFloat(DB.getSettings().lrdRate)||0;
+    var lrdHtml = rate ? '<div style="text-align:right;margin-top:-4px;margin-bottom:6px"><span style="font-size:12px;color:var(--t3);font-family:var(--fm)">≈ L$'+(total*rate).toLocaleString(undefined,{maximumFractionDigits:0})+'</span></div>' : '';
     if(totEl) totEl.innerHTML = '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
       + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px">🧮 Order Summary</div>'
       + discHtml
       + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd2)"><span style="font-size:15px;font-weight:800;color:var(--t1)">Total Amount</span><span style="font-size:18px;font-weight:900;color:var(--g);letter-spacing:-.02em;font-family:var(--fm)">'+Utils.cur(total,cur)+'</span></div>'
+      + lrdHtml
       + paidHtml + progressHtml
       + '<div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;color:var(--t3)">Invoice status</span><span style="padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;background:'+sc+'18;border:1px solid '+sc+'40;color:'+sc+'">'+status+'</span></div>'
       + noteHtml+'</div>';
@@ -444,6 +474,8 @@ var Sales = {
       payment:method, status:status,
       date:Utils.val('s-date')||Utils.today(),
       notes:Utils.val('s-notes'),
+      createdBy: (Auth.currentUser && Auth.currentUser.id) || null,
+      createdByName: (Auth.currentUser && Auth.currentUser.name) || 'Unknown',
     });
 
     if (paid>0 || status==='Paid') {
