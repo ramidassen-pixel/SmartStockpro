@@ -1,3 +1,4 @@
+/* === suppliers.js === */
 var Suppliers = {
   editId: null,
   render() {
