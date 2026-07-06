@@ -1,3 +1,4 @@
+/* === usermgmt.js === */
 /* SmartStock Pro V5 — User & Role Management Module */
 var UserMgmt = {
   activeTab: 'users',
@@ -24,7 +25,7 @@ var UserMgmt = {
 
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Team & Access</div><div class="page-sub">Roles, permissions & activity</div></div>'
-      + (Perms.can('manage_users') ? '<div class="page-actions"><button class="btn-primary btn-sm" onclick="UserMgmt.openAddUser()">＋ Add User</button></div>' : '')
+      + (Perms.can('manage_users') ? '<div class="page-actions"><button class="btn-ghost btn-sm" onclick="UserMgmt.showAddUserInfo()">＋ Add User</button></div>' : '')
       + '</div>'
       + '<div class="chips">' + tabs.map(function(t){
           return '<div class="chip' + (UserMgmt.activeTab===t[0]?' active':'') + '" onclick="UserMgmt.setTab(\'' + t[0] + '\')">' + t[1] + '</div>';
@@ -48,60 +49,101 @@ var UserMgmt = {
     else if (t === 'activity')   UserMgmt._renderActivity(el);
   },
 
-  /* ── USERS TAB ──────────────────────────────────────────── */
+  /* ── USERS TAB — reads live from Supabase (platform_users), so the
+     same staff list and pending approvals show identically on every
+     device, not just the one that originally registered them. ──── */
   _renderUsers: function(el) {
-    var users   = DB.get('users') || [];
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--t3)">Loading team...</div>';
     var current = Auth.currentUser || {};
-    var pending = users.filter(function(u){ return u.status === 'pending'; });
+    var token = (Auth._session && Auth._session.access_token) || SUPABASE_ANON;
 
-    // Show pending approvals at top if Primary Admin
-    var pendingHtml = '';
-    if (pending.length && current.role === 'primary_admin') {
-      var roleOpts = Object.keys(ROLE_PRESETS).filter(function(k){ return k !== 'primary_admin'; }).map(function(k){
-        return '<option value="' + k + '">' + ROLE_PRESETS[k].icon + ' ' + ROLE_PRESETS[k].label + '</option>';
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?select=*&order=registered_at', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      var allUsers = Array.isArray(rows) ? rows : [];
+      // A non-admin's session only has RLS access to their own row;
+      // an admin reading via admin-data would see the whole business —
+      // for now this self-scoped read is enough to show "my own status"
+      // for staff, and the full team for whoever the RLS allows.
+      var users = allUsers.filter(function(u){ return u.business_id === current.currentBusinessId; });
+      var pending = users.filter(function(u){ return u.status === 'pending'; });
+
+      var pendingHtml = '';
+      if (pending.length && current.role === 'primary_admin') {
+        var roleOpts = Object.keys(ROLE_PRESETS).filter(function(k){ return k !== 'primary_admin'; }).map(function(k){
+          return '<option value="' + k + '">' + ROLE_PRESETS[k].icon + ' ' + ROLE_PRESETS[k].label + '</option>';
+        }).join('');
+        pendingHtml = '<div style="background:rgba(255,173,31,.06);border:1px solid var(--wabd);border-radius:var(--r14);padding:14px;margin:0 14px 14px">'
+          + '<div style="font-size:11px;font-weight:800;color:var(--wa);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">⏳ Pending Approvals (' + pending.length + ')</div>'
+          + pending.map(function(u) {
+              return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r10);padding:12px;margin-bottom:8px">'
+                + '<div style="display:flex;align-items:flex-start;gap:10px">'
+                + '<div style="flex:1">'
+                + '<div style="font-size:13px;font-weight:700;color:var(--t1)">' + Utils.esc(u.name) + '</div>'
+                + '<div style="font-size:11px;color:var(--t2);margin-top:2px">' + Utils.esc(u.email) + '</div>'
+                + '<div style="font-size:10px;color:var(--t3);margin-top:2px">📱 ' + Utils.esc(u.phone||'No phone') + ' · Requested: ' + Utils.date(u.registered_at) + '</div>'
+                + '</div></div>'
+                + '<div style="margin-top:10px;display:flex;gap:7px;align-items:center">'
+                + '<select id="apr-role-' + u.id + '" style="flex:1;background:var(--bg3);border:1px solid var(--bd2);border-radius:6px;padding:6px;font-size:12px;color:var(--t1)">' + roleOpts + '</select>'
+                + '<button class="btn-ok btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.approveUser(this.dataset.uid)">✓ Approve</button>'
+                + '<button class="btn-danger btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.rejectUser(this.dataset.uid)">✕ Reject</button>'
+                + '</div></div>';
+            }).join('')
+          + '</div>';
+      }
+
+      var rows2 = users.filter(function(u){ return u.status !== 'pending'; }).map(function(u) {
+        var isSelf  = u.id === current.id;
+        var info    = Perms.getRoleInfo(u.role);
+        var stats   = (typeof Activity !== 'undefined') ? Activity.getStats(u.id) : { lastLogin:null, totalSales:0 };
+        var lastLogin = u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : (stats.lastLogin ? new Date(stats.lastLogin).toLocaleDateString() : 'Never');
+
+        return '<div class="list-item">'
+          + '<div class="list-icon" style="background:' + info.bg + ';font-size:20px">' + info.icon + '</div>'
+          + '<div class="list-info">'
+          + '<div class="list-name">' + Utils.esc(u.name || u.email) + (isSelf ? ' <span style="font-size:9px;background:var(--gb);color:var(--g);padding:2px 6px;border-radius:99px;font-weight:700">YOU</span>' : '') + '</div>'
+          + '<div class="list-meta">' + Utils.esc(u.email) + ' · ' + Perms.roleBadge(u.role) + '</div>'
+          + '<div class="list-meta" style="font-size:10px;color:var(--t3)">Last login: ' + lastLogin + ' · Sales: ' + (stats.totalSales||0) + '</div>'
+          + '</div>'
+          + '<div class="list-right">'
+          + '<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;background:' + (u.status==='active'?'var(--okb)':'var(--erb)') + ';color:' + (u.status==='active'?'var(--ok)':'var(--er)') + '">' + (u.status||'active').toUpperCase() + '</span>'
+          + '<div class="list-actions">'
+          + (!isSelf && Perms.can('manage_roles') && current.role === 'primary_admin' ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openPromote(\'' + u.id + '\')">⬆️ Role</button>' : '')
+          + '</div></div></div>';
       }).join('');
-      pendingHtml = '<div style="background:rgba(255,173,31,.06);border:1px solid var(--wabd);border-radius:var(--r14);padding:14px;margin:0 14px 14px">'
-        + '<div style="font-size:11px;font-weight:800;color:var(--wa);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">⏳ Pending Approvals (' + pending.length + ')</div>'
-        + pending.map(function(u) {
-            return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r10);padding:12px;margin-bottom:8px">'
-              + '<div style="display:flex;align-items:flex-start;gap:10px">'
-              + '<div style="flex:1">'
-              + '<div style="font-size:13px;font-weight:700;color:var(--t1)">' + Utils.esc(u.name) + '</div>'
-              + '<div style="font-size:11px;color:var(--t2);margin-top:2px">' + Utils.esc(u.email||u.username) + '</div>'
-              + '<div style="font-size:10px;color:var(--t3);margin-top:2px">📱 ' + (u.phone||'No phone') + ' · Requested: ' + Utils.date(u.createdAt) + '</div>'
-              + '</div></div>'
-              + '<div style="margin-top:10px;display:flex;gap:7px;align-items:center">'
-              + '<select id="apr-role-' + u.id + '" style="flex:1;background:var(--bg3);border:1px solid var(--bd2);border-radius:6px;padding:6px;font-size:12px;color:var(--t1)">' + roleOpts + '</select>'
-              + '<button class="btn-ok btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.approveUser(this.dataset.uid)">✓ Approve</button>'
-              + '<button class="btn-danger btn-sm" data-uid="' + u.id + '" onclick="UserMgmt.rejectUser(this.dataset.uid)">✕ Reject</button>'
-              + '</div></div>';
-          }).join('')
-        + '</div>';
-    }
-    var current = Auth.currentUser || {};
 
-    var rows = users.map(function(u) {
-      var isSelf  = u.id === current.id;
-      var info    = Perms.getRoleInfo(u.role);
-      var stats   = Activity.getStats(u.id);
-      var lastLogin = stats.lastLogin ? new Date(stats.lastLogin).toLocaleDateString() : 'Never';
+      el.innerHTML = pendingHtml + '<div class="sec"><div class="card">' + (rows2 || '<div class="empty" style="padding:30px"><div class="empty-icon">👥</div><div class="empty-title">No users yet</div></div>') + '</div></div>'
+        + '<div class="sec" style="text-align:center;padding:0 14px"><div style="font-size:11px;color:var(--t3);line-height:1.6">New staff join from the <strong>Sign In screen → Join Business</strong> tab — they\'ll appear here once they request access.</div></div>';
+    })
+    .catch(function(err) {
+      el.innerHTML = '<div style="padding:20px;color:var(--er)">Could not load team: ' + err.message + '</div>';
+    });
+  },
 
-      return '<div class="list-item">'
-        + '<div class="list-icon" style="background:' + info.bg + ';font-size:20px">' + info.icon + '</div>'
-        + '<div class="list-info">'
-        + '<div class="list-name">' + Utils.esc(u.name || u.username) + (isSelf ? ' <span style="font-size:9px;background:var(--gb);color:var(--g);padding:2px 6px;border-radius:99px;font-weight:700">YOU</span>' : '') + '</div>'
-        + '<div class="list-meta">@' + Utils.esc(u.username) + ' · ' + Perms.roleBadge(u.role) + '</div>'
-        + '<div class="list-meta" style="font-size:10px;color:var(--t3)">Last login: ' + lastLogin + ' · Sales: ' + stats.totalSales + '</div>'
-        + '</div>'
-        + '<div class="list-right">'
-        + '<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;background:' + (u.status==='active'?'var(--okb)':'var(--erb)') + ';color:' + (u.status==='active'?'var(--ok)':'var(--er)') + '">' + (u.status||'active').toUpperCase() + '</span>'
-        + '<div class="list-actions">'
-        + (!isSelf && Perms.can('manage_users') ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openEditUser(\'' + u.id + '\')">✏️</button>' : '')
-        + (!isSelf && Perms.can('manage_roles') && current.role === 'primary_admin' ? '<button class="btn-ghost btn-sm" onclick="UserMgmt.openPromote(\'' + u.id + '\')">⬆️ Role</button>' : '')
-        + '</div></div></div>';
-    }).join('');
+  approveUser: function(userId) {
+    var roleEl = Utils.get('apr-role-' + userId);
+    var role   = roleEl ? roleEl.value : null;
+    Auth.approveUser(userId, role);
+    setTimeout(function(){ UserMgmt._renderTab(); }, 600);
+  },
 
-    el.innerHTML = pendingHtml + '<div class="sec"><div class="card">' + (rows || '<div class="empty" style="padding:30px"><div class="empty-icon">👥</div><div class="empty-title">No users yet</div></div>') + '</div></div>';
+  rejectUser: function(userId) {
+    Auth.rejectUser(userId);
+    setTimeout(function(){ UserMgmt._renderTab(); }, 600);
+  },
+
+  showAddUserInfo: function() {
+    Modal.open({
+      title: '＋ Adding Staff', barColor: 'var(--in)',
+      body: '<div style="text-align:center;padding:10px 0">'
+        + '<div style="font-size:42px;margin-bottom:14px">📲</div>'
+        + '<div style="font-size:13px;color:var(--t2);line-height:1.8">To add a new staff member, have them open SmartStock Pro on their own phone and use the <strong style="color:var(--g)">Join Business</strong> tab on the sign-in screen with your exact business name.</div>'
+        + '<div style="font-size:12px;color:var(--t3);margin-top:14px;line-height:1.7">Their request will appear right here under <strong>Pending Approvals</strong> for you to approve.</div>'
+        + '</div>',
+      footer: '<button class="btn-primary btn-full" onclick="Modal.close()">Got it</button>',
+    });
   },
 
   openAddUser: function() {
