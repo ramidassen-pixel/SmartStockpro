@@ -1,3 +1,4 @@
+/* === allocations.js === */
 // ── EXPENSE ALLOCATIONS MODULE ─────────────────────────────────────────────
 // Daily amount = Total Amount ÷ Days between Start Date and End Date
 // If no end date is set, uses 30 days as the default span
