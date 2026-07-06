@@ -1,3 +1,4 @@
+/* === salary.js === */
 /* SmartStock Pro V5 — Salary, Payroll & Credit Management */
 var Salary = {
   activeTab: 'employees',
