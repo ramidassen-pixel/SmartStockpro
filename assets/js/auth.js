@@ -168,7 +168,7 @@ var Auth = {
     var bizId  = Utils.uid('BIZ');
     var userMeta = { name: name, business_id: bizId, role: 'primary_admin' };
 
-    fetch(SUPABASE_AUTH_URL + '/signup', {
+    fetch(SUPABASE_AUTH_URL + '/signup?redirect_to=' + encodeURIComponent(Auth._confirmRedirect()), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ email: email, password: pw, data: userMeta }),
@@ -268,7 +268,7 @@ var Auth = {
   _continueJoin: function(biz, name, email, phone, pw) {
     var userMeta = { name: name, business_id: biz.id, role: 'sales_employee' };
 
-    fetch(SUPABASE_AUTH_URL + '/signup', {
+    fetch(SUPABASE_AUTH_URL + '/signup?redirect_to=' + encodeURIComponent(Auth._confirmRedirect()), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ email: email, password: pw, data: userMeta }),
@@ -463,6 +463,12 @@ var Auth = {
       el.classList.remove('hidden');
       el.style.display = 'block';
     }
+  },
+
+
+  // URL of the post-confirmation landing page (works on any host)
+  _confirmRedirect: function() {
+    return location.origin + location.pathname.replace(/[^\/]*$/, '') + 'confirm.html';
   },
 
   _strongPw: function(pw) {
