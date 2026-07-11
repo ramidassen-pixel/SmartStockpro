@@ -1,7 +1,8 @@
-const CACHE = 'ssp-v5.2';
+const CACHE = 'ssp-v5.3';
 const ASSETS = [
   './',
   'index.html',
+  'confirm.html',
   'assets/css/variables.css',
   'assets/css/reset.css',
   'assets/css/layout.css',
