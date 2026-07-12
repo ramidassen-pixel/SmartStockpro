@@ -139,6 +139,11 @@ var Settings = {
       + '<div class="settings-info"><div class="settings-name">Change Password</div>'
       + '<div class="settings-desc">Update your password</div></div>'
       + '<div class="settings-arrow">›</div></div>'
+      + '<div class="settings-item" onclick="Settings.openDeactivateModal()">'
+      + '<div class="settings-icon" style="background:var(--dab, rgba(255,107,107,.15))">🚫</div>'
+      + '<div class="settings-info"><div class="settings-name" style="color:var(--da, #FF6B6B)">Deactivate Account</div>'
+      + '<div class="settings-desc">Disable your access to this business</div></div>'
+      + '<div class="settings-arrow">›</div></div>'
       + '</div></div>'
 
       // ── DATA ──────────────────────────────────────────────────────────────
@@ -385,6 +390,69 @@ var Settings = {
   },
 
   // ═══ PASSWORD ════════════════════════════════════════════════════════════
+  // ── Deactivate Account ─────────────────────────────────────────────────
+  openDeactivateModal: function() {
+    var user = Auth.currentUser || {};
+    var isPrimary = (user.role === 'primary_admin');
+    var warn = isPrimary
+      ? '<div style="background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.35);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.6;margin-bottom:14px">'
+        + '⚠️ <strong>You are the Primary Admin.</strong> Deactivating your account does NOT delete the business or its data — but no one will be able to manage it until platform support reactivates you. Your team members keep their own access.</div>'
+      : '<div style="background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.35);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.6;margin-bottom:14px">'
+        + '⚠️ You will be signed out immediately and will NOT be able to sign in again until an administrator of this business reactivates you. Your business data is not deleted.</div>';
+
+    Modal.open({
+      title: '🚫 Deactivate Account', barColor: 'var(--da, #FF6B6B)',
+      body: warn
+          + '<div class="fg"><label class="fl">Enter your password to confirm</label><input class="fi" id="deact-pw" type="password" autocomplete="current-password"></div>'
+          + '<div class="fg"><label class="fl">Type <strong>DEACTIVATE</strong> to confirm</label><input class="fi" id="deact-word" autocomplete="off" autocapitalize="characters"></div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-danger" style="flex:1" onclick="Settings.deactivateAccount()">Deactivate My Account</button>',
+    });
+  },
+
+  deactivateAccount: function() {
+    var pw = Utils.val('deact-pw');
+    var word = (Utils.val('deact-word') || '').trim().toUpperCase();
+    if (!pw) { Toast.show('Enter your password', 'err'); return; }
+    if (word !== 'DEACTIVATE') { Toast.show('Type DEACTIVATE to confirm', 'err'); return; }
+
+    var session = Auth._session;
+    var user = Auth.currentUser;
+    if (!session || !session.access_token || !user) {
+      Toast.show('Session expired — please sign in again', 'err'); return;
+    }
+
+    // Verify identity with a fresh login using the entered password
+    fetch(SUPABASE_AUTH_URL + '/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: user.email, password: pw }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(verify) {
+      if (!verify.ok) { Toast.show('Password is incorrect', 'err'); return; }
+
+      // Mark the account disabled — login is blocked for disabled accounts
+      return fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(user.id), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON,
+          'Authorization': 'Bearer ' + session.access_token,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ status: 'disabled' }),
+      })
+      .then(function(r) {
+        if (!r.ok) { Toast.show('Could not deactivate — try again', 'err'); return; }
+        Modal.close();
+        Toast.show('Account deactivated');
+        setTimeout(function(){ Auth.logout(); }, 900);
+      });
+    })
+    .catch(function(){ Toast.show('Network error — try again', 'err'); });
+  },
+
   openPasswordModal: function() {
     Modal.open({
       title:'Change Password', barColor:'var(--wa)',
