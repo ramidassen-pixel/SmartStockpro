@@ -335,7 +335,7 @@ var Auth = {
     var email = Utils.val('fp-email').trim().toLowerCase();
     if (!email || !email.includes('@')) { Toast.show('Enter a valid email', 'err'); return; }
 
-    fetch(SUPABASE_AUTH_URL + '/recover', {
+    fetch(SUPABASE_AUTH_URL + '/recover?redirect_to=' + encodeURIComponent(Auth._confirmRedirect().replace('confirm.html','reset.html')), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ email: email }),
