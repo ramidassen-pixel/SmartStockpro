@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartStock Pro — Owner Dashboard</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#070A12;color:#f0f3ff;min-height:100vh}
+  .header{background:linear-gradient(135deg,#0d1a2e,#060b14);border-bottom:1px solid rgba(212,168,67,.2);padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+  .logo{font-size:18px;font-weight:900;color:#D4A843;letter-spacing:.06em}
+  .subtitle{font-size:11px;color:rgba(255,255,255,.4);margin-top:2px}
+  .btn{padding:9px 18px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn-gold{background:#D4A843;color:#07080D}
+  .btn-ghost{background:transparent;color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.15)}
+  #login-screen{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 70px);padding:20px}
+  .login-card{background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.2);border-radius:20px;padding:32px 28px;width:100%;max-width:380px;text-align:center}
+  .login-card h2{font-size:22px;font-weight:900;color:#D4A843;margin-bottom:8px}
+  .login-card p{font-size:13px;color:rgba(255,255,255,.5);margin-bottom:24px}
+  input{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:13px 16px;font-size:16px;color:#f0f3ff;margin-bottom:14px;text-align:center;letter-spacing:4px}
+  input:focus{outline:none;border-color:#D4A843}
+  #dashboard{display:none;padding:20px}
+  .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}
+  .stat-card{background:rgba(13,26,46,.8);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;text-align:center}
+  .stat-val{font-size:32px;font-weight:900;margin:6px 0}
+  .stat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4)}
+  .stat-sub{font-size:11px;color:rgba(255,255,255,.3);margin-top:4px}
+  .section{margin-bottom:20px}
+  .sec-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.4);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .card{background:rgba(13,26,46,.8);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .row:last-child{border:none}
+  .row-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .row-name{font-size:13px;font-weight:600;color:#f0f3ff}
+  .row-meta{font-size:11px;color:rgba(255,255,255,.4);margin-top:2px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:800;letter-spacing:.06em}
+  .badge-ok{background:rgba(15,212,125,.15);color:#0FD47D}
+  .badge-wa{background:rgba(255,173,31,.15);color:#FFAD1F}
+  .badge-er{background:rgba(255,77,106,.15);color:#FF4D6A}
+  .empty{text-align:center;padding:40px 20px;color:rgba(255,255,255,.3);font-size:13px}
+  .month-box{background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.15);border-radius:14px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;text-align:center}
+  .month-val{font-size:28px;font-weight:900}
+  .month-label{font-size:11px;color:rgba(255,255,255,.4);margin-top:4px}
+  .refresh-btn{position:fixed;bottom:20px;right:20px;background:#D4A843;color:#07080D;border:none;border-radius:50%;width:52px;height:52px;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(212,168,67,.4)}
+  @media(min-width:600px){.stat-grid{grid-template-columns:repeat(4,1fr)}.month-box{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="logo">🛡️ SmartStock Pro</div>
+    <div class="subtitle">Owner / Platform Dashboard</div>
+  </div>
+  <div id="header-actions" style="display:none">
+    <button class="btn btn-ghost" onclick="logout()" style="font-size:12px">🚪 Logout</button>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div style="font-size:56px;margin-bottom:12px">🔐</div>
+    <h2>Owner Access</h2>
+    <p>Enter your owner PIN to access the platform dashboard</p>
+    <input type="password" id="pin-input" placeholder="••••••••••••" onkeydown="if(event.key==='Enter')tryLogin()">
+    <button class="btn btn-gold" style="width:100%;padding:14px" onclick="tryLogin()">🔓 Unlock Dashboard</button>
+    <div id="login-err" style="color:#FF4D6A;font-size:12px;margin-top:10px;display:none">Incorrect PIN. Try again.</div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div id="dash-content">
+    <div class="empty">Loading platform data...</div>
+  </div>
+</div>
+
+<button class="refresh-btn" id="refresh-btn" style="display:none" onclick="loadData()" title="Refresh">↻</button>
+
+<script>
+var SUPABASE_URL  = 'https://ovbtqkpvhivqnnxojjwu.supabase.co';
+var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnRxa3B2aGl2cW5ueG9qand1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTQ1NDEsImV4cCI6MjA5Njc5MDU0MX0.TZ_B5NBC3uIyqMYs442umeoi3o78CCwTZW6YgHS9efw';
+var OWNER_PIN     = 'ROCKSTONE2026';
+
+function tryLogin() {
+  var pin = document.getElementById('pin-input').value;
+  var err = document.getElementById('login-err');
+  if (pin === OWNER_PIN) {
+    sessionStorage.setItem('sa_unlocked','1');
+    document.getElementById('login-screen').style.display  = 'none';
+    document.getElementById('dashboard').style.display     = 'block';
+    document.getElementById('header-actions').style.display= 'flex';
+    document.getElementById('refresh-btn').style.display   = 'flex';
+    loadData();
+  } else {
+    err.style.display = 'block';
+    document.getElementById('pin-input').value = '';
+  }
+}
+
+function logout() {
+  sessionStorage.removeItem('sa_unlocked');
+  location.reload();
+}
+
+function hdr() {
+  return { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON };
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  var diff  = Date.now() - new Date(iso).getTime();
+  var mins  = Math.floor(diff/60000);
+  var hours = Math.floor(mins/60);
+  var days  = Math.floor(hours/24);
+  if (mins  < 2)   return 'just now';
+  if (mins  < 60)  return mins + 'm ago';
+  if (hours < 24)  return hours + 'h ago';
+  if (days  < 7)   return days + 'd ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = String(s||'');
+  return d.innerHTML;
+}
+
+function today() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function thisMonth() {
+  return new Date().toISOString().slice(0,7);
+}
+
+function loadData() {
+  var el = document.getElementById('dash-content');
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  Promise.all([
+    fetch(SUPABASE_URL+'/rest/v1/platform_businesses?select=*&order=registered_at.desc', {headers:hdr()}).then(function(r){return r.json();}),
+    fetch(SUPABASE_URL+'/rest/v1/platform_users?select=*&order=registered_at.desc',      {headers:hdr()}).then(function(r){return r.json();}),
+    fetch(SUPABASE_URL+'/rest/v1/platform_activity?select=*&order=created_at.desc&limit=30', {headers:hdr()}).then(function(r){return r.json();}),
+  ]).then(function(res) {
+    renderDash(res[0]||[], res[1]||[], res[2]||[]);
+  }).catch(function(err) {
+    el.innerHTML = '<div class="empty" style="color:#FF4D6A">Error: '+esc(err.message)+'</div>';
+  });
+}
+
+function renderDash(biz, users, activity) {
+  var td = today(); var tm = thisMonth();
+  var totalBiz     = biz.length;
+  var activeBiz    = biz.filter(function(b){return b.status==='active';}).length;
+  var totalUsers   = users.length;
+  var activeUsers  = users.filter(function(u){return u.status==='active';}).length;
+  var pendingUsers = users.filter(function(u){return u.status==='pending';}).length;
+  var todayLogins  = activity.filter(function(a){return a.event==='login'&&a.event_date===td;}).length;
+  var newBizMonth  = biz.filter(function(b){return b.registered_at&&b.registered_at.startsWith(tm);}).length;
+  var newUsrMonth  = users.filter(function(u){return u.registered_at&&u.registered_at.startsWith(tm);}).length;
+
+  var html = '';
+
+  // Stat cards
+  html += '<div class="stat-grid">'
+    + stat('🏢', totalBiz,    'Businesses',  activeBiz+' active',    '#D4A843')
+    + stat('👥', totalUsers,  'Users',       activeUsers+' active',   '#6495ED')
+    + stat('⏳', pendingUsers,'Pending',     'need approval',          '#FFAD1F')
+    + stat('🔑', todayLogins, 'Today Logins','active sessions',        '#0FD47D')
+    + '</div>';
+
+  // This month
+  html += '<div class="month-box">'
+    + '<div><div class="month-val" style="color:#D4A843">'+newBizMonth+'</div><div class="month-label">New Businesses<br>This Month</div></div>'
+    + '<div><div class="month-val" style="color:#6495ED">'+newUsrMonth+'</div><div class="month-label">New Users<br>This Month</div></div>'
+    + '</div>';
+
+  // Businesses
+  html += '<div class="section"><div class="sec-title">🏢 Businesses ('+totalBiz+')</div>'
+    + '<div class="card">'
+    + (biz.length ? biz.map(function(b){
+        var sc = b.status==='active'?'badge-ok':b.status==='suspended'?'badge-er':'badge-wa';
+        return '<div class="row">'
+          + '<div class="row-icon" style="background:rgba(212,168,67,.1)">🏢</div>'
+          + '<div style="flex:1"><div class="row-name">'+esc(b.name)+'</div>'
+          + '<div class="row-meta">'+esc(b.owner_name||'')+(b.owner_email?' · '+esc(b.owner_email):'')+'</div>'
+          + '<div class="row-meta">Registered: '+timeAgo(b.registered_at)+' · Last active: '+timeAgo(b.last_active_at)+'</div>'
+          + '</div><div style="text-align:right"><span class="badge '+sc+'">'+b.status.toUpperCase()+'</span>'
+          + '<div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:4px">'+b.plan+'</div>'
+          + '</div></div>';
+      }).join('') : '<div class="empty">No businesses registered yet</div>')
+    + '</div></div>';
+
+  // Users
+  html += '<div class="section"><div class="sec-title">👥 Users ('+totalUsers+')</div>'
+    + '<div class="card">'
+    + (users.length ? users.slice(0,30).map(function(u){
+        var b   = biz.find(function(x){return x.id===u.business_id;});
+        var sc  = u.status==='active'?'badge-ok':u.status==='pending'?'badge-wa':'badge-er';
+        return '<div class="row">'
+          + '<div class="row-icon" style="background:rgba(100,149,237,.1)">👤</div>'
+          + '<div style="flex:1"><div class="row-name">'+esc(u.name)+'</div>'
+          + '<div class="row-meta">'+(b?esc(b.name)+' · ':'')+esc(u.role||'')+'</div>'
+          + '<div class="row-meta">'+(u.email?esc(u.email)+' · ':'')+timeAgo(u.registered_at)+'</div>'
+          + '</div><span class="badge '+sc+'">'+u.status.toUpperCase()+'</span>'
+          + '</div>';
+      }).join('') : '<div class="empty">No users registered yet</div>')
+    + '</div></div>';
+
+  // Activity
+  html += '<div class="section"><div class="sec-title">📋 Recent Activity</div>'
+    + '<div class="card">'
+    + (activity.length ? activity.slice(0,20).map(function(a){
+        var u = users.find(function(x){return x.id===a.user_id;});
+        var b = biz.find(function(x){return x.id===a.business_id;});
+        var icons = {login:'🔑',sale_created:'🧾',report_generated:'📊',product_added:'📦',expense_added:'💸'};
+        return '<div class="row">'
+          + '<div class="row-icon" style="background:rgba(255,255,255,.04)">'+(icons[a.event]||'📋')+'</div>'
+          + '<div style="flex:1"><div class="row-name">'+a.event.replace(/_/g,' ').toUpperCase()+'</div>'
+          + '<div class="row-meta">'+(u?esc(u.name):a.user_id.slice(-8))+' · '+(b?esc(b.name):'')+'</div>'
+          + '</div><div style="font-size:10px;color:rgba(255,255,255,.3)">'+esc(a.event_date)+'</div>'
+          + '</div>';
+      }).join('') : '<div class="empty">No activity yet</div>')
+    + '</div></div>';
+
+  document.getElementById('dash-content').innerHTML = html;
+  document.title = 'SmartStock Pro Admin · '+totalBiz+' biz · '+totalUsers+' users';
+}
+
+function stat(icon, val, label, sub, color) {
+  return '<div class="stat-card">'
+    + '<div style="font-size:26px">'+icon+'</div>'
+    + '<div class="stat-val" style="color:'+color+'">'+val+'</div>'
+    + '<div class="stat-label">'+label+'</div>'
+    + '<div class="stat-sub">'+sub+'</div>'
+    + '</div>';
+}
+
+// Auto-login if already unlocked this session
+if (sessionStorage.getItem('sa_unlocked')==='1') {
+  document.getElementById('login-screen').style.display  = 'none';
+  document.getElementById('dashboard').style.display     = 'block';
+  document.getElementById('header-actions').style.display= 'flex';
+  document.getElementById('refresh-btn').style.display   = 'flex';
+  loadData();
+}
+</script>
+</body>
+</html>

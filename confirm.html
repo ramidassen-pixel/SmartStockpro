@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#070A12">
+<title>Email Confirmed — SmartStock Pro</title>
+<style>
+  :root {
+    --bg:  #070A12;
+    --bg3: #111525;
+    --bg5: #1D2238;
+    --g:   #D4A843;
+    --t1:  #EDEFF7;
+    --t2:  #9AA1B9;
+    --ok:  #3DD68C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--t1);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(120% 80% at 50% 0%, #0E1322 0%, var(--bg) 60%);
+  }
+  .brand {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-bottom: 4px;
+  }
+  .brand-sub {
+    color: var(--g);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: linear-gradient(180deg, var(--bg3), rgba(17,21,37,.6));
+    border: 1px solid var(--bg5);
+    border-radius: 18px;
+    padding: 40px 28px 32px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  .check {
+    width: 84px; height: 84px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    background: rgba(61,214,140,.10);
+    border: 2px solid var(--ok);
+    display: flex; align-items: center; justify-content: center;
+    animation: pop .5s cubic-bezier(.2,1.6,.4,1) both;
+  }
+  .check svg { width: 40px; height: 40px; stroke: var(--ok); }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  h1 { font-size: 24px; margin-bottom: 10px; }
+  h1 .gold { color: var(--g); }
+  p.msg { color: var(--t2); font-size: 15px; line-height: 1.65; margin-bottom: 28px; }
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 15px 18px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #E7C468, var(--g));
+    color: #14100A;
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 6px 24px rgba(212,168,67,.35);
+  }
+  .btn:active { transform: translateY(1px); }
+  .foot { margin-top: 28px; color: var(--t2); font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .check { animation: none; } }
+</style>
+</head>
+<body>
+
+  <div class="brand">SmartStock Pro</div>
+  <div class="brand-sub">Business Management System</div>
+
+  <div class="card">
+    <div class="check" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h1>🎉 Congratulations<span class="gold">!</span></h1>
+    <p class="msg">
+      Your email has been confirmed and your account is ready.<br>
+      You can now sign in and start managing your business.
+    </p>
+    <a class="btn" href="index.html">Sign In to SmartStock Pro →</a>
+  </div>
+
+  <div class="foot">SmartStock Pro · Rock Stone · Monrovia, Liberia</div>
+
+</body>
+</html>

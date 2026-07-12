@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#070A12">
+<title>Forgot Password — SmartStock Pro</title>
+<style>
+  :root {
+    --bg:  #070A12;
+    --bg3: #111525;
+    --bg5: #1D2238;
+    --g:   #D4A843;
+    --t1:  #EDEFF7;
+    --t2:  #9AA1B9;
+    --ok:  #3DD68C;
+    --err: #FF6B6B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--t1);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(120% 80% at 50% 0%, #0E1322 0%, var(--bg) 60%);
+  }
+  .brand { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+  .brand-sub {
+    color: var(--g); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 40px;
+  }
+  .card {
+    width: 100%; max-width: 420px; text-align: left;
+    background: linear-gradient(180deg, var(--bg3), rgba(17,21,37,.6));
+    border: 1px solid var(--bg5); border-radius: 18px;
+    padding: 32px 26px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  h1 { font-size: 21px; text-align: center; margin-bottom: 6px; }
+  p.sub { color: var(--t2); font-size: 14px; text-align: center; margin-bottom: 24px; line-height: 1.6; }
+  label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em;
+          text-transform: uppercase; color: var(--t2); margin: 16px 0 6px; }
+  input {
+    width: 100%; padding: 14px;
+    background: var(--bg); color: var(--t1);
+    border: 1px solid var(--bg5); border-radius: 10px;
+    font-size: 16px; outline: none;
+  }
+  input:focus { border-color: var(--g); }
+  .msg { display: none; margin-top: 16px; padding: 12px 14px; border-radius: 10px; font-size: 14px; line-height: 1.6; }
+  .msg.err { display: block; background: rgba(255,107,107,.10); border: 1px solid rgba(255,107,107,.35); color: var(--err); }
+  .msg.ok  { display: block; background: rgba(61,214,140,.10); border: 1px solid rgba(61,214,140,.35); color: var(--ok); }
+  .btn {
+    display: block; width: 100%; margin-top: 22px;
+    padding: 15px 18px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, #E7C468, var(--g));
+    color: #14100A; font-size: 16px; font-weight: 700;
+    cursor: pointer; box-shadow: 0 6px 24px rgba(212,168,67,.35);
+  }
+  .btn:disabled { opacity: .55; }
+  .btn.link {
+    background: none; box-shadow: none; color: var(--g);
+    font-size: 14px; margin-top: 10px; text-decoration: none; text-align: center;
+  }
+  .foot { margin-top: 28px; color: var(--t2); font-size: 12px; }
+</style>
+</head>
+<body>
+
+  <div class="brand">SmartStock Pro</div>
+  <div class="brand-sub">Business Management System</div>
+
+  <div class="card">
+    <h1>🔑 Forgot Password</h1>
+    <p class="sub">Enter your registered email and we'll send you a link to set a new password.</p>
+
+    <div id="form-area">
+      <label for="email">Email address</label>
+      <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="your@email.com">
+
+      <div id="msg" class="msg"></div>
+
+      <button id="send-btn" class="btn" onclick="sendReset()">📧 Send Reset Link</button>
+    </div>
+
+    <a class="btn link" href="index.html">← Back to Sign In</a>
+  </div>
+
+  <div class="foot">SmartStock Pro · Rock Stone · Monrovia, Liberia</div>
+
+<script>
+var SUPABASE_AUTH_URL = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/auth/v1';
+var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnRxa3B2aGl2cW5ueG9qand1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTQ1NDEsImV4cCI6MjA5Njc5MDU0MX0.TZ_B5NBC3uIyqMYs442umeoi3o78CCwTZW6YgHS9efw';
+
+function sendReset() {
+  var email = document.getElementById('email').value.trim().toLowerCase();
+  var msg = document.getElementById('msg');
+  var btn = document.getElementById('send-btn');
+  msg.className = 'msg'; msg.textContent = '';
+
+  if (!email || email.indexOf('@') === -1) {
+    msg.className = 'msg err';
+    msg.textContent = 'Enter a valid email address.';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Sending…';
+
+  var resetUrl = location.origin + location.pathname.replace(/[^\/]*$/, '') + 'reset.html';
+
+  fetch(SUPABASE_AUTH_URL + '/recover?redirect_to=' + encodeURIComponent(resetUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+    body: JSON.stringify({ email: email }),
+  })
+  .then(function () {
+    btn.disabled = false; btn.textContent = '📧 Send Reset Link';
+    msg.className = 'msg ok';
+    msg.textContent = 'If an account exists for ' + email + ', a reset link has been sent. Check your inbox and spam folder, then tap the link.';
+  })
+  .catch(function () {
+    btn.disabled = false; btn.textContent = '📧 Send Reset Link';
+    msg.className = 'msg err';
+    msg.textContent = 'Network error — check your connection and try again.';
+  });
+}
+document.getElementById('email').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') sendReset();
+});
+</script>
+</body>
+</html>
