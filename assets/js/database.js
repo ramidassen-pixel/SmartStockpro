@@ -40,6 +40,12 @@ var DB = {
   init: function(bizId, token) {
     this._bizId = bizId;
     this._token = token;
+    // 🔒 DATA ISOLATION: every business gets its OWN local cache key.
+    // Previously a single shared key ('ssp_v5') let a new account on the
+    // same device see the previous business's data.
+    this.KEY = 'ssp_v5_' + bizId;
+    Utils.storage.del('ssp_v5'); // remove the old shared cache for good
+    this._data = null;           // drop anything loaded before login
     this.load(); // always load local cache first so UI is instant
     this._injectSyncIndicator();
     this._startRealtime();
