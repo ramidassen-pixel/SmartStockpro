@@ -321,6 +321,20 @@ var Auth = {
      FORGOT PASSWORD — real Supabase Auth reset email
   ═══════════════════════════════════════════════════════ */
   forgotPassword: function() {
+    // Fallback: if the modal system is unavailable for any reason,
+    // use a simple prompt so the feature always works.
+    if (typeof Modal === 'undefined' || !Utils.get('modal-overlay')) {
+      var email = window.prompt('Enter your registered email address:');
+      if (email && email.includes('@')) {
+        fetch(SUPABASE_AUTH_URL + '/recover?redirect_to=' + encodeURIComponent(Auth._confirmRedirect().replace('confirm.html','reset.html')), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+          body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        }).then(function(){ alert('If an account exists for that email, a reset link has been sent.'); })
+          .catch(function(){ alert('Network error - try again.'); });
+      }
+      return;
+    }
     Modal.open({
       title: 'Reset Password', barColor: 'var(--wa)',
       sub: 'Enter your registered email address',
