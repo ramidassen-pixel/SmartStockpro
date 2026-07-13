@@ -68,12 +68,10 @@ var Auth = {
       .then(function(rows) {
         var row = (Array.isArray(rows) && rows[0]) || null;
         if (!row) {
-          if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
-            Auth._err('login-err', '❌ Account found but no business profile exists. Contact support.');
-          } else {
-            Utils.storage.del('ssp_session');
-            App.showLogin();
-          }
+          // SELF-HEALING: the profile is missing (e.g. a signup that was
+          // interrupted). Create it automatically and continue — a verified
+          // user must never be locked out by missing records.
+          Auth._provisionProfile();
           return;
         }
         if (row.status === 'pending') {
@@ -122,11 +120,97 @@ var Auth = {
       })
       .catch(function(err) {
         if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
-          Auth._err('login-err', '❌ Could not load profile: ' + err.message);
+          Auth._err('login-err', '❌ Unable to connect. Please check your internet connection.');
         } else {
           App.showLogin();
         }
       });
+  },
+
+  // ── Self-healing profile provisioning ─────────────────────────────────────
+  // Rebuilds the business profile + default records for a verified account
+  // whose signup was interrupted. Safe to run repeatedly: every write uses
+  // ignore-duplicates, so nothing is ever created twice.
+  _provisionTried: false,
+
+  _provisionProfile: function() {
+    if (Auth._provisionTried) {
+      Utils.storage.del('ssp_session');
+      App.showLogin();
+      setTimeout(function(){ Auth._err('login-err', '❌ We could not finish setting up your account. Please check your connection and try again.'); }, 100);
+      return;
+    }
+    Auth._provisionTried = true;
+
+    var su = (Auth._session && Auth._session.user) || {};
+    var meta = su.user_metadata || {};
+    var email = su.email || meta.email || '';
+    var name  = meta.name || (email ? email.split('@')[0] : 'Owner');
+    var role  = meta.role || 'primary_admin';
+    var bizId = meta.business_id || Utils.uid('BIZ');
+    var bizName = meta.business_name || (name + "'s Business");
+    var phone = meta.phone || '';
+
+    var hdr = {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON,
+      'Authorization': 'Bearer ' + Auth._session.access_token,
+      'Prefer': 'return=minimal,resolution=ignore-duplicates',
+    };
+    function put(table, conflictKey, body) {
+      return fetch(SUPABASE_URL + '/rest/v1/' + table + '?on_conflict=' + conflictKey, {
+        method: 'POST', headers: hdr, body: JSON.stringify(body),
+      });
+    }
+
+    var isOwner = (role === 'primary_admin');
+    var userStatus = isOwner ? 'active' : 'pending'; // team joins still need approval
+
+    // 1) Business (owners only — joiners attach to an existing business)
+    var start = isOwner
+      ? put('platform_businesses', 'id', {
+          id: bizId, name: bizName, owner_name: name, owner_email: email,
+          owner_phone: phone, status: 'active',
+        })
+      : Promise.resolve();
+
+    start
+    // 2) Owner / user profile
+    .then(function() {
+      return put('platform_users', 'id', {
+        id: su.id, business_id: bizId, name: name, email: email,
+        phone: phone, role: role, status: userStatus,
+      });
+    })
+    // 3) Default records (owners only)
+    .then(function() {
+      if (!isOwner) return;
+      return Promise.all([
+        put('biz_settings', 'business_id', {
+          business_id: bizId,
+          data: {
+            bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email,
+            expenseCategories: ['General','Rent','Utilities','Transport','Salaries','Supplies'],
+          },
+        }),
+        put('biz_invoice_counters', 'business_id', {
+          business_id: bizId, next_number: 1, prefix: 'INV-', pad_length: 6,
+        }),
+        put('biz_categories', 'business_id', {
+          business_id: bizId,
+          categories: ['General','Materials','Tools','Services'],
+        }),
+      ]);
+    })
+    // 4) Continue the normal login — the profile now exists
+    .then(function() {
+      Auth._loadProfileAndEnter();
+    })
+    .catch(function() {
+      Utils.storage.del('ssp_session');
+      App.showLogin();
+      setTimeout(function(){ Auth._err('login-err', '❌ Unable to connect. Please check your internet connection.'); }, 100);
+    });
   },
 
   // ── Enter the app once all status gates have passed ──────────────────────
@@ -255,7 +339,7 @@ var Auth = {
     if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
 
     var bizId  = Utils.uid('BIZ');
-    var userMeta = { name: name, business_id: bizId, role: 'primary_admin' };
+    var userMeta = { name: name, business_id: bizId, role: 'primary_admin', business_name: bizName, phone: phone };
 
     fetch(SUPABASE_AUTH_URL + '/signup?redirect_to=' + encodeURIComponent(Auth._confirmRedirect()), {
       method: 'POST',
@@ -355,7 +439,7 @@ var Auth = {
   },
 
   _continueJoin: function(biz, name, email, phone, pw) {
-    var userMeta = { name: name, business_id: biz.id, role: 'sales_employee' };
+    var userMeta = { name: name, business_id: biz.id, role: 'sales_employee', business_name: biz.name, phone: phone };
 
     fetch(SUPABASE_AUTH_URL + '/signup?redirect_to=' + encodeURIComponent(Auth._confirmRedirect()), {
       method: 'POST',
