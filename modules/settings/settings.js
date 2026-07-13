@@ -144,6 +144,11 @@ var Settings = {
       + '<div class="settings-info"><div class="settings-name" style="color:var(--da, #FF6B6B)">Deactivate Account</div>'
       + '<div class="settings-desc">Disable your access to this business</div></div>'
       + '<div class="settings-arrow">›</div></div>'
+      + '<div class="settings-item" onclick="Settings.openDeleteModal()">'
+      + '<div class="settings-icon" style="background:rgba(255,107,107,.15)">🗑</div>'
+      + '<div class="settings-info"><div class="settings-name" style="color:var(--da, #FF6B6B)">Delete Account</div>'
+      + '<div class="settings-desc">Permanently delete after 30 days</div></div>'
+      + '<div class="settings-arrow">›</div></div>'
       + '</div></div>'
 
       // ── DATA ──────────────────────────────────────────────────────────────
@@ -390,6 +395,83 @@ var Settings = {
   },
 
   // ═══ PASSWORD ════════════════════════════════════════════════════════════
+  // ── Delete Account (30-day soft delete) ─────────────────────────────────
+  openDeleteModal: function() {
+    Modal.open({
+      title: '🗑 Delete Account', barColor: 'var(--er, #FF6B6B)',
+      body: '<div style="font-size:14px;line-height:1.8">'
+          + 'Deleting your account will remove your business data from SmartStock Pro.<br><br>'
+          + 'Your account will be scheduled for <strong>permanent deletion after 30 days</strong>.<br><br>'
+          + 'During those 30 days, you can recover your account by logging in again.</div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-danger" style="flex:1" onclick="Settings.openDeleteConfirmModal()">Delete Account</button>',
+    });
+  },
+
+  openDeleteConfirmModal: function() {
+    Modal.close();
+    setTimeout(function() {
+      Modal.open({
+        title: '🗑 Confirm Deletion', barColor: 'var(--er, #FF6B6B)',
+        body: '<div class="fg"><label class="fl">Enter your password</label><input class="fi" id="del-pw" type="password" autocomplete="current-password"></div>'
+            + '<div class="fg"><label class="fl">Type <strong>DELETE</strong> to confirm</label><input class="fi" id="del-word" autocomplete="off" autocapitalize="characters"></div>',
+        footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+              + '<button class="btn-danger" style="flex:1" onclick="Settings.requestAccountDeletion()">Schedule Deletion</button>',
+      });
+    }, 180);
+  },
+
+  requestAccountDeletion: function() {
+    var pw = Utils.val('del-pw');
+    var word = (Utils.val('del-word') || '').trim().toUpperCase();
+    if (!pw) { Toast.show('Enter your password', 'err'); return; }
+    if (word !== 'DELETE') { Toast.show('Type DELETE to confirm', 'err'); return; }
+
+    var session = Auth._session;
+    var user = Auth.currentUser;
+    if (!session || !session.access_token || !user) {
+      Toast.show('Session expired — please sign in again', 'err'); return;
+    }
+
+    // Verify identity with the entered password
+    fetch(SUPABASE_AUTH_URL + '/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ email: user.email, password: pw }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(verify) {
+      if (!verify.ok) { Toast.show('Password is incorrect', 'err'); return; }
+
+      var hdr = {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + session.access_token,
+        'Prefer': 'return=minimal',
+      };
+      var mark = { status: 'pending_deletion', deletion_requested_at: new Date().toISOString() };
+
+      // Mark the user; if they own the business, mark the business too
+      return fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(user.id), {
+        method: 'PATCH', headers: hdr, body: JSON.stringify(mark),
+      })
+      .then(function(r1) {
+        if (!r1.ok) throw new Error('mark user failed');
+        if (user.role === 'primary_admin' && user.currentBusinessId) {
+          return fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(user.currentBusinessId), {
+            method: 'PATCH', headers: hdr, body: JSON.stringify(mark),
+          }).then(function(r2){ if (!r2.ok) throw new Error('mark business failed'); });
+        }
+      })
+      .then(function() {
+        Modal.close();
+        Toast.show('🗑 Deletion scheduled — sign in within 30 days to restore');
+        setTimeout(function(){ Auth.logout(); }, 1400);
+      });
+    })
+    .catch(function(){ Toast.show('Could not schedule deletion — try again', 'err'); });
+  },
+
   // ── Deactivate Account ─────────────────────────────────────────────────
   openDeactivateModal: function() {
     var user = Auth.currentUser || {};
