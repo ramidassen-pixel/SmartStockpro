@@ -93,7 +93,45 @@ var Auth = {
           return;
         }
 
-        var user = {
+        // ── ACCOUNT DELETION RECOVERY GATE ────────────────────────────────
+        // If this account is inside its 30-day deletion window, offer
+        // Restore / Continue Deletion instead of entering the app.
+        if (row.status === 'pending_deletion') {
+          Auth._showDeletionRecovery(row, null);
+          return;
+        }
+
+        // Also check whether the whole BUSINESS is scheduled for deletion
+        fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(row.business_id) + '&select=id,status,deletion_requested_at', { headers: hdr })
+          .then(function(r){ return r.json(); })
+          .then(function(bz) {
+            var biz = (Array.isArray(bz) && bz[0]) || null;
+            if (biz && biz.status === 'pending_deletion') {
+              if ((row.role || '') === 'primary_admin') {
+                Auth._showDeletionRecovery(row, biz);
+              } else {
+                Utils.storage.del('ssp_session');
+                App.showLogin();
+                setTimeout(function(){ Auth._err('login-err', '🗑 This business is scheduled for deletion by its owner.'); }, 100);
+              }
+              return;
+            }
+            Auth._enterApp(row);
+          })
+          .catch(function(){ Auth._enterApp(row); });
+      })
+      .catch(function(err) {
+        if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
+          Auth._err('login-err', '❌ Could not load profile: ' + err.message);
+        } else {
+          App.showLogin();
+        }
+      });
+  },
+
+  // ── Enter the app once all status gates have passed ──────────────────────
+  _enterApp: function(row) {
+    var user = {
           id:                row.id,
           username:          row.email,
           name:              row.name,
@@ -133,14 +171,65 @@ var Auth = {
         } catch(e) {
           App.showShell();
         }
-      })
-      .catch(function(err) {
-        if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
-          Auth._err('login-err', '❌ Could not load profile: ' + err.message);
-        } else {
-          App.showLogin();
-        }
-      });
+  },
+
+  // ── Deletion recovery dialog ──────────────────────────────────────────────
+  _pendingRestore: null,
+
+  _showDeletionRecovery: function(row, biz) {
+    var requestedAt = new Date((biz && biz.deletion_requested_at) || row.deletion_requested_at || Date.now());
+    var daysLeft = Math.max(0, 30 - Math.floor((Date.now() - requestedAt.getTime()) / 86400000));
+    Auth._pendingRestore = { row: row, biz: biz };
+    Modal.open({
+      title: '⏳ Scheduled for Deletion', barColor: 'var(--er, #FF6B6B)',
+      body: '<div style="font-size:14px;line-height:1.8;text-align:center;padding:6px 2px">'
+          + 'Your account is scheduled for deletion.<br><br>'
+          + '<span style="font-size:19px;font-weight:700">You have ' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' remaining to restore it.</span><br><br>'
+          + '<span style="opacity:.8">Restoring brings everything back exactly as you left it — inventory, customers, sales, expenses, reports, settings and cloud sync. Nothing is lost.<br><br>Choosing Continue Deletion signs you out and deletion proceeds as scheduled.</span></div>',
+      footer: '<button class="btn-ghost" onclick="Auth._continueDeletion()">Continue Deletion</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="Auth._restoreAccount()">✅ Restore Account</button>',
+    });
+  },
+
+  _continueDeletion: function() {
+    Auth._pendingRestore = null;
+    try { Modal.close(); } catch(e) {}
+    Utils.storage.del('ssp_session');
+    App.showLogin();
+  },
+
+  _restoreAccount: function() {
+    var ctx = Auth._pendingRestore || {};
+    var row = ctx.row, biz = ctx.biz;
+    if (!row || !Auth._session) { Auth._continueDeletion(); return; }
+    var hdr = {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON,
+      'Authorization': 'Bearer ' + Auth._session.access_token,
+      'Prefer': 'return=minimal',
+    };
+    var restore = { status: 'active', deletion_requested_at: null };
+
+    fetch(SUPABASE_URL + '/rest/v1/platform_users?id=eq.' + encodeURIComponent(row.id), {
+      method: 'PATCH', headers: hdr, body: JSON.stringify(restore),
+    })
+    .then(function(r1) {
+      if (!r1.ok) throw new Error('user restore failed');
+      if (biz) {
+        return fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(biz.id), {
+          method: 'PATCH', headers: hdr, body: JSON.stringify(restore),
+        }).then(function(r2){ if (!r2.ok) throw new Error('business restore failed'); });
+      }
+    })
+    .then(function() {
+      Auth._pendingRestore = null;
+      try { Modal.close(); } catch(e) {}
+      Toast.show('✅ Account restored — welcome back!');
+      Auth._loadProfileAndEnter();
+    })
+    .catch(function() {
+      Toast.show('Could not restore — check your connection and try again', 'err');
+    });
   },
 
   /* ═══════════════════════════════════════════════════════
