@@ -102,6 +102,7 @@ var Products = {
       title:'Add Product', sub:'Fill in product details',
       body: this._form(),
       footer:`<button class="btn-ghost" onclick="Modal.close()">Cancel</button>
+              <button class="btn-ghost" style="flex:1" onclick="Products.save(true)">💾 Save & Add New</button>
               <button class="btn-primary" style="flex:1" onclick="Products.save()">💾 Save Product</button>`,
     });
   },
@@ -382,7 +383,7 @@ var Products = {
     if (listEl) listEl.innerHTML = this._catListHtml(cats);
   },
 
-  save() {
+  save(andNew) {
     const name  = Utils.val('pf-name');
     const price = parseFloat(Utils.val('pf-price')||0);
     const qty   = parseInt(Utils.val('pf-qty')||0);
@@ -404,6 +405,12 @@ var Products = {
     Modal.close();
     this.render();
     Notifs.check();
+    // Save & Add New: instantly reopen a clean form for the next product
+    if (andNew && !this.editId) {
+      const self = this;
+      setTimeout(function(){ self.openAddModal(); }, 220);
+    }
+    this.editId = null;
   },
 
   del(id, name) {
