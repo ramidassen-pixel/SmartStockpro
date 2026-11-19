@@ -346,13 +346,17 @@ var Auth = {
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ email: email, password: pw, data: userMeta }),
     })
-    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ return { ok: r.ok, status: r.status, data: d }; }); })
     .then(function(result) {
       if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
       if (!result.ok) {
         var msg = (result.data && result.data.msg) || (result.data && result.data.error_description) || 'Sign up failed';
         if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
           Auth._err('signup-err', '❌ An account with this email already exists. Please sign in.');
+        } else if (result.status === 429) {
+          Auth._err('signup-err', '❌ Too many sign-up attempts. Please wait a few minutes and try again.');
+        } else if (result.status >= 500) {
+          Auth._err('signup-err', '❌ Your account could not be created because the confirmation email could not be sent. Please try again later or contact support.');
         } else {
           Auth._err('signup-err', '❌ ' + msg);
         }
@@ -459,12 +463,16 @@ var Auth = {
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ email: email, password: pw, data: userMeta }),
     })
-    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ return { ok: r.ok, status: r.status, data: d }; }); })
     .then(function(result) {
       if (!result.ok) {
         var msg = (result.data && result.data.msg) || 'Sign up failed';
         if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
-          Auth._err('join-err', '❌ An account with this email already exists.');
+          Auth._err('join-err', '❌ An account with this email already exists. Please sign in.');
+        } else if (result.status === 429) {
+          Auth._err('join-err', '❌ Too many sign-up attempts. Please wait a few minutes and try again.');
+        } else if (result.status >= 500) {
+          Auth._err('join-err', '❌ Your account could not be created because the confirmation email could not be sent. Please try again later or contact the business owner.');
         } else {
           Auth._err('join-err', '❌ ' + msg);
         }
