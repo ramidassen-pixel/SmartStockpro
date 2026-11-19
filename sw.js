@@ -1,4 +1,4 @@
-const CACHE = 'ssp-v6.1';
+const CACHE = 'ssp-v6.2';
 const ASSETS = [
   './',
   'index.html',
@@ -37,7 +37,7 @@ const ASSETS = [
   'modules/settings/settings.js',
   'assets/js/globalsearch.js',
   'modules/settings/more.js',
-  'modules/users/usermgmt.js',
+  'modules/usermgmt/usermgmt.js',
   'modules/closing/closing.js',
   'modules/support/support.js',
   'modules/settings/backup.js',
@@ -48,7 +48,8 @@ const ASSETS = [
   'pwa/icon-512.png'
 ];
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' bypasses the browser HTTP cache so a new version never precaches stale files
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

@@ -178,36 +178,43 @@ var Sales = {
     var sugg = Utils.get('s-cust-suggestions');
     var info = Utils.get('s-cust-info');
     if (!sugg) return;
+    // Typing changes the customer, so drop any previously selected record
+    var idEl = Utils.get('s-cust-id'); if (idEl) idEl.value = '';
+    var tag = Utils.get('s-cust-tag'); if (tag) tag.style.display = 'none';
     var q = (val||'').toLowerCase().trim();
     if (!q) { sugg.style.display='none'; if(info) info.style.display='none'; return; }
     var custs = DB.getCustomers();
     var matches = custs.filter(function(c){
-      return c.name.toLowerCase().includes(q)
+      return (c.name||'').toLowerCase().includes(q)
           || (c.phone && c.phone.includes(q))
           || (c.email && c.email.toLowerCase().includes(q));
     }).slice(0, 8);
+    sugg.innerHTML = '';
     if (!matches.length) {
-      sugg.innerHTML = '<div style="padding:10px 14px;font-size:12px;color:var(--t3)">No customer found</div>'
-        + '<div onclick="Sales.selectWalkin()" style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use as walk-in</div>';
-        + 'style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use "'+Utils.esc(val)+'" as walk-in</div>';
+      sugg.innerHTML = '<div style="padding:10px 14px;font-size:12px;color:var(--t3)">No customer found — a new customer record will be created on save</div>'
+        + '<div onclick="Sales.selectWalkin()" style="padding:10px 14px;font-size:12px;font-weight:600;color:var(--g);cursor:pointer;border-top:1px solid var(--bd)">＋ Use as walk-in instead</div>';
       sugg.style.display = 'block';
     } else {
-      sugg.innerHTML = matches.map(function(c){
+      // Build real DOM nodes (outerHTML would discard the click listeners)
+      matches.forEach(function(c){
         var debt = '';
         try { if (c.balance>0) debt = ' · Owes: '+Utils.cur(c.balance, DB.getSettings().currency||'$'); } catch(e){}
         var div = document.createElement('div');
         div.style.cssText = 'padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bd)';
         div.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--t1)">'+Utils.esc(c.name)+'</div>'
-          + '<div style="font-size:11px;color:var(--t2)">'+(c.phone||'')+debt+'</div>';
-        div.setAttribute('data-cid', c.id||'');
-        div.setAttribute('data-cname', c.name||'');
-        div.addEventListener('click', function(){
-          Sales.selectCust(this.getAttribute('data-cid'), this.getAttribute('data-cname'));
-        });
-        return div.outerHTML;
-      }).join('');
+          + '<div style="font-size:11px;color:var(--t2)">'+Utils.esc(c.phone||'')+debt+'</div>';
+        div.addEventListener('click', function(){ Sales.selectCust(c); });
+        sugg.appendChild(div);
+      });
       sugg.style.display = 'block';
     }
+  },
+
+  selectWalkin: function() {
+    var nameEl = Utils.get('s-cust-name'); if (nameEl) nameEl.value = 'Walk-in Customer';
+    var idEl   = Utils.get('s-cust-id');   if (idEl)   idEl.value   = '';
+    var sugg   = Utils.get('s-cust-suggestions'); if (sugg) sugg.style.display = 'none';
+    var tag    = Utils.get('s-cust-tag');  if (tag)    tag.style.display  = 'none';
   },
 
 
@@ -229,9 +236,10 @@ var Sales = {
     if (idEl)   idEl.value   = c_id   || '';
     if (sugg)   sugg.style.display = 'none';
     var tag=Utils.get('s-cust-tag');
+    if (!tag) return;
     // Show customer info panel
-    var c = DB.getCustomers().find(function(x){ return x.id===id; });
-    var allSales = DB.getSales().filter(function(s){ return s.customerId===id||s.customer===name; });
+    var c = DB.getCustomers().find(function(x){ return x.id===c_id; });
+    var allSales = DB.getSales().filter(function(s){ return (c_id && s.customerId===c_id)||s.customer===c_name; });
     var openBal  = allSales.filter(function(s){ return s.status!=='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.balance)||0); },0);
     var cur = DB.getSettings().currency||'$';
     var lastSale = allSales[0];
@@ -453,7 +461,8 @@ var Sales = {
     var discAmt  = sub*(this.discount/100);
     var total    = sub-discAmt;
     var _amtStr  = Utils.val('s-amt-paid').trim();
-    var paidRaw  = _amtStr === '' ? total : (parseFloat(_amtStr)||0);
+    // Empty field = full payment, except on Credit where it means nothing paid yet
+    var paidRaw  = _amtStr === '' ? (method==='Credit' ? 0 : total) : (parseFloat(_amtStr)||0);
     var paid     = Math.min(paidRaw, total);
     var balance  = Math.max(0, total-paid);
     var status   = paid>0&&balance>0?'Partial':(paid<=0&&method==='Credit')?'Credit':'Paid';
@@ -498,7 +507,7 @@ var Sales = {
       Utils.get('s-cust-id').value='';
       Utils.get('s-cust-tag').style.display='none';
       var d=Utils.get('s-disc'); if(d) d.value='0';
-      var p2=Utils.get('s-amt-paid'); if(p2) p2.value='0';
+      var p2=Utils.get('s-amt-paid'); if(p2) p2.value='';
       var nt=Utils.get('s-notes'); if(nt) nt.value='';
       this.renderCart();
       Toast.show('Ready for next sale','ok');
@@ -672,6 +681,14 @@ var Sales = {
     window._printArgs=null;
     if(args.type==='payment') Sales.printPaymentReceipt(args.saleId,args.paymentId,args.amount,args.newBalance);
     else Sales.printReceipt(args.saleId);
+  },
+
+  // Print button in the invoice view (button carries data-id)
+  _printById: function(btn){
+    var id = btn && btn.getAttribute ? btn.getAttribute('data-id') : btn;
+    if (!id) return;
+    Modal.close();
+    setTimeout(function(){ Sales.printReceipt(id); }, 200);
   },
 
   // ── PRINT RECEIPT ──────────────────────────────────────────────────────────

@@ -577,24 +577,30 @@ var UserMgmt = {
     });
   },
 
-  openCustomRole: function() {
+  openCustomRole: function(editId) {
+    var existing = editId ? (DB.get('customRoles') || []).find(function(r){ return r.id === editId; }) : null;
+    var perms = (existing && existing.permissions) || {};
     var permsHtml = Object.keys(PERMISSIONS).map(function(k) {
       return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd)">'
-        + '<input type="checkbox" id="cr-' + k + '" style="width:18px;height:18px;cursor:pointer">'
+        + '<input type="checkbox" id="cr-' + k + '"' + (perms[k] ? ' checked' : '') + ' style="width:18px;height:18px;cursor:pointer">'
         + '<label for="cr-' + k + '" style="font-size:13px;color:var(--t1);cursor:pointer;flex:1">' + PERMISSIONS[k] + '</label>'
         + '</div>';
     }).join('');
+    var idArg = existing ? '\'' + existing.id + '\'' : '';
     Modal.open({
-      title: 'Create Custom Role', barColor: 'var(--pu)',
-      body: '<div class="fg"><label class="fl">Role Name *</label><input class="fi" id="cr-name" placeholder="e.g. Procurement Officer"></div>'
+      title: existing ? 'Edit Custom Role' : 'Create Custom Role', barColor: 'var(--pu)',
+      body: '<div class="fg"><label class="fl">Role Name *</label><input class="fi" id="cr-name" placeholder="e.g. Procurement Officer" value="' + (existing ? Utils.esc(existing.name) : '') + '"></div>'
           + '<div class="sec-title" style="padding:12px 0 6px">Select Permissions</div>'
           + '<div class="card card-body">' + permsHtml + '</div>',
-      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="UserMgmt.saveCustomRole()">💾 Create Role</button>',
+      footer: (existing ? '<button class="btn-danger" onclick="UserMgmt.deleteCustomRole(' + idArg + ')">🗑</button>' : '')
+            + '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-primary" style="flex:1" onclick="UserMgmt.saveCustomRole(' + idArg + ')">💾 ' + (existing ? 'Save Changes' : 'Create Role') + '</button>',
     });
   },
 
-  saveCustomRole: function() {
+  editCustomRole: function(id) { UserMgmt.openCustomRole(id); },
+
+  saveCustomRole: function(editId) {
     var name = Utils.val('cr-name').trim();
     if (!name) { Toast.show('Role name required', 'err'); return; }
     var perms = {};
@@ -602,12 +608,34 @@ var UserMgmt = {
       var cb = Utils.get('cr-' + k);
       perms[k] = cb ? cb.checked : false;
     });
-    var role = { id: Utils.uid('ROLE'), name: name, permissions: perms, isCustom: true, createdAt: Utils.today() };
     var customs = DB.get('customRoles') || [];
-    customs.push(role);
-    DB.set('customRoles', customs);
-    AuditLog.record('CREATE_ROLE', 'Created custom role: ' + name);
-    Toast.show('Role "' + name + '" created ✓', 'ok');
+    var existing = editId ? customs.find(function(r){ return r.id === editId; }) : null;
+    if (existing) {
+      existing.name = name;
+      existing.permissions = perms;
+      existing.updatedAt = Utils.today();
+      DB.set('customRoles', customs);
+      AuditLog.record('UPDATE_ROLE', 'Updated custom role: ' + name);
+      Toast.show('Role "' + name + '" updated ✓', 'ok');
+    } else {
+      var role = { id: Utils.uid('ROLE'), name: name, permissions: perms, isCustom: true, createdAt: Utils.today() };
+      customs.push(role);
+      DB.set('customRoles', customs);
+      AuditLog.record('CREATE_ROLE', 'Created custom role: ' + name);
+      Toast.show('Role "' + name + '" created ✓', 'ok');
+    }
+    Modal.close();
+    UserMgmt.render();
+  },
+
+  deleteCustomRole: function(id) {
+    var customs = DB.get('customRoles') || [];
+    var role = customs.find(function(r){ return r.id === id; });
+    if (!role) return;
+    if (!confirm('Delete custom role "' + role.name + '"?')) return;
+    DB.set('customRoles', customs.filter(function(r){ return r.id !== id; }));
+    AuditLog.record('DELETE_ROLE', 'Deleted custom role: ' + role.name);
+    Toast.show('Role deleted', 'ok');
     Modal.close();
     UserMgmt.render();
   },
