@@ -20,8 +20,27 @@
     } catch(e) { showError((e && e.message) ? e.message : String(e)); }
   }, 3000);
   if ('serviceWorker' in navigator) {
+    // When a new app version takes over, reload once so this device runs the new code
+    var hadController = !!navigator.serviceWorker.controller, reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      if (!hadController || reloaded) { hadController = true; return; }
+      reloaded = true;
+      // Don't interrupt someone in the middle of a form
+      if (document.querySelector('#modal-overlay.open, #modal-overlay:not(.hidden)')) {
+        document.addEventListener('visibilitychange', function once() {
+          if (document.visibilityState === 'hidden') { document.removeEventListener('visibilitychange', once); location.reload(); }
+        });
+      } else {
+        location.reload();
+      }
+    });
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('sw.js').catch(function(){});
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function(reg) {
+        // Check for a new version whenever the app is brought back to the front
+        document.addEventListener('visibilitychange', function() {
+          if (document.visibilityState === 'visible') reg.update().catch(function(){});
+        });
+      }).catch(function(){});
     });
   }
 })();

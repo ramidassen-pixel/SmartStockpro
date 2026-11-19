@@ -122,10 +122,19 @@ function sendReset() {
     headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
     body: JSON.stringify({ email: email }),
   })
-  .then(function () {
+  .then(function (r) {
     btn.disabled = false; btn.textContent = '📧 Send Reset Link';
-    msg.className = 'msg ok';
-    msg.textContent = 'If an account exists for ' + email + ', a reset link has been sent. Check your inbox and spam folder, then tap the link.';
+    if (r.ok) {
+      msg.className = 'msg ok';
+      msg.textContent = 'If an account exists for ' + email + ', a reset link has been sent. Check your inbox and spam folder, then tap the link.';
+    } else {
+      msg.className = 'msg err';
+      msg.textContent = r.status === 429
+        ? 'Too many reset requests. Please wait a few minutes and try again.'
+        : r.status >= 500
+          ? 'The reset email could not be sent because the app\'s email service is not working right now. Please try again later or contact the business owner.'
+          : 'Could not send the reset link (error ' + r.status + '). Please check the email address and try again.';
+    }
   })
   .catch(function () {
     btn.disabled = false; btn.textContent = '📧 Send Reset Link';

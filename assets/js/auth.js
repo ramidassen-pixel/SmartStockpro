@@ -511,6 +511,14 @@ var Auth = {
   /* ═══════════════════════════════════════════════════════
      FORGOT PASSWORD — real Supabase Auth reset email
   ═══════════════════════════════════════════════════════ */
+  // Turn the /recover response status into an honest message (it used to say "sent" even on failure)
+  _recoverMessage: function(status) {
+    if (status >= 200 && status < 300) return { ok: true, text: 'If an account exists for that email, a reset link has been sent. Check your inbox and spam folder.' };
+    if (status === 429) return { ok: false, text: 'Too many reset requests. Please wait a few minutes and try again.' };
+    if (status >= 500) return { ok: false, text: 'The reset email could not be sent because the app\'s email service is not working right now. Please try again later or contact the business owner.' };
+    return { ok: false, text: 'Could not send the reset link (error ' + status + '). Please check the email address and try again.' };
+  },
+
   forgotPassword: function() {
     // Fallback: if the modal system is unavailable for any reason,
     // use a simple prompt so the feature always works.
@@ -521,7 +529,7 @@ var Auth = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
           body: JSON.stringify({ email: email.trim().toLowerCase() }),
-        }).then(function(){ alert('If an account exists for that email, a reset link has been sent.'); })
+        }).then(function(r){ alert(Auth._recoverMessage(r.status).text); })
           .catch(function(){ alert('Network error - try again.'); });
       }
       return;
@@ -545,9 +553,10 @@ var Auth = {
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ email: email }),
     })
-    .then(function(){
-      Modal.close();
-      Toast.show('If an account exists for that email, a reset link has been sent.', 'ok');
+    .then(function(r){
+      var m = Auth._recoverMessage(r.status);
+      if (m.ok) Modal.close();
+      Toast.show(m.text, m.ok ? 'ok' : 'err');
     })
     .catch(function() {
       Toast.show('Network error — try again', 'err');
