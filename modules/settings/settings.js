@@ -228,6 +228,10 @@ var Settings = {
           }
           DB.set('users',users);
           Auth.currentUser.photo=resized;
+          // Save in the synced business settings so the photo appears on every device
+          var photos=Object.assign({}, DB.getSettings().userPhotos||{});
+          photos[user.id]=resized;
+          DB.saveSettings({userPhotos:photos});
         }
         Settings._applyUserPhoto(resized,user);
         Toast.show('Profile photo updated ✓','ok');
@@ -246,6 +250,9 @@ var Settings = {
       }
       DB.set('users',users);
       delete Auth.currentUser.photo;
+      var photos=Object.assign({}, DB.getSettings().userPhotos||{});
+      photos[user.id]=''; // empty (not deleted) so other devices also clear it
+      DB.saveSettings({userPhotos:photos});
     }
     Settings._applyUserPhoto('',user);
     Toast.show('Photo removed','warn');

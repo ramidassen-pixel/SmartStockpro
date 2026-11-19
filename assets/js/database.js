@@ -38,6 +38,7 @@ var DB = {
 
   // ── Initialise after login ───────────────────────────────────────────────
   init: function(bizId, token) {
+    var self = this;
     this._bizId = bizId;
     this._token = token;
     // 🔒 DATA ISOLATION: every business gets its OWN local cache key.
@@ -47,8 +48,22 @@ var DB = {
     Utils.storage.del('ssp_v5'); // remove the old shared cache for good
     this._data = null;           // drop anything loaded before login
     this.load(); // always load local cache first so UI is instant
+    this._loadQueue();
     this._injectSyncIndicator();
     this._startRealtime();
+
+    // Keep devices in step: re-sync when the app comes back to the foreground,
+    // when the network returns, and every 2 minutes while open.
+    if (!this._listenersAdded) {
+      this._listenersAdded = true;
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') self._resyncSoon();
+      });
+      window.addEventListener('online', function() { self._resyncSoon(); });
+      setInterval(function() {
+        if (document.visibilityState === 'visible') self._resyncSoon();
+      }, 120000);
+    }
   },
 
   _injectSyncIndicator: function() {
@@ -61,179 +76,291 @@ var DB = {
     document.body.appendChild(el);
   },
 
-  // ── Pull ALL cloud data for this business on login ───────────────────────
-  syncFromCloud: function() {
+  // ── Cloud table ↔ local key map ──────────────────────────────────────────
+  _tables: [
+    ['biz_products','products'],
+    ['biz_sales','sales'],
+    ['biz_customers','customers'],
+    ['biz_suppliers','suppliers'],
+    ['biz_expenses','expenses'],
+    ['biz_employees','employees'],
+    ['biz_payroll','payroll'],
+    ['biz_payments','payments'],
+    ['biz_quotations','quotations'],
+    ['biz_allocations','allocations'],
+    ['biz_purchase_orders','purchaseOrders'],
+    ['biz_grns','grns'],
+    ['biz_supplier_bills','supplierBills'],
+    ['biz_stock_movements','stockMovements'],
+    ['biz_monthly_statements','monthlyStatements'],
+  ],
+
+  // ── Access token: refresh before it expires (Supabase tokens last ~1h) ───
+  _ensureToken: function() {
     var self = this;
-    if (!self._bizId || !self._token) return Promise.resolve();
-    self._setStatus('syncing');
-
-    var tables = [
-      ['biz_products','products'],
-      ['biz_sales','sales'],
-      ['biz_customers','customers'],
-      ['biz_suppliers','suppliers'],
-      ['biz_expenses','expenses'],
-      ['biz_employees','employees'],
-      ['biz_payroll','payroll'],
-      ['biz_payments','payments'],
-      ['biz_quotations','quotations'],
-      ['biz_allocations','allocations'],
-      ['biz_purchase_orders','purchaseOrders'],
-      ['biz_grns','grns'],
-      ['biz_supplier_bills','supplierBills'],
-      ['biz_stock_movements','stockMovements'],
-      ['biz_monthly_statements','monthlyStatements'],
-    ];
-
-    var fetches = tables.map(function(pair) {
-      var cloudTable = pair[0], localKey = pair[1];
-      return fetch(self._rest(cloudTable) + '?business_id=eq.' + encodeURIComponent(self._bizId) + '&deleted=eq.false&select=id,data,updated_at', {
-        headers: self._hdr()
-      })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        if (!Array.isArray(rows)) return;
-        // Merge strategy: cloud wins by updated_at
-        var localArr = self.get(localKey) || [];
-        var localMap = {};
-        localArr.forEach(function(item) { localMap[item.id] = item; });
-        rows.forEach(function(row) {
-          var cloudItem = row.data;
-          cloudItem.id = row.id;
-          cloudItem._updatedAt = row.updated_at;
-          var local = localMap[row.id];
-          // Cloud wins unless local is strictly newer
-          if (!local || !local._updatedAt || row.updated_at >= local._updatedAt) {
-            localMap[row.id] = cloudItem;
-          }
-        });
-        self._data[localKey] = Object.values(localMap);
-      })
-      .catch(function() {});
-    });
-
-    // Also fetch settings and categories
-    fetches.push(
-      fetch(self._rest('biz_settings') + '?business_id=eq.' + encodeURIComponent(self._bizId), { headers: self._hdr() })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        if (Array.isArray(rows) && rows.length > 0) {
-          var cloud = rows[0].data || {};
-          var local = self._data.settings || {};
-          // Cloud wins
-          self._data.settings = Object.assign({}, local, cloud);
-          self._data.settings._updatedAt = rows[0].updated_at;
-        }
-      }).catch(function(){}),
-
-      fetch(self._rest('biz_categories') + '?business_id=eq.' + encodeURIComponent(self._bizId), { headers: self._hdr() })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        if (Array.isArray(rows) && rows.length > 0) {
-          self._data.productCategories = rows[0].categories;
-        }
-      }).catch(function(){})
-    );
-
-    return Promise.all(fetches).then(function() {
-      self.save();
-      self._setStatus('synced');
-      // Flush any pending offline writes
-      self._flushPending();
-    }).catch(function() {
-      self._setStatus('error');
-    });
+    if (typeof Auth === 'undefined' || !Auth._session) return Promise.resolve(self._token);
+    var sess = Auth._session;
+    if (sess.access_token && Date.now() < (sess.expires_at || 0) - 120000) {
+      self._token = sess.access_token;
+      return Promise.resolve(self._token);
+    }
+    if (typeof Auth.refreshSession !== 'function') return Promise.resolve(self._token);
+    return Auth.refreshSession().then(function(newSess) {
+      if (newSess && newSess.access_token) {
+        var changed = self._token !== newSess.access_token;
+        self._token = newSess.access_token;
+        // Realtime socket was joined with the old token: reconnect with the new one
+        if (changed && self._realtimeSub) { try { self._realtimeSub.close(); } catch(e) {} }
+      }
+      return self._token;
+    }).catch(function() { return self._token; });
   },
 
-  // ── Push a single record to cloud (upsert) ───────────────────────────────
-  _push: function(cloudTable, id, data) {
-    var self = this;
-    if (!self._bizId || !self._token) {
-      self._pendingUploads.push({ cloudTable: cloudTable, id: id, data: data });
-      self._setStatus('offline');
-      return;
-    }
-    self._setStatus('syncing');
-    var payload = { id: id, business_id: self._bizId, data: data, deleted: false };
-    fetch(self._rest(cloudTable), {
-      method: 'POST',
-      headers: self._hdr(),
-      body: JSON.stringify(payload),
-    })
-    .then(function(r) {
-      if (r.ok || r.status === 409) { self._setStatus('synced'); }
-      else { self._setStatus('error'); self._pendingUploads.push({ cloudTable: cloudTable, id: id, data: data }); }
-    })
-    .catch(function() {
-      self._setStatus('offline');
-      self._pendingUploads.push({ cloudTable: cloudTable, id: id, data: data });
+  // ── Persistent upload queue (survives refresh / app close) ───────────────
+  _queueKey: function() { return 'ssp_pending_' + (this._bizId || 'none'); },
+  _loadQueue: function() {
+    var q = Utils.storage.get(this._queueKey());
+    // carry over anything queued in memory before login
+    this._pendingUploads = (Array.isArray(q) ? q : []).concat(this._pendingUploads || []);
+    this._saveQueue();
+  },
+  _saveQueue: function() {
+    if (this._bizId) Utils.storage.set(this._queueKey(), this._pendingUploads);
+  },
+  _enqueue: function(item) {
+    // Keep only the latest change per record
+    this._pendingUploads = (this._pendingUploads || []).filter(function(x) {
+      return !(x.cloudTable === item.cloudTable && x.id === item.id);
     });
+    this._pendingUploads.push(item);
+    this._saveQueue();
+    this._scheduleFlush();
+  },
+  _isPending: function(cloudTable, id) {
+    return (this._pendingUploads || []).some(function(x) { return x.cloudTable === cloudTable && x.id === id; });
+  },
+  _scheduleFlush: function() {
+    var self = this;
+    clearTimeout(self._flushTimer);
+    self._flushTimer = setTimeout(function() { self._flushPending(); }, 300);
+  },
+
+  // ── Push a single record to cloud (queued, upserted) ─────────────────────
+  _push: function(cloudTable, id, data) {
+    this._enqueue({ op: 'up', cloudTable: cloudTable, id: id, data: data });
   },
 
   // ── Soft-delete a record in cloud ────────────────────────────────────────
   _pushDelete: function(cloudTable, id) {
-    var self = this;
-    if (!self._bizId || !self._token) return;
-    self._setStatus('syncing');
-    fetch(self._rest(cloudTable) + '?id=eq.' + encodeURIComponent(id) + '&business_id=eq.' + encodeURIComponent(self._bizId), {
-      method: 'PATCH',
-      headers: self._hdr(),
-      body: JSON.stringify({ deleted: true }),
-    })
-    .then(function(r){ self._setStatus(r.ok ? 'synced' : 'error'); })
-    .catch(function(){ self._setStatus('offline'); });
+    this._enqueue({ op: 'del', cloudTable: cloudTable, id: id });
   },
 
   // ── Push settings to cloud ───────────────────────────────────────────────
   _pushSettings: function() {
-    var self = this;
-    if (!self._bizId || !self._token) return;
-    self._setStatus('syncing');
-    var payload = { business_id: self._bizId, data: self._data.settings };
-    fetch(self._rest('biz_settings'), {
-      method: 'POST',
-      headers: self._hdr(),
-      body: JSON.stringify(payload),
-    })
-    .then(function(r){ self._setStatus(r.ok ? 'synced' : 'error'); })
-    .catch(function(){ self._setStatus('offline'); });
+    this._enqueue({ op: 'settings', cloudTable: 'biz_settings', id: '_settings' });
   },
 
   // ── Push categories to cloud ─────────────────────────────────────────────
   _pushCategories: function() {
-    var self = this;
-    if (!self._bizId || !self._token) return;
-    var payload = { business_id: self._bizId, categories: self._data.productCategories || [] };
-    fetch(self._rest('biz_categories'), {
-      method: 'POST',
-      headers: self._hdr(),
-      body: JSON.stringify(payload),
-    }).catch(function(){});
+    this._enqueue({ op: 'categories', cloudTable: 'biz_categories', id: '_categories' });
   },
 
-  // ── Flush offline queue ───────────────────────────────────────────────────
+  // Send one queued item; resolves true on success
+  _sendItem: function(item) {
+    var self = this, url, opts;
+    var hdr = self._hdr();
+    if (item.op === 'del') {
+      url = self._rest(item.cloudTable) + '?id=eq.' + encodeURIComponent(item.id) + '&business_id=eq.' + encodeURIComponent(self._bizId);
+      opts = { method: 'PATCH', headers: hdr, body: JSON.stringify({ deleted: true }) };
+    } else if (item.op === 'settings') {
+      url = self._rest('biz_settings');
+      opts = { method: 'POST', headers: hdr, body: JSON.stringify({ business_id: self._bizId, data: self._data.settings, updated_at: new Date().toISOString() }) };
+    } else if (item.op === 'categories') {
+      url = self._rest('biz_categories');
+      opts = { method: 'POST', headers: hdr, body: JSON.stringify({ business_id: self._bizId, categories: self._data.productCategories || [] }) };
+    } else if (item.op === 'bulk') {
+      url = self._rest(item.cloudTable);
+      opts = { method: 'POST', headers: hdr, body: JSON.stringify(item.rows) };
+    } else {
+      url = self._rest(item.cloudTable);
+      opts = { method: 'POST', headers: hdr, body: JSON.stringify({ id: item.id, business_id: self._bizId, data: item.data, deleted: false }) };
+    }
+    return fetch(url, opts).then(function(r) { return { ok: r.ok || r.status === 409, status: r.status }; });
+  },
+
+  // ── Flush queue: send everything, keep what fails for next time ──────────
   _flushPending: function() {
     var self = this;
-    var queue = self._pendingUploads.slice();
-    self._pendingUploads = [];
-    queue.forEach(function(item) {
-      self._push(item.cloudTable, item.id, item.data);
+    if (!self._bizId || !self._token) { if ((self._pendingUploads||[]).length) self._setStatus('offline'); return Promise.resolve(); }
+    if (self._flushing) return self._flushing;
+    if (!(self._pendingUploads || []).length) return Promise.resolve();
+    self._setStatus('syncing');
+
+    self._flushing = self._ensureToken().then(function() {
+      var queue = self._pendingUploads.slice();
+      var failed = false, retriedAuth = false;
+      // Sequential, so order is kept and we can stop on network loss
+      return queue.reduce(function(p, item) {
+        return p.then(function() {
+          if (failed) return;
+          return self._sendItem(item).then(function(res) {
+            if (res.status === 401 && !retriedAuth) {
+              retriedAuth = true;
+              if (Auth._session) Auth._session.expires_at = 0; // force refresh
+              return self._ensureToken().then(function() { return self._sendItem(item); });
+            }
+            return res;
+          }).then(function(res) {
+            if (res && res.ok) {
+              // remove exactly this item (a newer change for the same record may have been queued meanwhile)
+              self._pendingUploads = self._pendingUploads.filter(function(x) { return x !== item; });
+              self._saveQueue();
+            } else {
+              failed = true;
+            }
+          }).catch(function() { failed = true; });
+        });
+      }, Promise.resolve()).then(function() {
+        self._setStatus(failed ? (navigator.onLine === false ? 'offline' : 'error') : 'synced');
+      });
+    }).then(function() { self._flushing = null; }, function() { self._flushing = null; });
+    return self._flushing;
+  },
+
+  // GET with the current token; if the server rejects it (expired/revoked), refresh once and retry
+  _authGet: function(url) {
+    var self = this;
+    return fetch(url, { headers: self._hdr() }).then(function(r) {
+      if (r.status !== 401) return r;
+      if (typeof Auth !== 'undefined' && Auth._session) Auth._session.expires_at = 0;
+      return self._ensureToken().then(function() { return fetch(url, { headers: self._hdr() }); });
     });
+  },
+
+  // ── Fetch every row of a table, page by page (API returns max 1000 per call)
+  _fetchAll: function(cloudTable, select) {
+    var self = this, PAGE = 1000, all = [];
+    function page(offset) {
+      return self._authGet(self._rest(cloudTable) + '?business_id=eq.' + encodeURIComponent(self._bizId)
+          + '&select=' + select + '&order=id.asc&limit=' + PAGE + '&offset=' + offset)
+        .then(function(r) {
+          if (!r.ok) throw new Error(cloudTable + ' HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(rows) {
+          if (!Array.isArray(rows)) throw new Error(cloudTable + ' bad response');
+          all = all.concat(rows);
+          return rows.length === PAGE ? page(offset + PAGE) : all;
+        });
+    }
+    return page(0);
+  },
+
+  _resyncSoon: function() {
+    var self = this;
+    if (!self._bizId || !self._token) return;
+    if (self._lastSync && Date.now() - self._lastSync < 20000) return; // not more than every 20s
+    clearTimeout(self._resyncTimer);
+    self._resyncTimer = setTimeout(function() { self.syncFromCloud(); }, 500);
+  },
+
+  // ── Pull ALL cloud data for this business ────────────────────────────────
+  syncFromCloud: function() {
+    var self = this;
+    if (!self._bizId || !self._token) return Promise.resolve();
+    if (self._syncing) return self._syncing;
+    self._lastSync = Date.now();
+    self._setStatus('syncing');
+    var hadError = false;
+
+    self._syncing = self._ensureToken()
+    .then(function() { return self._flushPending(); }) // send local changes first so the cloud copy is current
+    .then(function() {
+      var fetches = self._tables.map(function(pair) {
+        var cloudTable = pair[0], localKey = pair[1];
+        return self._fetchAll(cloudTable, 'id,data,updated_at,deleted').then(function(rows) {
+          var localArr = self.get(localKey) || [];
+          var localMap = {}, cloudIds = {};
+          localArr.forEach(function(item) { localMap[item.id] = item; });
+          rows.forEach(function(row) {
+            cloudIds[row.id] = true;
+            if (self._isPending(cloudTable, row.id)) return; // local change not uploaded yet: keep it
+            if (row.deleted) { delete localMap[row.id]; return; }
+            var cloudItem = row.data || {};
+            cloudItem.id = row.id;
+            cloudItem._updatedAt = row.updated_at;
+            localMap[row.id] = cloudItem;
+          });
+          // Self-heal: records that only exist on this device (an earlier upload failed) → upload them now
+          var missing = Object.keys(localMap).filter(function(id) {
+            return id && !cloudIds[id] && !self._isPending(cloudTable, id);
+          });
+          for (var i = 0; i < missing.length; i += 200) {
+            var rowsOut = missing.slice(i, i + 200).map(function(id) {
+              return { id: id, business_id: self._bizId, data: localMap[id], deleted: false };
+            });
+            self._pendingUploads.push({ op: 'bulk', cloudTable: cloudTable, id: '_bulk_' + Date.now() + '_' + i, rows: rowsOut });
+          }
+          // Keep newest first for the lists the app builds that way (sales/expenses)
+          var merged = Object.values(localMap);
+          if (localKey === 'sales' || localKey === 'expenses') merged.sort(function(a, b) {
+            var da = String(a.date || a.createdAt || ''), db = String(b.date || b.createdAt || '');
+            return da < db ? 1 : da > db ? -1 : 0;
+          });
+          self._data[localKey] = merged;
+        }).catch(function() { hadError = true; });
+      });
+
+      fetches.push(
+        self._authGet(self._rest('biz_settings') + '?business_id=eq.' + encodeURIComponent(self._bizId))
+        .then(function(r){ if (!r.ok) throw new Error('settings'); return r.json(); })
+        .then(function(rows) {
+          if (Array.isArray(rows) && rows.length > 0 && !self._isPending('biz_settings', '_settings')) {
+            var cloud = rows[0].data || {};
+            self._data.settings = Object.assign({}, self._data.settings || {}, cloud);
+            self._data.settings._updatedAt = rows[0].updated_at;
+          }
+        }).catch(function(){ hadError = true; }),
+
+        self._authGet(self._rest('biz_categories') + '?business_id=eq.' + encodeURIComponent(self._bizId))
+        .then(function(r){ if (!r.ok) throw new Error('categories'); return r.json(); })
+        .then(function(rows) {
+          if (Array.isArray(rows) && rows.length > 0 && !self._isPending('biz_categories', '_categories')) {
+            self._data.productCategories = rows[0].categories;
+          }
+        }).catch(function(){ hadError = true; })
+      );
+      return Promise.all(fetches);
+    })
+    .then(function() {
+      self.save();
+      self._saveQueue();
+      self._notifyRefresh(true);
+      return self._flushPending(); // uploads any self-heal batches
+    })
+    .then(function() {
+      if (hadError) self._setStatus(navigator.onLine === false ? 'offline' : 'error');
+      else if (!(self._pendingUploads || []).length) self._setStatus('synced');
+    })
+    .catch(function() { self._setStatus('error'); })
+    .then(function() { self._syncing = null; });
+    return self._syncing;
   },
 
   // ── Realtime subscriptions (Supabase Realtime via websocket) ─────────────
   _startRealtime: function() {
     var self = this;
     if (!self._bizId || !self._token) return;
-    // Use native WebSocket to subscribe to Postgres changes
+    if (self._realtimeSub && self._realtimeSub.readyState <= 1) return; // already connecting/open
     try {
       var wsUrl = 'wss://ovbtqkpvhivqnnxojjwu.supabase.co/realtime/v1/websocket?apikey=' + self._anon() + '&vsn=1.0.0';
       var ws = new WebSocket(wsUrl);
       self._realtimeSub = ws;
+      var hb = null, ref = 100;
 
       ws.onopen = function() {
         // Join the realtime channel for this business
-        var tables = ['biz_products','biz_sales','biz_customers','biz_suppliers','biz_expenses','biz_employees','biz_payroll','biz_payments','biz_quotations','biz_allocations','biz_purchase_orders','biz_grns','biz_supplier_bills','biz_stock_movements','biz_categories','biz_settings'];
+        var tables = self._tables.map(function(p){ return p[0]; }).concat(['biz_categories','biz_settings']);
         tables.forEach(function(t, i) {
           ws.send(JSON.stringify({
             topic: 'realtime:public:' + t + ':business_id=eq.' + self._bizId,
@@ -242,6 +369,12 @@ var DB = {
             ref: String(i + 1)
           }));
         });
+        // Heartbeat: the server drops sockets that stay silent for ~60s
+        hb = setInterval(function() {
+          try { ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++ref) })); } catch(e) {}
+        }, 25000);
+        // Catch up on anything missed while disconnected
+        self._resyncSoon();
       };
 
       ws.onmessage = function(e) {
@@ -250,33 +383,27 @@ var DB = {
           if (msg.event !== 'postgres_changes') return;
           var payload = msg.payload && msg.payload.data;
           if (!payload) return;
-          // Re-pull the changed table from cloud to keep local cache in sync
           self._pullTableByEvent(payload.table, payload.type, payload.record, payload.old_record);
         } catch(err) {}
       };
 
-      ws.onerror = function() { self._setStatus('offline'); };
+      ws.onerror = function() {};
       ws.onclose = function() {
-        // Reconnect after 5s
-        setTimeout(function() { self._startRealtime(); }, 5000);
+        clearInterval(hb);
+        if (self._realtimeSub === ws) self._realtimeSub = null;
+        // Reconnect after 5s (with a fresh token if needed)
+        setTimeout(function() { self._ensureToken().then(function(){ self._startRealtime(); }); }, 5000);
       };
     } catch(e) {}
   },
 
   _pullTableByEvent: function(cloudTable, eventType, record, oldRecord) {
     var self = this;
-    var keyMap = {
-      'biz_products':'products','biz_sales':'sales','biz_customers':'customers',
-      'biz_suppliers':'suppliers','biz_expenses':'expenses','biz_employees':'employees',
-      'biz_payroll':'payroll','biz_payments':'payments','biz_quotations':'quotations',
-      'biz_allocations':'allocations','biz_purchase_orders':'purchaseOrders',
-      'biz_grns':'grns','biz_supplier_bills':'supplierBills',
-      'biz_stock_movements':'stockMovements','biz_monthly_statements':'monthlyStatements',
-    };
-    var localKey = keyMap[cloudTable];
+    var localKey = null;
+    self._tables.forEach(function(p){ if (p[0] === cloudTable) localKey = p[1]; });
 
     if (cloudTable === 'biz_settings') {
-      if (record && record.data) {
+      if (record && record.data && !self._isPending('biz_settings', '_settings')) {
         self._data.settings = Object.assign({}, self._data.settings, record.data);
         self.save();
         self._notifyRefresh();
@@ -284,7 +411,7 @@ var DB = {
       return;
     }
     if (cloudTable === 'biz_categories') {
-      if (record && record.categories) {
+      if (record && record.categories && !self._isPending('biz_categories', '_categories')) {
         self._data.productCategories = record.categories;
         self.save();
         self._notifyRefresh();
@@ -292,11 +419,12 @@ var DB = {
       return;
     }
     if (!localKey) return;
+    var id = (record && record.id) || (oldRecord && oldRecord.id);
+    if (id && self._isPending(cloudTable, id)) return; // our own newer change is on its way
 
     var arr = self._data[localKey] || [];
     if (eventType === 'DELETE' || (record && record.deleted)) {
-      var delId = (oldRecord && oldRecord.id) || (record && record.id);
-      self._data[localKey] = arr.filter(function(x){ return x.id !== delId; });
+      self._data[localKey] = arr.filter(function(x){ return x.id !== id; });
     } else if (record && record.data) {
       var item = record.data;
       item.id = record.id;
@@ -310,16 +438,30 @@ var DB = {
     self._notifyRefresh();
   },
 
-  // Notify the app to re-render the current page after a realtime push
-  _notifyRefresh: function() {
-    try {
-      var page = window.location.hash || '';
-      if (typeof Router !== 'undefined' && Router.current) {
-        // Soft refresh: let each module re-render if it has a render() fn
-        var mod = Router.current;
-        if (mod && typeof mod.render === 'function') mod.render();
-      }
-    } catch(e) {}
+  // Re-render the current page (and top bar) after cloud data changes
+  _notifyRefresh: function(now) {
+    var self = this;
+    clearTimeout(self._refreshTimer);
+    self._refreshTimer = setTimeout(function() {
+      try {
+        // Profile photo + logo live in the synced settings
+        var s = self.getSettings();
+        if (typeof Auth !== 'undefined' && Auth.currentUser && typeof Settings !== 'undefined') {
+          var photos = s.userPhotos || {};
+          if (Object.prototype.hasOwnProperty.call(photos, Auth.currentUser.id)) {
+            Auth.currentUser.photo = photos[Auth.currentUser.id] || '';
+          }
+          Settings._applyUserPhoto(Auth.currentUser.photo || '', Auth.currentUser);
+          Settings._applyBizLogo(s.bizLogo || '');
+          var bn = document.getElementById('tb-biz-name'); if (bn && s.bizName) bn.textContent = s.bizName;
+        }
+        // Don't redraw under the user's fingers while they type in the page
+        var a = document.activeElement;
+        var typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT') && !a.closest('.modal, #modal, [id*="modal"]');
+        if (!typing && typeof Router !== 'undefined' && typeof Router.refresh === 'function') Router.refresh();
+        if (typeof Notifs !== 'undefined') Notifs.check();
+      } catch(e) {}
+    }, now ? 0 : 400);
   },
 
   // ── Local cache (localStorage) ───────────────────────────────────────────

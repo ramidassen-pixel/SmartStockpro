@@ -26,7 +26,17 @@ var Router = {
     // Scroll to top
     var pc = Utils.get('pages-container');
     if (pc) pc.scrollTop = 0;
-    // Render page
+    this._render(page);
+  },
+
+  // Re-draw the current page in place (no scroll reset) — used after cloud sync
+  refresh: function(){
+    var el = Utils.get('app-shell');
+    if (!el || el.style.display === 'none' || el.classList.contains('hidden')) return;
+    this._render(this.current);
+  },
+
+  _render: function(page){
     var renders = {
       dashboard: () => Dashboard.render(),
       products:  () => Products.render(),

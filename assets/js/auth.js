@@ -230,6 +230,11 @@ var Auth = {
           createdAt:         row.registered_at,
           photo:             row.photo || '',
         };
+        // Profile photos are stored in the synced business settings so every device sees them
+        try {
+          var _photos = (DB.getSettings() || {}).userPhotos || {};
+          if (_photos[row.id]) user.photo = _photos[row.id];
+        } catch(e) {}
 
         Auth.currentUser = user;
         try { if (typeof Activity !== 'undefined') Activity.startSession(user); } catch(e) {}
@@ -240,12 +245,7 @@ var Auth = {
           DB.init(row.business_id, Auth._session.access_token);
           App.showShell(); // show UI immediately from local cache
           DB.syncFromCloud().then(function() {
-            // Refresh current page after cloud data loads
-            try {
-              if (typeof Router !== 'undefined' && Router.current && typeof Router.current.render === 'function') {
-                Router.current.render();
-              }
-            } catch(e) {}
+            // (DB.syncFromCloud re-renders the current page and photo itself)
             if (user.role === 'primary_admin') {
               var pendingCount = 0;
               try { pendingCount = (DB.get('users') || []).filter(function(u){ return u.status === 'pending'; }).length; } catch(e){}
@@ -707,6 +707,32 @@ var Auth = {
      SAME device); if the access token has expired, uses the
      refresh token to get a new one automatically.
   ═══════════════════════════════════════════════════════ */
+  // Get a fresh access token with the refresh token. Shared by all callers so
+  // only one refresh request is in flight at a time. Resolves with the session.
+  refreshSession: function() {
+    if (Auth._refreshing) return Auth._refreshing;
+    var sess = Auth._session || Utils.storage.get('ssp_session');
+    if (!sess || !sess.refresh_token) return Promise.resolve(sess);
+    Auth._refreshing = fetch(SUPABASE_AUTH_URL + '/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ refresh_token: sess.refresh_token }),
+    })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+      if (!result.ok || !result.data.access_token) return Auth._session;
+      Auth._session = {
+        access_token:  result.data.access_token,
+        refresh_token: result.data.refresh_token,
+        expires_at:    Date.now() + (result.data.expires_in || 3600) * 1000,
+      };
+      Utils.storage.set('ssp_session', Auth._session);
+      return Auth._session;
+    })
+    .then(function(s){ Auth._refreshing = null; return s; }, function(){ Auth._refreshing = null; return Auth._session; });
+    return Auth._refreshing;
+  },
+
   bootSync: function() {
     var sess = Utils.storage.get('ssp_session');
     if (!sess || !sess.access_token) return false;
