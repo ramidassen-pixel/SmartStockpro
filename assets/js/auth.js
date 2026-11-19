@@ -359,6 +359,12 @@ var Auth = {
         return;
       }
 
+      // Email already registered: Supabase answers 200 with no identities and sends NO email
+      if (Auth._isRepeatSignup(result.data)) {
+        Auth._err('signup-err', '❌ This email already has an account. Sign in instead, or use "Forgot password?" if you can\'t remember it.');
+        return;
+      }
+
       var authUserId = result.data.id || (result.data.user && result.data.user.id);
 
       // Create the matching business + user rows in our own tables
@@ -384,6 +390,13 @@ var Auth = {
     });
   },
 
+  // With email confirmation on, Supabase hides whether an email is taken: a sign-up for an
+  // existing address returns 200 with a placeholder user whose identities list is empty.
+  _isRepeatSignup: function(data) {
+    var u = (data && data.user) || data || {};
+    return Array.isArray(u.identities) && u.identities.length === 0;
+  },
+
   _showCheckEmailScreen: function(email) {
     var loginScreen = Utils.get('login-screen');
     if (!loginScreen) return;
@@ -392,7 +405,7 @@ var Auth = {
       + '<div style="width:100%;max-width:420px;background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.15);border-radius:20px;padding:24px 20px;box-sizing:border-box;text-align:center">'
       + '<div style="font-size:52px;margin-bottom:8px">📧</div>'
       + '<div style="font-size:20px;font-weight:800;color:var(--t1)">Check Your Email</div>'
-      + '<div style="font-size:13px;color:var(--t2);margin:12px 0 20px;line-height:1.7">We sent a confirmation link to<br><strong style="color:var(--g)">' + Utils.esc(email) + '</strong><br><br>Tap the link in that email, then come back here and sign in.</div>'
+      + '<div style="font-size:13px;color:var(--t2);margin:12px 0 20px;line-height:1.7">We sent a confirmation link to<br><strong style="color:var(--g)">' + Utils.esc(email) + '</strong><br><br>Tap the link in that email, then come back here and sign in.<br><br><span style="font-size:12px;color:var(--t3)">Not there after a few minutes? Check your Spam or Promotions folder.</span></div>'
       + '<button class="btn-primary btn-full" onclick="location.reload()">← Back to Sign In</button>'
       + '</div></div>';
     loginScreen.style.display = 'block';
@@ -455,6 +468,11 @@ var Auth = {
         } else {
           Auth._err('join-err', '❌ ' + msg);
         }
+        return;
+      }
+
+      if (Auth._isRepeatSignup(result.data)) {
+        Auth._err('join-err', '❌ This email already has an account. Sign in instead, or use "Forgot password?" if you can\'t remember it.');
         return;
       }
 
