@@ -153,7 +153,10 @@ html body { background:var(--bg); }
 @media (min-width:1024px) { .notif-panel { right:24px; } }
 
 /* ── Privacy lock ───────────────────────────────────── */
-#privacy-btn.pv-on { color:var(--g); border-color:rgba(212,168,67,.45); background:var(--gb); }
+.pv-toggle { display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:6px 12px; border-radius:99px; border:1px solid var(--bd2); background:var(--bg3); color:var(--t2); font-size:12px; font-weight:700; cursor:pointer; flex-shrink:0; transition:background .15s, color .15s, border-color .15s; }
+.pv-toggle:hover { color:var(--g); border-color:rgba(212,168,67,.45); }
+.pv-toggle.pv-on { color:var(--g); border-color:rgba(212,168,67,.45); background:var(--gb); }
+.pv-toggle:focus-visible { outline:2px solid var(--g); outline-offset:2px; }
 .pv-lock { width:60px; height:60px; margin:4px auto 12px; border-radius:18px; background:var(--gb); color:var(--g); display:flex; align-items:center; justify-content:center; }
 .pv-text { font-size:13px; color:var(--t2); text-align:center; line-height:1.55; margin:0 0 16px; }
 .pv-bio { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px; }

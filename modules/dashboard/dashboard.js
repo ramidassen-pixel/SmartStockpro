@@ -23,6 +23,13 @@ var Dashboard = {
     var canSeeMoney = (role==='owner'||role==='admin'||role==='primary_admin'||role==='primary admin'||role==='manager'||role==='store_manager'||role==='accountant');
     var mask = '— — —';
     function showMoney(val) { return canSeeMoney ? Utils.cur(val, cur) : mask; }
+    // Privacy lock — applies ONLY to: Today's Net Profit, Today Sales, Today Expenses, COGS, Allocated
+    var locked = typeof Privacy !== 'undefined' && Privacy.masked();
+    function privMoney(val) { return locked ? cur + '••••' : showMoney(val); }
+    var eyeBtn = (typeof Privacy !== 'undefined')
+      ? '<button class="pv-toggle'+(locked?'':' pv-on')+'" onclick="Privacy.toggle()" title="'+(locked?'Show figures':'Hide figures')+'" aria-label="'+(locked?'Show today\'s figures':'Hide today\'s figures')+'" aria-pressed="'+(!locked)+'">'
+        + Icons.svg(locked?'eye-off':'eye',20) + '<span>'+(locked?'Show':'Hide')+'</span></button>'
+      : '';
 
     // ── Read toggles from settings ────────────────────────────────────────
     // allocEnabled: default ON  (false only when explicitly set false)
@@ -95,8 +102,8 @@ var Dashboard = {
     var compHtml = '';
     if (canSeeMoney) {
       if      (Math.abs(netDiff) < 0.01) compHtml = '<span style="color:var(--t3);font-size:12px;font-weight:600">→ Same as yesterday</span>';
-      else if (netDiff > 0)              compHtml = '<span style="color:var(--ok);font-size:12px;font-weight:700">↑ '+Utils.cur(netDiff,cur)+' more than yesterday</span>';
-      else                               compHtml = '<span style="color:var(--er);font-size:12px;font-weight:700">↓ '+Utils.cur(Math.abs(netDiff),cur)+' less than yesterday</span>';
+      else if (netDiff > 0)              compHtml = '<span style="color:var(--ok);font-size:12px;font-weight:700">↑ '+privMoney(netDiff)+' more than yesterday</span>';
+      else                               compHtml = '<span style="color:var(--er);font-size:12px;font-weight:700">↓ '+privMoney(Math.abs(netDiff))+' less than yesterday</span>';
     }
 
     // ── Outstanding debt ──────────────────────────────────────────────────
@@ -134,8 +141,10 @@ var Dashboard = {
     var heroBd    = todayNet>=0?'rgba(16,185,129,.2)':'rgba(239,68,68,.2)';
 
     var heroHtml = '<div style="background:'+heroBg+';border:1px solid '+heroBd+';border-radius:var(--r16);padding:18px 16px;margin:0 14px 10px">'
-      + '<div style="font-size:11px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.14em;margin-bottom:10px;font-family:var(--fm)">Today\'s Net Profit</div>'
-      + '<div style="font-size:36px;font-weight:900;color:'+heroColor+';letter-spacing:-.03em;line-height:1;margin-bottom:10px">'+(canSeeMoney?Utils.cur(todayNet,cur):mask)+'</div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">'
+      + '<div style="font-size:11px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.14em;font-family:var(--fm)">Today\'s Net Profit</div>'
+      + eyeBtn + '</div>'
+      + '<div style="font-size:36px;font-weight:900;color:'+heroColor+';letter-spacing:-.03em;line-height:1;margin-bottom:10px">'+(canSeeMoney?privMoney(todayNet):mask)+'</div>'
       + (compHtml?'<div style="margin-bottom:8px">'+compHtml+'</div>':'')
       + '</div>';
 
@@ -162,14 +171,14 @@ var Dashboard = {
       + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)">'
       + '<div class="kpi-icon">'+Icons.svg('cash',20)+'</div>'
       + '<div class="kpi-label">Today Sales</div>'
-      + '<div class="kpi-value">'+showMoney(todayRev)+'</div>'
+      + '<div class="kpi-value">'+privMoney(todayRev)+'</div>'
       + '<div class="kpi-sub">'+todaySales.length+' transaction'+(todaySales.length!==1?'s':'')+'</div></div>'
 
       // Card 2 — Today Manual Expenses (red)
       + '<div class="kpi" style="--kc:var(--er);--kibg:var(--erb)">'
       + '<div class="kpi-icon">'+Icons.svg('wallet',20)+'</div>'
       + '<div class="kpi-label">Today Expenses</div>'
-      + '<div class="kpi-value">'+showMoney(todayManExp)+'</div>'
+      + '<div class="kpi-value">'+privMoney(todayManExp)+'</div>'
       + '<div class="kpi-sub">Manual expenses</div></div>'
 
       // Card 3 — COGS with toggle (amber)
@@ -179,7 +188,7 @@ var Dashboard = {
       + 'COGS'
       + miniToggle('toggleCOGS', cogsEnabled)
       + '</div>'
-      + '<div class="kpi-value" style="color:'+(cogsEnabled?'var(--wa)':'var(--t3)')+'">'+showMoney(todayCOGS)+'</div>'
+      + '<div class="kpi-value" style="color:'+(cogsEnabled?'var(--wa)':'var(--t3)')+'">'+privMoney(todayCOGS)+'</div>'
       + '<div class="kpi-sub">'+(cogsEnabled?'Cost of goods · ON':'Paused · OFF')+'</div></div>'
 
       // Card 4 — Allocated with toggle (amber/grey)
@@ -189,8 +198,8 @@ var Dashboard = {
       + 'Allocated'
       + miniToggle('toggleAlloc', allocEnabled)
       + '</div>'
-      + '<div class="kpi-value" style="color:'+(allocEnabled?'var(--wa)':'var(--t3)')+'">'+showMoney(todayAlloc)+'</div>'
-      + '<div class="kpi-sub">'+(allocEnabled?(dow===0?'Sunday — $0':Utils.cur(rawAllocDay,cur)+'/day · ON'):'Paused · OFF')+'</div></div>'
+      + '<div class="kpi-value" style="color:'+(allocEnabled?'var(--wa)':'var(--t3)')+'">'+privMoney(todayAlloc)+'</div>'
+      + '<div class="kpi-sub">'+(allocEnabled?(dow===0?'Sunday — $0':privMoney(rawAllocDay)+'/day · ON'):'Paused · OFF')+'</div></div>'
 
       + '</div>';
 
@@ -439,7 +448,7 @@ var Dashboard = {
     // ════════════════════════════════════════════════════════════════════
     // AREA 11 — 7-DAY SALES TREND CHART
     // ════════════════════════════════════════════════════════════════════
-    var trendHtml = Charts.salesTrend(sales, cur, canSeeMoney && !(typeof Privacy !== 'undefined' && Privacy.masked()));
+    var trendHtml = Charts.salesTrend(sales, cur, canSeeMoney);
 
     // Smooth loading: first sync on a new device → placeholders instead of $0.00
     if (!sales.length && DB._syncing) {

@@ -1,64 +1,25 @@
 /* === privacy.js ===
-   Privacy lock for money figures.
-   - Figures are hidden ($••••) whenever the app opens.
+   Privacy lock for the dashboard's "today" figures ONLY:
+   Today's Net Profit, Today Sales, Today Expenses, COGS and Allocated. Every other amount is always visible.
+   - Hidden ($••••) whenever the app opens; the eye button on the Net Profit card toggles them.
    - Showing them needs the device's fingerprint / Face ID / Windows Hello, or the account password.
-   - They hide again after 10 minutes without use, or when the app is left for more than 30 seconds.
-   - Printing, receipts, WhatsApp messages, exports, the AI's data and the sale-taking screens
-     always use the real amounts. */
+   - They hide again after 10 minutes without use, or when the app is left for more than 30 seconds. */
 var Privacy = {
   hidden: true,
   MASK: '••••',
-  _real: 0,                  // >0 while running code that must see real amounts
   IDLE_MS: 10 * 60 * 1000,
   AWAY_MS: 30 * 1000,
   _lastActive: Date.now(),
   _awayAt: 0,
 
   masked: function() {
-    return this.hidden && this._real === 0 && typeof Auth !== 'undefined' && !!Auth.currentUser;
-  },
-
-  // Run fn with real amounts visible to it
-  withReal: function(fn, self, args) {
-    Privacy._real++;
-    try { return fn.apply(self, args); } finally { Privacy._real--; }
+    return this.hidden && typeof Auth !== 'undefined' && !!Auth.currentUser;
   },
 
   init: function() {
     var self = this;
-    // 1) Mask the shared money formatters
-    var cur = Utils.cur;
-    Utils.cur = function(v, sym) {
-      var out = cur.call(Utils, v, sym);
-      if (!Privacy.masked()) return out;
-      var s = sym; if (!s) { try { s = DB.getSettings().currency || '$'; } catch (e) { s = '$'; } }
-      return s + Privacy.MASK;
-    };
-    var curDual = Utils.curDual;
-    Utils.curDual = function(v, opts) {
-      if (!Privacy.masked()) return curDual.call(Utils, v, opts);
-      return (opts && opts.lrdOnly) ? 'L$' + Privacy.MASK : '$' + Privacy.MASK;
-    };
-
-    // 2) These always need real amounts: printing, sharing, exporting, AI data, taking a sale
-    var always = /^(print|_print|_doPrint|_reprint|share|_openWhatsApp|send|export|download|generate|_context|_buildFullContext)/;
-    var saleScreens = {
-      Sales: ['openNewSale', 'renderCart', 'updateTotals', 'addToCart', 'addToCartById', 'onProdSearch', 'changeQty', 'setQty', 'setPrice', 'removeItem', 'calcLrd', 'useLrdAmount', 'openPayBalance', 'updateBalancePreview', 'showPrintPrompt'],
-      Quotations: ['openNew', 'openNewQuotation', '_renderCart', '_renderTotals', '_addItem', 'addItem'],
-    };
-    ['Sales', 'Dashboard', 'Reports', 'Quotations', 'Customers', 'ClosingReport', 'Salary', 'Finance', 'Supply', 'Backup', 'Expenses', 'Products', 'Settings', 'AI', 'Stock', 'Allocations', 'Suppliers']
-      .forEach(function(name) {
-        var obj = window[name]; if (!obj) return;
-        var extra = saleScreens[name] || [];
-        Object.keys(obj).forEach(function(m) {
-          if (typeof obj[m] !== 'function') return;
-          if (!always.test(m) && extra.indexOf(m) < 0) return;
-          var orig = obj[m];
-          obj[m] = function() { return Privacy.withReal(orig, this, arguments); };
-        });
-      });
-
-    // 3) Hide again after inactivity or when the app is left
+    // The lock covers only the dashboard's five "today" figures (see Dashboard.render → privMoney).
+    // Hide again after inactivity or when the app is left
     ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(function(ev) {
       document.addEventListener(ev, function() { self._lastActive = Date.now(); }, { passive: true });
     });
@@ -96,15 +57,7 @@ var Privacy = {
     try { if (typeof Router !== 'undefined') Router.refresh(); } catch (e) {}
   },
 
-  _paintButton: function() {
-    var b = document.getElementById('privacy-btn');
-    if (!b || typeof Icons === 'undefined') return;
-    b.innerHTML = Icons.svg(this.hidden ? 'eye-off' : 'eye', 19);
-    b.title = this.hidden ? 'Show figures' : 'Hide figures';
-    b.setAttribute('aria-label', b.title);
-    b.setAttribute('aria-pressed', this.hidden ? 'false' : 'true');
-    b.classList.toggle('pv-on', !this.hidden);
-  },
+  _paintButton: function() {}, // the eye button is drawn by Dashboard.render
 
   // ── Unlock dialog ─────────────────────────────────────────────────────────
   _bioKey: function() {
