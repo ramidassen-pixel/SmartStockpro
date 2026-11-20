@@ -236,14 +236,16 @@ var AI = {
     this._addTyping(tid);
 
     var self = this;
-    fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{role:'user', content:'Generate the complete Daily Business Management Report now. Be thorough and professional.'}],
-      }),
+    self._authHeaders().then(function(headers) {
+      return fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          mode: 'report',
+          system: systemPrompt,
+          messages: [{role:'user', content:'Generate the complete Daily Business Management Report now. Be thorough and professional.'}],
+        }),
+      });
     }).then(function(res){ return res.json(); })
     .then(function(data) {
       self._rmTyping(tid);
@@ -424,9 +426,9 @@ var AI = {
     try {
       var res = await fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await this._authHeaders(),
         body: JSON.stringify({
-          max_tokens: 1024,
+          mode: 'chat',
           system: 'You are SmartStock AI — expert business assistant and accountant.\n\nLIVE DATA:\n' + this._context() + '\n\nBe concise, practical, and use bullet points. Always give specific numbers from the data.',
           messages: this.history.slice(-10),
         }),
@@ -456,6 +458,21 @@ var AI = {
   },
 
   ask: function(q) { var inp = Utils.get('ai-inp'); if(inp){ inp.value=q; this.send(); } },
+
+  // The AI proxy only answers signed-in users: send the (freshly renewed) session token
+  _authHeaders: function() {
+    var ready = (typeof DB !== 'undefined' && DB._ensureToken) ? DB._ensureToken() : Promise.resolve();
+    return ready.then(function() {
+      var token = (typeof Auth !== 'undefined' && Auth._session && Auth._session.access_token) || '';
+      return {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + (token || SUPABASE_ANON),
+      };
+    }, function() {
+      return { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON };
+    });
+  },
 
   clear: function() {
     this.history = []; this.inited = false;
