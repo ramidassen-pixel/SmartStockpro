@@ -176,6 +176,9 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
       <button class="tb-btn tb-search" id="search-btn" onclick="GlobalSearch.open()" title="Search" aria-label="Search">
         <i data-icon="search" data-size="19"></i><span class="tb-search-txt">Search products, customers, invoices…</span>
       </button>
+      <button class="tb-btn" id="privacy-btn" onclick="Privacy.toggle()" title="Show figures" aria-label="Show figures" aria-pressed="false">
+        <i data-icon="eye-off" data-size="19"></i>
+      </button>
       <button class="tb-btn" id="theme-btn" onclick="Settings.toggleTheme()" title="Switch dark / light" aria-label="Switch dark or light mode">
         <i data-icon="moon" data-size="19"></i>
       </button>
@@ -276,6 +279,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
 <script src="modules/support/support.js"></script>
 <script src="modules/settings/backup.js"></script>
 <script src="modules/products/stock.js"></script>
+<script src="assets/js/privacy.js"></script>
 <script src="assets/js/sidebar.js"></script>
 <script src="assets/js/install.js"></script>
 <script src="assets/js/boot.js"></script>

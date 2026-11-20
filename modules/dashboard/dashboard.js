@@ -190,7 +190,7 @@ var Dashboard = {
       + miniToggle('toggleAlloc', allocEnabled)
       + '</div>'
       + '<div class="kpi-value" style="color:'+(allocEnabled?'var(--wa)':'var(--t3)')+'">'+showMoney(todayAlloc)+'</div>'
-      + '<div class="kpi-sub">'+(allocEnabled?(dow===0?'Sunday — $0':'$'+rawAllocDay.toFixed(2)+'/day · ON'):'Paused · OFF')+'</div></div>'
+      + '<div class="kpi-sub">'+(allocEnabled?(dow===0?'Sunday — $0':Utils.cur(rawAllocDay,cur)+'/day · ON'):'Paused · OFF')+'</div></div>'
 
       + '</div>';
 
@@ -439,7 +439,7 @@ var Dashboard = {
     // ════════════════════════════════════════════════════════════════════
     // AREA 11 — 7-DAY SALES TREND CHART
     // ════════════════════════════════════════════════════════════════════
-    var trendHtml = Charts.salesTrend(sales, cur, canSeeMoney);
+    var trendHtml = Charts.salesTrend(sales, cur, canSeeMoney && !(typeof Privacy !== 'undefined' && Privacy.masked()));
 
     // Smooth loading: first sync on a new device → placeholders instead of $0.00
     if (!sales.length && DB._syncing) {

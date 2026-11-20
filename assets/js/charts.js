@@ -1,6 +1,8 @@
 /* === charts.js === */
 /* SmartStock Pro V5 — Charts (Real Data) */
 var Charts = {
+  // Hide amount labels while the privacy lock is on
+  _hide: function() { return typeof Privacy !== 'undefined' && Privacy.masked(); },
 
   /* ── CSS BAR CHART ────────────────────────────────────────────────────── */
   bar: function(data, labels, color, currency) {
@@ -10,7 +12,8 @@ var Charts = {
     var bars = data.map(function(v, i) {
       var pct  = Math.max(3, Math.round((v/max)*100));
       var disp = '';
-      if (v > 0) {
+      if (v > 0 && currency && Charts._hide()) disp = '••';
+      else if (v > 0) {
         disp = currency
           ? (currency + (v >= 1000 ? (v/1000).toFixed(1)+'k' : Math.round(v)))
           : Math.round(v);
@@ -71,13 +74,14 @@ var Charts = {
     }
     var max = Math.max.apply(null, revData.concat(expData).concat([1]));
     var c   = cur||'$';
+    var hideAmt = Charts._hide();
     var bars = lbls.map(function(lbl,i){
       var rPct = Math.max(3, Math.round((revData[i]/max)*100));
       var ePct = Math.max(3, Math.round((expData[i]/max)*100));
       return '<div class="bar-col" style="flex:1;min-width:0">'
         + '<div style="display:flex;gap:2px;align-items:flex-end;height:80px;margin-bottom:4px">'
-        + '<div style="flex:1;background:var(--ok);border-radius:4px 4px 0 0;height:'+rPct+'%;min-height:3px" title="Rev: '+c+revData[i].toFixed(0)+'"></div>'
-        + '<div style="flex:1;background:var(--er);border-radius:4px 4px 0 0;height:'+ePct+'%;min-height:3px" title="Exp: '+c+expData[i].toFixed(0)+'"></div>'
+        + '<div style="flex:1;background:var(--ok);border-radius:4px 4px 0 0;height:'+rPct+'%;min-height:3px" title="Rev: '+(hideAmt?c+'••':c+revData[i].toFixed(0))+'"></div>'
+        + '<div style="flex:1;background:var(--er);border-radius:4px 4px 0 0;height:'+ePct+'%;min-height:3px" title="Exp: '+(hideAmt?c+'••':c+expData[i].toFixed(0))+'"></div>'
         + '</div><div class="bar-lbl">'+lbl+'</div></div>';
     }).join('');
     return '<div style="display:flex;gap:4px;height:110px;align-items:flex-end">' + bars + '</div>'
@@ -109,7 +113,7 @@ var Charts = {
     var c = cur||'$';
     return sorted.map(function(p,i){
       var pct  = Math.max(4, Math.round((p.rev/maxRev)*100));
-      var disp = p.rev >= 1000 ? c+(p.rev/1000).toFixed(1)+'k' : c+p.rev.toFixed(0);
+      var disp = Charts._hide() ? c+'••••' : (p.rev >= 1000 ? c+(p.rev/1000).toFixed(1)+'k' : c+p.rev.toFixed(0));
       return '<div style="margin-bottom:12px">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
         + '<div style="display:flex;align-items:center;gap:6px">'

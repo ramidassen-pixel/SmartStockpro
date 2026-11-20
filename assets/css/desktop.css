@@ -151,3 +151,14 @@ html body { background:var(--bg); }
 .ne-sub { font-size:12px; color:var(--t3); margin-top:4px; line-height:1.5; }
 .notif-badge { width:auto; height:auto; min-width:17px; padding:0 4px; top:3px; right:3px; font-size:10px; font-weight:800; line-height:15px; color:#fff; text-align:center; border-radius:99px; }
 @media (min-width:1024px) { .notif-panel { right:24px; } }
+
+/* ── Privacy lock ───────────────────────────────────── */
+#privacy-btn.pv-on { color:var(--g); border-color:rgba(212,168,67,.45); background:var(--gb); }
+.pv-lock { width:60px; height:60px; margin:4px auto 12px; border-radius:18px; background:var(--gb); color:var(--g); display:flex; align-items:center; justify-content:center; }
+.pv-text { font-size:13px; color:var(--t2); text-align:center; line-height:1.55; margin:0 0 16px; }
+.pv-bio { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px; }
+.pv-or { display:flex; align-items:center; gap:10px; margin:12px 0; color:var(--t3); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+.pv-or::before, .pv-or::after { content:''; flex:1; height:1px; background:var(--bd2); }
+.pv-check { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--t1); margin:4px 0 10px; cursor:pointer; }
+.pv-check input { width:18px; height:18px; accent-color:var(--g); }
+#pv-go .ico { display:inline-block; vertical-align:-4px; margin-right:4px; }
