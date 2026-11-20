@@ -385,7 +385,7 @@ var Reports = {
       return '<div class="list-item">'
         + '<div class="list-icon" style="background:var(--gb3)">🧾</div>'
         + '<div class="list-info"><div class="list-name">'+Utils.esc(s.customer||'Walk-in')+'</div>'
-        + '<div class="list-meta" style="font-family:var(--fm)">'+s.id+'</div>'
+        + '<div class="list-meta" style="font-family:var(--fm)">'+Utils.esc(Sales.no(s))+'</div>'
         + (itemNames?'<div class="list-meta" style="font-size:10px">'+itemNames+'</div>':'')
         + '</div>'
         + '<div class="list-right"><div class="list-val">'+Utils.cur(s.total,cur)+'</div>'
@@ -447,7 +447,7 @@ var Reports = {
           var totalOwed = cust ? cust.totalSpent - DB.getSales().filter(function(x){ return x.customerId===cust.id&&x.status==='Paid'; }).reduce(function(a,x){ return a+(parseFloat(x.total)||0); },0) : (parseFloat(s.balance)||0);
           return '<div class="list-item"><div class="list-icon" style="background:var(--wab)">👤</div>'
             + '<div class="list-info"><div class="list-name">'+Utils.esc(s.customer||'Walk-in')+'</div>'
-            + '<div class="list-meta">'+s.id+' · Balance: '+Utils.cur(s.balance||0,cur)+'</div></div>'
+            + '<div class="list-meta">'+Utils.esc(Sales.no(s))+' · Balance: '+Utils.cur(s.balance||0,cur)+'</div></div>'
             + '<div class="list-right"><div class="list-val" style="color:var(--wa)">'+Utils.cur(s.total,cur)+'</div>'
             + '<div style="font-size:10px;color:var(--er);margin-top:2px">Owes: '+Utils.cur(s.balance||0,cur)+'</div></div></div>';
         }).join('')

@@ -36,6 +36,8 @@ var GlobalSearch = {
     // ── Sales / Invoices ──
     var sales = DB.getSales().filter(function(s){
       return (s.id && s.id.toLowerCase().includes(query))
+          || (s.invoiceNo && String(s.invoiceNo).toLowerCase().includes(query))
+          || (s.customerPhone && String(s.customerPhone).toLowerCase().includes(query))
           || (s.customer && s.customer.toLowerCase().includes(query))
           || (s.notes && s.notes.toLowerCase().includes(query))
           || (s.total && String(s.total).includes(query));
@@ -47,7 +49,7 @@ var GlobalSearch = {
         var sc = {Paid:'var(--ok)',Partial:'var(--wa)',Credit:'var(--er)'}[s.status] || 'var(--t3)';
         return '<div class="list-item" onclick="Modal.close();Sales.viewInvoice(\''+s.id+'\')">'
           + '<div class="list-icon" style="background:var(--goldbg);font-size:16px">🧾</div>'
-          + '<div class="list-info"><div class="list-name">'+Utils.esc(s.id)+' · '+Utils.esc(s.customer||'Walk-in')+'</div>'
+          + '<div class="list-info"><div class="list-name">'+Utils.esc(Sales.no(s))+' · '+Utils.esc(s.customer||'Walk-in')+'</div>'
           + '<div class="list-meta">'+Utils.date(s.date)+' · <span style="color:'+sc+'">'+s.status+'</span></div></div>'
           + '<div class="list-right"><div class="list-val">'+Utils.cur(s.total,cur)+'</div></div>'
           + '</div>';

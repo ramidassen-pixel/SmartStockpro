@@ -4,6 +4,34 @@ var Sales = {
   cart: [],
   discount: 0,
 
+  // Invoice number shown to people (falls back to the internal id for older sales)
+  no: function(s) { return (s && (s.invoiceNo || s.id)) || ''; },
+  // Next number after e.g. "001" → "002", "INV-0099" → "INV-0100", "RS/2026/7" → "RS/2026/8"
+  nextInvoiceNo: function(no) {
+    var m = String(no || '').trim().match(/^(.*?)(\d+)(\D*)$/);
+    if (!m) return '';
+    var n = String(parseInt(m[2], 10) + 1);
+    while (n.length < m[2].length) n = '0' + n;
+    return m[1] + n + m[3];
+  },
+  // Discount amount of a saved sale (new sales store discountAmount; older ones only a %)
+  discAmt: function(s) {
+    if (s.discountAmount != null) return parseFloat(s.discountAmount) || 0;
+    return (s.discount || 0) > 0 ? (parseFloat(s.subtotal) || 0) * (s.discount / 100) : 0;
+  },
+  discLabel: function(s) {
+    if (s.discountType === 'amount') return 'Discount';
+    var p = s.discountValue != null ? s.discountValue : s.discount;
+    return 'Discount (' + (Math.round((parseFloat(p) || 0) * 100) / 100) + '%)';
+  },
+  // Discount currently entered in the New Sale form, as % or a fixed amount
+  _formDisc: function(sub) {
+    var v = Math.max(0, parseFloat(Utils.val('s-disc')) || 0);
+    var t = (Utils.get('s-disc-type') || {}).value === 'amount' ? 'amount' : 'percent';
+    var amt = t === 'amount' ? Math.min(v, sub) : sub * Math.min(v, 100) / 100;
+    return { type: t, value: v, amount: Math.round(amt * 100) / 100, pct: sub > 0 ? (amt / sub) * 100 : 0 };
+  },
+
   // ── RENDER SALES LIST ──────────────────────────────────────────────────────
   render() {
     var pg = Utils.get('pg-sales');
@@ -29,7 +57,7 @@ var Sales = {
         + '<div class="list-icon" style="background:var(--gb3);border-color:rgba(201,168,76,.15);font-size:20px">🧾</div>'
         + '<div class="list-info">'
         + '<div class="list-name">'+Utils.esc(s.customer||'Walk-in')+'</div>'
-        + '<div class="list-meta">'+s.id+' · '+Utils.date(s.date)+'</div>'
+        + '<div class="list-meta">'+Utils.esc(Sales.no(s))+' · '+Utils.date(s.date)+'</div>'
         + progress
         + '</div>'
         + '<div class="list-right">'
@@ -95,6 +123,13 @@ var Sales = {
         + '<div id="s-cust-tag" style="display:none;font-size:11px;color:var(--ok);font-weight:600;margin-top:5px"></div>'
         + '</div>'
 
+        + '<div class="fg" style="margin:0"><label class="fl">Customer Phone</label>'
+        + '<input class="fi" id="s-cust-phone" type="tel" inputmode="tel" placeholder="+231 77 000 0000" autocomplete="off"></div>'
+        + '</div>'
+        + '<div class="form-row" style="margin:12px 0 0">'
+        + '<div class="fg" style="margin:0"><label class="fl">Invoice No.</label>'
+        + '<input class="fi" id="s-inv-no" placeholder="e.g. 001" autocomplete="off" value="' + Utils.esc(settings.invoiceNextNo || '') + '" style="font-family:var(--fm);font-weight:700">'
+        + '<div style="font-size:10.5px;color:var(--t3);margin-top:4px">' + (settings.invoiceNextNo ? 'Next number filled in automatically' : 'Enter your first number — the next ones fill in automatically') + '</div></div>'
         + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
         + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '"></div>'
         + '</div>'
@@ -125,9 +160,12 @@ var Sales = {
         + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
         + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">💳 Payment</div>'
         + '<div class="form-row" style="margin-bottom:12px">'
-        + '<div class="fg" style="margin:0"><label class="fl">Discount %</label>'
-        + '<input class="fi" id="s-disc" type="number" placeholder="0" min="0" max="100" '
-        + 'oninput="Sales.updateTotals()"></div>'
+        + '<div class="fg" style="margin:0"><label class="fl">Discount</label>'
+        + '<div style="display:flex;gap:6px">'
+        + '<input class="fi" id="s-disc" type="number" placeholder="0" min="0" step="0.01" oninput="Sales.updateTotals()" style="flex:1;min-width:0">'
+        + '<select class="fi" id="s-disc-type" onchange="Sales.updateTotals()" style="width:auto;flex-shrink:0" aria-label="Discount type">'
+        + '<option value="percent">%</option><option value="amount">' + Utils.esc(cur) + '</option></select>'
+        + '</div></div>'
         + '<div class="fg" style="margin:0"><label class="fl">Payment Method</label>'
         + '<select class="fi" id="s-method">'
         + '<option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option><option>Credit</option>'
@@ -213,6 +251,7 @@ var Sales = {
   selectWalkin: function() {
     var nameEl = Utils.get('s-cust-name'); if (nameEl) nameEl.value = 'Walk-in Customer';
     var idEl   = Utils.get('s-cust-id');   if (idEl)   idEl.value   = '';
+    var phEl   = Utils.get('s-cust-phone'); if (phEl) phEl.value = '';
     var sugg   = Utils.get('s-cust-suggestions'); if (sugg) sugg.style.display = 'none';
     var tag    = Utils.get('s-cust-tag');  if (tag)    tag.style.display  = 'none';
   },
@@ -234,6 +273,7 @@ var Sales = {
     var sugg   = Utils.get('s-cust-suggestions');
     if (nameEl) nameEl.value = c_name || '';
     if (idEl)   idEl.value   = c_id   || '';
+    var phEl = Utils.get('s-cust-phone'); if (phEl) phEl.value = c_phone || '';
     if (sugg)   sugg.style.display = 'none';
     var tag=Utils.get('s-cust-tag');
     if (!tag) return;
@@ -414,10 +454,11 @@ var Sales = {
   updateTotals: function(){
     var totEl=Utils.get('s-totals');
     var cur=DB.getSettings().currency||'$';
-    this.discount=parseFloat(Utils.val('s-disc')||0);
     if(!this.cart.length){ if(totEl) totEl.innerHTML=''; return; }
     var sub     = this.cart.reduce(function(a,i){ return a+(parseFloat(i.price)||0)*(parseInt(i.qty)||0); },0);
-    var discAmt = sub*(this.discount/100);
+    var _d      = this._formDisc(sub);
+    this.discount = _d.pct;
+    var discAmt = _d.amount;
     var total   = sub-discAmt;
     var paidRaw = parseFloat(Utils.val('s-amt-paid')||0);
     var paid    = Math.min(paidRaw, total);
@@ -432,9 +473,9 @@ var Sales = {
       ? '<div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-bottom:5px"><span>Progress</span><span>'+Math.round((paidRaw/total)*100)+'% paid</span></div>'
         + '<div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">'
         + '<div style="height:100%;width:'+Math.round((paidRaw/total)*100)+'%;background:linear-gradient(90deg,var(--ok),var(--g));border-radius:3px"></div></div></div>' : '';
-    var discHtml = this.discount>0
+    var discHtml = discAmt>0
       ? '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--t2)">Subtotal</span><span style="font-size:13px;font-weight:600;font-family:var(--fm)">'+Utils.cur(sub,cur)+'</span></div>'
-        + '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--er)">Discount ('+this.discount+'%)</span><span style="font-size:13px;font-weight:600;color:var(--er);font-family:var(--fm)">−'+Utils.cur(discAmt,cur)+'</span></div>' : '';
+        + '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--er)">'+(_d.type==='amount'?'Discount':'Discount ('+_d.value+'%)')+'</span><span style="font-size:13px;font-weight:600;color:var(--er);font-family:var(--fm)">−'+Utils.cur(discAmt,cur)+'</span></div>' : '';
     var paidHtml = showPartial
       ? '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--ok);font-weight:600">✓ Amount Paid</span><span style="font-size:14px;font-weight:700;color:var(--ok);font-family:var(--fm)">'+Utils.cur(paidRaw,cur)+'</span></div>'
         + '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:13px;color:var(--wa);font-weight:600">⏳ Balance Due</span><span style="font-size:14px;font-weight:700;color:var(--wa);font-family:var(--fm)">'+Utils.cur(balance,cur)+'</span></div>' : '';
@@ -458,8 +499,15 @@ var Sales = {
     var custId   = Utils.val('s-cust-id')||null;
     var method   = (Utils.get('s-method')||{value:'Cash'}).value||'Cash';
     var sub      = this.cart.reduce(function(a,i){ return a+(parseFloat(i.price)||0)*(parseInt(i.qty)||0); },0);
-    var discAmt  = sub*(this.discount/100);
+    var disc     = this._formDisc(sub);
+    var discAmt  = disc.amount;
+    this.discount = disc.pct;
     var total    = sub-discAmt;
+    var invNo    = (Utils.val('s-inv-no')||'').trim();
+    if (invNo && DB.getSales().some(function(x){ return (x.invoiceNo||'') === invNo; })) {
+      Toast.show('Invoice No. '+invNo+' is already used — change it to save', 'err'); return;
+    }
+    var custPhone = (Utils.val('s-cust-phone')||'').trim();
     var _amtStr  = Utils.val('s-amt-paid').trim();
     // Empty field = full payment, except on Credit where it means nothing paid yet
     var paidRaw  = _amtStr === '' ? (method==='Credit' ? 0 : total) : (parseFloat(_amtStr)||0);
@@ -469,15 +517,21 @@ var Sales = {
 
     var finalCustId = custId;
     if (!finalCustId && custName && custName.toLowerCase()!=='walk-in customer') {
-      var nc = DB.findOrCreateCustomer(custName);
+      var nc = DB.findOrCreateCustomer(custName, custPhone);
       if (nc) finalCustId = nc.id;
+    }
+    // Save / update the customer's phone number on their record
+    if (finalCustId && custPhone) {
+      var ex = DB.getCustomers().find(function(c){ return c.id===finalCustId; });
+      if (ex && (ex.phone||'') !== custPhone) DB.updateCustomer(finalCustId, { phone: custPhone });
     }
     var cust = finalCustId ? DB.getCustomers().find(function(c){ return c.id===finalCustId; }) : null;
 
     var sale = DB.addSale({
-      customer:custName, customerId:finalCustId||null,
+      customer:custName, customerId:finalCustId||null, customerPhone:custPhone||'',
+      invoiceNo: invNo || undefined,
       items:this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
-      subtotal:sub, discount:this.discount, total:total,
+      subtotal:sub, discount:Math.round(disc.pct*100)/100, discountType:disc.type, discountValue:disc.value, discountAmount:discAmt, total:total,
       amountPaid:status==='Paid'?total:paid,
       balance:status==='Paid'?0:balance,
       payment:method, status:status,
@@ -498,7 +552,9 @@ var Sales = {
     });
     if(cust) DB.updateCustomer(finalCustId,{totalSpent:(cust.totalSpent||0)+total,purchases:(cust.purchases||0)+1});
 
-    Toast.show('Invoice '+sale.id+' saved ✓','ok');
+    // Remember the next invoice number (synced to every device through settings)
+    if (invNo) { var nxt = Sales.nextInvoiceNo(invNo); if (nxt) DB.saveSettings({ invoiceNextNo: nxt }); }
+    Toast.show('Invoice '+Sales.no(sale)+' saved ✓','ok');
     Notifs.check();
 
     if(action==='new'){
@@ -506,7 +562,10 @@ var Sales = {
       var n=Utils.get('s-cust-name'); if(n) n.value='Walk-in Customer';
       Utils.get('s-cust-id').value='';
       Utils.get('s-cust-tag').style.display='none';
-      var d=Utils.get('s-disc'); if(d) d.value='0';
+      var d=Utils.get('s-disc'); if(d) d.value='';
+      var dt=Utils.get('s-disc-type'); if(dt) dt.value='percent';
+      var ph=Utils.get('s-cust-phone'); if(ph) ph.value='';
+      var inv=Utils.get('s-inv-no'); if(inv) inv.value=DB.getSettings().invoiceNextNo||'';
       var p2=Utils.get('s-amt-paid'); if(p2) p2.value='';
       var nt=Utils.get('s-notes'); if(nt) nt.value='';
       this.renderCart();
@@ -557,16 +616,16 @@ var Sales = {
       : '<button class="btn-ok" style="flex:1" disabled>✅ Fully Paid</button>';
 
     Modal.open({
-      title:'Invoice '+s.id, sub:Utils.date(s.date), barColor:barColor,
+      title:'Invoice '+Utils.esc(Sales.no(s)), sub:Utils.date(s.date), barColor:barColor,
       body: '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:14px;margin-bottom:12px">'
           + '<div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:3px">'+Utils.esc(s.customer||'Walk-in')+'</div>'
-          + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+s.id+' · '+Utils.date(s.date)+' · '+(s.payment||'Cash')+'</div>'
+          + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+Utils.esc(Sales.no(s))+' · '+Utils.date(s.date)+' · '+(s.payment||'Cash')+(s.customerPhone?' · '+Utils.esc(s.customerPhone):'')+'</div>'
           + '</div>'
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px;margin-bottom:12px">'
           + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px">Items</div>'
           + itemsHtml + '</div>'
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px">'
-          + (s.discount>0?'<div style="display:flex;justify-content:space-between;padding:5px 0"><span style="color:var(--t2);font-size:13px">Discount ('+s.discount+'%)</span><span style="color:var(--er);font-family:var(--fm)">−'+Utils.cur((s.subtotal||0)*(s.discount/100),cur)+'</span></div>':'')
+          + (Sales.discAmt(s)>0?'<div style="display:flex;justify-content:space-between;padding:5px 0"><span style="color:var(--t2);font-size:13px">'+Sales.discLabel(s)+'</span><span style="color:var(--er);font-family:var(--fm)">−'+Utils.cur(Sales.discAmt(s),cur)+'</span></div>':'')
           + '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--bd)"><span style="font-size:15px;font-weight:800;color:var(--t1)">Total</span><span style="font-size:17px;font-weight:900;color:var(--g);font-family:var(--fm)">'+Utils.cur(s.total,cur)+'</span></div>'
           + '<div style="display:flex;justify-content:space-between;padding:5px 0"><span style="color:var(--ok);font-size:13px;font-weight:600">✓ Paid</span><span style="color:var(--ok);font-family:var(--fm);font-weight:700">'+Utils.cur(s.amountPaid||0,cur)+'</span></div>'
           + ((s.balance||0)>0?'<div style="display:flex;justify-content:space-between;padding:5px 0"><span style="color:var(--wa);font-size:13px;font-weight:600">⏳ Balance</span><span style="color:var(--wa);font-family:var(--fm);font-weight:700">'+Utils.cur(s.balance,cur)+'</span></div>':'')
@@ -596,7 +655,7 @@ var Sales = {
         + '</div>' : '';
 
     Modal.open({
-      title:'Pay Balance', sub:'Invoice '+s.id+' · '+Utils.esc(s.customer||'Walk-in'), barColor:'var(--wa)',
+      title:'Pay Balance', sub:'Invoice '+Utils.esc(Sales.no(s))+' · '+Utils.esc(s.customer||'Walk-in'), barColor:'var(--wa)',
       body: histHtml
           + '<div style="background:var(--gb3);border:1px solid rgba(201,168,76,.2);border-radius:var(--r10);padding:14px;margin-bottom:14px">'
           + '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;color:var(--t2)">Original Total</span><span style="font-weight:700;font-family:var(--fm)">'+Utils.cur(s.total,cur)+'</span></div>'
@@ -664,7 +723,7 @@ var Sales = {
     window._printArgs={saleId:saleId,type:type,paymentId:paymentId,amount:amount,newBalance:newBalance};
     Modal.open({
       title:    isPayment?'✅ Payment Recorded!':'✅ Invoice Saved!',
-      sub:      isPayment?'Paid '+Utils.cur(amount||0,cur)+' — '+Utils.esc(s.customer||'Customer'):saleId+' · '+Utils.esc(s.customer||'Walk-in')+' · '+Utils.cur(s.total,cur),
+      sub:      isPayment?'Paid '+Utils.cur(amount||0,cur)+' — '+Utils.esc(s.customer||'Customer'):Utils.esc(Sales.no(s))+' · '+Utils.esc(s.customer||'Walk-in')+' · '+Utils.cur(s.total,cur),
       barColor: 'var(--ok)',
       body: '<div style="text-align:center;padding:16px 0 20px">'
           + '<div style="font-size:52px;margin-bottom:14px">'+(isPayment?'💳':'🧾')+'</div>'
@@ -723,7 +782,7 @@ var Sales = {
     var msg = '';
     msg += '🧾 *INVOICE — ' + bizName + '*' + nl;
     msg += '─────────────────────' + nl;
-    msg += '📋 *' + s.id + '*' + nl;
+    msg += '📋 *' + Sales.no(s) + '*' + nl;
     msg += '📅 Date: ' + Utils.date(s.date) + nl;
     msg += '👤 ' + Utils.esc(s.customer||'Walk-in Customer') + nl + nl;
     msg += '*Items:*' + nl;
@@ -756,7 +815,7 @@ var Sales = {
     var msg = '';
     msg += '🧾 *INVOICE — ' + bizName + '*' + nl;
     msg += '─────────────────────' + nl;
-    msg += '📋 *' + s.id + '*' + nl;
+    msg += '📋 *' + Sales.no(s) + '*' + nl;
     msg += '📅 Date: ' + Utils.date(s.date) + nl + nl;
     msg += '*Items:*' + nl;
     (s.items||[]).forEach(function(item){
@@ -828,7 +887,7 @@ var Sales = {
     }
 
     var subtotal  = (s.subtotal||s.total||0);
-    var discAmt   = (s.discount||0) > 0 ? subtotal*(s.discount/100) : 0;
+    var discAmt   = Sales.discAmt(s);
     var total     = parseFloat(s.total)||0;
     var amtPaid   = parseFloat(s.amountPaid||s.total)||0;
     var balance   = parseFloat(s.balance)||0;
@@ -866,7 +925,7 @@ var Sales = {
 
     var html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
       +'<meta name="viewport" content="width=device-width,initial-scale=1">'
-      +'<title>Invoice '+s.id+'</title><style>'+css+'</style></head><body>'
+      +'<title>Invoice '+Utils.esc(Sales.no(s))+'</title><style>'+css+'</style></head><body>'
       +'<div class="page">'
 
       // ── HEADER ──────────────────────────────────────────────────────────────
@@ -882,7 +941,7 @@ var Sales = {
       +'</div></div></div>'
       +'<div class="doc-block">'
       +'<div class="doc-title">Invoice</div>'
-      +'<div class="doc-num">'+s.id+'</div>'
+      +'<div class="doc-num">'+Utils.esc(Sales.no(s))+'</div>'
       +'<div class="doc-num" style="font-size:11px;font-weight:400">Date: '+Utils.date(s.date)+'</div>'
       +'<div class="doc-num" style="font-size:11px;font-weight:400">Payment: '+(s.payment||'Cash')+'</div>'
       +'<div style="margin-top:8px"><span class="doc-status" style="color:'+statusColor+';border-color:'+statusColor+';">'+(s.status||'Paid').toUpperCase()+'</span></div>'
@@ -899,7 +958,7 @@ var Sales = {
       +'</p></div>'
       +'<div class="client-box">'
       +'<h3>Invoice Details</h3>'
-      +'<p>Invoice No: <strong>'+s.id+'</strong><br>'
+      +'<p>Invoice No: <strong>'+Utils.esc(Sales.no(s))+'</strong><br>'
       +'Date: <strong>'+Utils.date(s.date)+'</strong><br>'
       +'Payment: <strong>'+(s.payment||'Cash')+'</strong><br>'
       +'Prepared by: <strong>'+Utils.esc(bizName)+'</strong><br>'
@@ -925,7 +984,7 @@ var Sales = {
       +'<div class="totals-block">'
       +'<div class="totals-inner">'
       +(discAmt>0 ? '<div class="totals-row"><span>Subtotal</span><span>'+Utils.cur(subtotal,cur)+'</span></div>' : '')
-      +(discAmt>0 ? '<div class="totals-row"><span>Discount ('+s.discount+'%)</span><span>−'+Utils.cur(discAmt,cur)+'</span></div>' : '')
+      +(discAmt>0 ? '<div class="totals-row"><span>'+Sales.discLabel(s)+'</span><span>−'+Utils.cur(discAmt,cur)+'</span></div>' : '')
       +'<div class="totals-row"><span>Subtotal</span><span>'+Utils.cur(total,cur)+'</span></div>'
       +'<div class="totals-row grand"><span>TOTAL</span><span>'+Utils.cur(total,cur)+'</span></div>'
       +'<div class="paid-row"><span>Paid ('+Utils.esc(s.payment||'Cash')+')</span><span>'+Utils.cur(amtPaid,cur)+'</span></div>'
@@ -968,7 +1027,7 @@ var Sales = {
       +'<div class="line"></div>'
       +'<div class="row"><span>Customer:</span><span class="bold">'+Utils.esc(s.customer||'Walk-in')+'</span></div>'
       +'<div class="row"><span>Receipt #:</span><span class="bold">'+(paymentId||'PMT')+'</span></div>'
-      +'<div class="row"><span>Original Invoice:</span><span>'+saleId+'</span></div>'
+      +'<div class="row"><span>Original Invoice:</span><span>'+Utils.esc(Sales.no(s))+'</span></div>'
       +'<div class="row"><span>Date:</span><span>'+now.toLocaleDateString()+'</span></div>'
       +'<div class="line"></div>'
       +'<div class="row"><span>Invoice Total:</span><span>'+Utils.cur(s.total,cur)+'</span></div>'

@@ -305,7 +305,7 @@ var Dashboard = {
         + '<div class="list-icon" style="background:var(--gb);color:var(--g)">'+Icons.svg('receipt',19)+'</div>'
         + '<div class="list-info">'
         + '<div class="list-name">'+Utils.esc(sale.customer||'Walk-in')+'</div>'
-        + '<div class="list-meta" style="font-family:var(--fm)">'+sale.id+'</div>'
+        + '<div class="list-meta" style="font-family:var(--fm)">'+Utils.esc(Sales.no(sale))+'</div>'
         + (items?'<div class="list-meta" style="font-size:10px;color:var(--t3)">'+Utils.esc(items)+'</div>':'')
         + '</div>'
         + '<div class="list-right">'

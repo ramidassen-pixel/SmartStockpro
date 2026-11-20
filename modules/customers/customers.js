@@ -319,7 +319,7 @@ var Customers = {
 
     // Build debt details
     var debtLines = unpaidSales.map(function(s){
-      return '• Invoice '+s.id+' ('+Utils.date(s.date)+'): '+Utils.cur(s.balance,cur);
+      return '• Invoice '+Sales.no(s)+' ('+Utils.date(s.date)+'): '+Utils.cur(s.balance,cur);
     }).join('\n');
 
     // Aging

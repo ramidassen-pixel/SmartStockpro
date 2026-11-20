@@ -400,7 +400,7 @@ var Quotations = {
     DB.updateQuotation(id,{status:'Approved',convertedToInvoice:sale.id});
 
     Modal.close();
-    Toast.show('Invoice '+sale.id+' created from quotation ✓','ok');
+    Toast.show('Invoice '+Sales.no(sale)+' created from quotation ✓','ok');
     this.render();
     // Show print prompt
     setTimeout(function(){ Sales.showPrintPrompt(sale.id,'invoice'); },400);
