@@ -126,6 +126,76 @@ var Charts = {
     }).join('');
   },
 
+  /* ── 7-DAY SALES TREND (SVG area chart, dashboard) ───────────────────── */
+  salesTrend: function(sales, cur, showMoney) {
+    cur = cur || '$';
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var vals = [], lbls = [], dates = [];
+    var now = new Date();
+    for (var i = 6; i >= 0; i--) {
+      var d = new Date(now); d.setDate(d.getDate() - i);
+      var ds = d.toISOString().slice(0, 10);
+      dates.push(ds);
+      lbls.push(i === 0 ? 'Today' : days[d.getDay()]);
+      vals.push(sales.filter(function(s){ return s.date === ds; })
+        .reduce(function(a, s){ return a + (parseFloat(s.total) || 0); }, 0));
+    }
+    var total = vals.reduce(function(a, v){ return a + v; }, 0);
+    // previous 7 days for the % change badge
+    var prevStart = new Date(now); prevStart.setDate(prevStart.getDate() - 13);
+    var ps = prevStart.toISOString().slice(0, 10), pe = dates[0];
+    var prev = sales.filter(function(s){ return s.date >= ps && s.date < pe; })
+      .reduce(function(a, s){ return a + (parseFloat(s.total) || 0); }, 0);
+    var chg = prev > 0 ? Math.round(((total - prev) / prev) * 100) : null;
+
+    function compact(v) {
+      if (v >= 1e6) return cur + (v / 1e6).toFixed(1) + 'M';
+      if (v >= 1e3) return cur + (v / 1e3).toFixed(1) + 'k';
+      return cur + Math.round(v);
+    }
+    // Draw narrower on phones so labels stay readable instead of shrinking
+    var narrow = (window.innerWidth || 1024) < 640;
+    var W = narrow ? 340 : 640, H = narrow ? 190 : 210, padX = narrow ? 18 : 22, top = 30, bottom = 30;
+    var max = Math.max.apply(null, vals.concat([1])) * 1.12;
+    var step = (W - padX * 2) / 6;
+    var pts = vals.map(function(v, i) {
+      return [padX + i * step, top + (H - top - bottom) * (1 - v / max)];
+    });
+    var line = pts.map(function(p, i){ return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
+    var base = H - bottom;
+    var area = line + ' L' + pts[6][0].toFixed(1) + ' ' + base + ' L' + pts[0][0].toFixed(1) + ' ' + base + ' Z';
+    var grid = [0, 0.5, 1].map(function(f){
+      var y = (top + (H - top - bottom) * f).toFixed(1);
+      return '<line class="grid" x1="0" x2="' + W + '" y1="' + y + '" y2="' + y + '" stroke-dasharray="' + (f === 1 ? '0' : '3 5') + '"/>';
+    }).join('');
+    var marks = pts.map(function(p, i) {
+      var tip = lbls[i] + ' (' + dates[i] + '): ' + (showMoney ? cur + vals[i].toFixed(2) : 'hidden');
+      return '<g><title>' + tip + '</title>'
+        + '<rect class="hit" x="' + (p[0] - step / 2).toFixed(1) + '" y="0" width="' + step.toFixed(1) + '" height="' + H + '"/>'
+        + (showMoney && vals[i] > 0 ? '<text class="val" x="' + p[0].toFixed(1) + '" y="' + (p[1] - 10).toFixed(1) + '" text-anchor="middle">' + compact(vals[i]) + '</text>' : '')
+        + '<circle class="dot' + (i === 6 ? ' today' : '') + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (i === 6 ? 5 : 4) + '"/>'
+        + '<text class="axis" x="' + p[0].toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle"' + (i === 6 ? ' style="fill:var(--g);font-weight:700"' : '') + '>' + lbls[i] + '</text>'
+        + '</g>';
+    }).join('');
+    var badge = chg === null ? ''
+      : '<span class="trend-chg ' + (chg >= 0 ? 'up' : 'down') + '">' + (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(chg) + '% vs last week</span>';
+
+    return '<div class="trend-card">'
+      + '<div class="trend-head"><div>'
+      + '<div class="trend-title">' + Icons.svg('chart-line', 18) + 'Sales — last 7 days</div>'
+      + '<div class="trend-total">' + (showMoney ? Utils.cur(total, cur) : '— — —') + '</div>'
+      + '</div>' + (showMoney ? badge : '') + '</div>'
+      + '<svg class="trend-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Sales for the last 7 days">'
+      + '<defs><linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">'
+      + '<stop offset="0%" style="stop-color:var(--g);stop-opacity:.32"/><stop offset="100%" style="stop-color:var(--g);stop-opacity:0"/>'
+      + '</linearGradient></defs>'
+      + grid
+      + '<path d="' + area + '" fill="url(#trendFill)"/>'
+      + '<path class="line" d="' + line + '"/>'
+      + marks
+      + '</svg></div>';
+  },
+
   /* ── PROFIT TREND (7-day sparkline) ──────────────────────────────────── */
   profitSparkline: function(sales, expenses, cur) {
     var today = new Date();

@@ -454,6 +454,7 @@ var DB = {
           Settings._applyUserPhoto(Auth.currentUser.photo || '', Auth.currentUser);
           Settings._applyBizLogo(s.bizLogo || '');
           var bn = document.getElementById('tb-biz-name'); if (bn && s.bizName) bn.textContent = s.bizName;
+          if (typeof Sidebar !== 'undefined') Sidebar.syncBrand();
         }
         // Don't redraw under the user's fingers while they type in the page
         var a = document.activeElement;

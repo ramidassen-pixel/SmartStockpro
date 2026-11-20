@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="assets/css/components.css">
 <link rel="stylesheet" href="assets/css/pages.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+<link rel="stylesheet" href="assets/css/desktop.css">
 <style>
 /* Critical — must be here not in external CSS */
 .hidden { display:none !important; }
@@ -170,12 +171,16 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
         <div class="tb-sub" id="tb-biz-sub">Business Manager</div>
       </div>
     </div>
+    <div class="tb-page" id="tb-page-title">Dashboard</div>
     <div class="tb-actions">
-      <button class="tb-btn" id="search-btn" onclick="GlobalSearch.open()" title="Search">
-        🔍
+      <button class="tb-btn tb-search" id="search-btn" onclick="GlobalSearch.open()" title="Search" aria-label="Search">
+        <i data-icon="search" data-size="19"></i><span class="tb-search-txt">Search products, customers, invoices…</span>
       </button>
-      <button class="tb-btn" id="notif-btn" onclick="UI.toggleNotifPanel()" title="Notifications">
-        🔔<span class="notif-badge hidden" id="notif-badge"></span>
+      <button class="tb-btn" id="theme-btn" onclick="Settings.toggleTheme()" title="Switch dark / light" aria-label="Switch dark or light mode">
+        <i data-icon="moon" data-size="19"></i>
+      </button>
+      <button class="tb-btn" id="notif-btn" onclick="UI.toggleNotifPanel()" title="Notifications" aria-label="Notifications">
+        <i data-icon="bell" data-size="19"></i><span class="notif-badge hidden" id="notif-badge"></span>
       </button>
       <div class="tb-avatar" id="tb-avatar" onclick="Router.go('settings')" title="Settings">R</div>
     </div>
@@ -211,23 +216,26 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
   </main>
 
   <!-- Bottom Nav -->
-  <nav class="bottom-nav">
+  <nav class="bottom-nav" aria-label="Main">
     <div class="bnav-item active" id="bn-dashboard" onclick="Router.go('dashboard')">
-      <div class="bnav-icon">🏠</div><span>Home</span>
+      <div class="bnav-icon"><i data-icon="home" data-size="23"></i></div><span>Home</span>
     </div>
     <div class="bnav-item" id="bn-sales" onclick="Router.go('sales')">
-      <div class="bnav-icon">🧾</div><span>Sales</span>
+      <div class="bnav-icon"><i data-icon="receipt" data-size="23"></i></div><span>Sales</span>
     </div>
     <div class="bnav-item" id="bn-products" onclick="Router.go('products')">
-      <div class="bnav-icon">📦</div><span>Products</span>
+      <div class="bnav-icon"><i data-icon="package" data-size="23"></i></div><span>Products</span>
     </div>
     <div class="bnav-item" id="bn-customers" onclick="Router.go('customers')">
-      <div class="bnav-icon">👥</div><span>Clients</span>
+      <div class="bnav-icon"><i data-icon="users" data-size="23"></i></div><span>Clients</span>
     </div>
     <div class="bnav-item" id="bn-more" onclick="Router.go('more')">
-      <div class="bnav-icon">⋯</div><span>More</span>
+      <div class="bnav-icon"><i data-icon="dots" data-size="23"></i></div><span>More</span>
     </div>
   </nav>
+
+  <!-- Desktop side menu (shown on wide screens; built by assets/js/sidebar.js) -->
+  <aside class="sidebar" id="sidebar" aria-label="Main menu"></aside>
 
   <!-- Modal overlay -->
   <div class="modal-overlay hidden" id="modal-overlay"></div>
@@ -236,6 +244,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
 
 
 <!-- ── SCRIPTS (order matters — do not reorder) ── -->
+<script src="assets/js/icons.js"></script>
 <script src="assets/js/utils.js"></script>
 <script src="assets/js/database.js"></script>
 <script src="assets/js/auth.js"></script>
@@ -267,6 +276,7 @@ body { background:#070A12; margin:0; font-family:-apple-system,BlinkMacSystemFon
 <script src="modules/support/support.js"></script>
 <script src="modules/settings/backup.js"></script>
 <script src="modules/products/stock.js"></script>
+<script src="assets/js/sidebar.js"></script>
 <script src="assets/js/install.js"></script>
 <script src="assets/js/boot.js"></script>
 </body>

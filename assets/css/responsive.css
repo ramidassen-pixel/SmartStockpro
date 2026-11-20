@@ -12,8 +12,7 @@
 @media (min-width: 640px) {
   .modal { border-radius:var(--r20); max-width:520px; margin-bottom:40px; }
   .modal-overlay { align-items:center; }
-  .bottom-nav { display:none; }
-  .pages-container { margin-bottom:0; }
+  /* bottom nav stays until the desktop side menu takes over at 1024px */
   .page-title { font-size:27px; }
   .login-card { padding:40px 32px 34px; }
 }

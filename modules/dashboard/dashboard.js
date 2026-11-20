@@ -119,11 +119,11 @@ var Dashboard = {
     var greetHtml = '<div style="background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(201,168,76,.02));border:1px solid rgba(201,168,76,.15);border-radius:var(--r16);padding:18px 16px;margin:0 14px 14px">'
       + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">'
       + '<div>'
-      + '<div style="font-size:20px;font-weight:800;color:var(--t1);letter-spacing:-.02em">'+greet+', '+Utils.esc(displayName)+' 👋</div>'
+      + '<div style="font-size:20px;font-weight:800;color:var(--t1);letter-spacing:-.02em">'+greet+', '+Utils.esc(displayName)+'</div>'
       + '<div style="font-size:12px;color:var(--t2);margin-top:4px">'+fullDate+'</div>'
       + '<div style="font-size:11px;color:var(--t3);margin-top:2px">SmartStock Store · Monrovia, Liberia</div>'
       + '</div>'
-      + '<div style="font-size:32px;flex-shrink:0">'+(hour<12?'🌅':hour<17?'☀️':'🌙')+'</div>'
+      + '<div style="width:46px;height:46px;border-radius:14px;background:var(--gb);color:var(--g);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+Icons.svg(hour<12?'sunrise':hour<17?'sun-high':'moon',24)+'</div>'
       + '</div></div>';
 
     // ════════════════════════════════════════════════════════════════════
@@ -160,21 +160,21 @@ var Dashboard = {
 
       // Card 1 — Today Sales (gold)
       + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)">'
-      + '<div class="kpi-icon">💰</div>'
+      + '<div class="kpi-icon">'+Icons.svg('cash',20)+'</div>'
       + '<div class="kpi-label">Today Sales</div>'
       + '<div class="kpi-value">'+showMoney(todayRev)+'</div>'
       + '<div class="kpi-sub">'+todaySales.length+' transaction'+(todaySales.length!==1?'s':'')+'</div></div>'
 
       // Card 2 — Today Manual Expenses (red)
       + '<div class="kpi" style="--kc:var(--er);--kibg:var(--erb)">'
-      + '<div class="kpi-icon">💸</div>'
+      + '<div class="kpi-icon">'+Icons.svg('wallet',20)+'</div>'
       + '<div class="kpi-label">Today Expenses</div>'
       + '<div class="kpi-value">'+showMoney(todayManExp)+'</div>'
       + '<div class="kpi-sub">Manual expenses</div></div>'
 
       // Card 3 — COGS with toggle (amber)
       + '<div class="kpi" style="--kc:var(--wa);--kibg:'+(cogsEnabled?'var(--wab)':'var(--bg3)')+';opacity:'+(cogsEnabled?'1':'.65')+'">'
-      + '<div class="kpi-icon">🏷️</div>'
+      + '<div class="kpi-icon">'+Icons.svg('tag',20)+'</div>'
       + '<div class="kpi-label" style="display:flex;align-items:center;justify-content:space-between">'
       + 'COGS'
       + miniToggle('toggleCOGS', cogsEnabled)
@@ -184,7 +184,7 @@ var Dashboard = {
 
       // Card 4 — Allocated with toggle (amber/grey)
       + '<div class="kpi" style="--kc:var(--wa);--kibg:'+(allocEnabled?'var(--wab)':'var(--bg3)')+';opacity:'+(allocEnabled?'1':'.65')+'">'
-      + '<div class="kpi-icon">📅</div>'
+      + '<div class="kpi-icon">'+Icons.svg('calendar-stats',20)+'</div>'
       + '<div class="kpi-label" style="display:flex;align-items:center;justify-content:space-between">'
       + 'Allocated'
       + miniToggle('toggleAlloc', allocEnabled)
@@ -302,7 +302,7 @@ var Dashboard = {
       if (items.length>40) items=items.slice(0,38)+'…';
       var bc = sale.status==='Paid'?'var(--ok)':sale.status==='Partial'?'var(--wa)':'var(--er)';
       return '<div class="list-item" onclick="Sales.viewInvoice(\''+sale.id+'\')">'
-        + '<div class="list-icon" style="background:var(--gb3);font-size:18px">🧾</div>'
+        + '<div class="list-icon" style="background:var(--gb);color:var(--g)">'+Icons.svg('receipt',19)+'</div>'
         + '<div class="list-info">'
         + '<div class="list-name">'+Utils.esc(sale.customer||'Walk-in')+'</div>'
         + '<div class="list-meta" style="font-family:var(--fm)">'+sale.id+'</div>'
@@ -318,7 +318,7 @@ var Dashboard = {
     var recentHtml = '<div class="sec">'
       + '<div class="sec-title">Recent Sales <span class="sec-link" onclick="Router.go(\'sales\')">View All →</span></div>'
       + (sales.length>0 ? '<div class="card">'+recentRows+'</div>'
-        : '<div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">No sales yet</div><div class="empty-sub">Tap "+ New Sale" to get started</div></div>')
+        : '<div class="empty"><div class="empty-icon" style="color:var(--t3);display:flex;justify-content:center">'+Icons.svg('receipt',34)+'</div><div class="empty-title">No sales yet</div><div class="empty-sub">Tap "+ New Sale" to get started</div></div>')
       + '</div>';
 
     // ════════════════════════════════════════════════════════════════════
@@ -334,7 +334,7 @@ var Dashboard = {
         var lb = isOut||isCrit?'var(--erb)':'var(--wab)';
         var pct = Math.min(100,Math.max(2,Math.round((p.qty/Math.max(p.lowLevel||5,1))*100)));
         return '<div class="list-item" onclick="Router.go(\'products\')">'
-          + '<div class="list-icon" style="background:'+lb+'">'+(isOut?'🚫':isCrit?'🔴':'⚠️')+'</div>'
+          + '<div class="list-icon" style="background:'+lb+';color:'+lc+'">'+Icons.svg(isOut?'box':'alert-triangle',19)+'</div>'
           + '<div class="list-info"><div class="list-name">'+Utils.esc(p.name)+'</div>'
           + '<div class="list-meta">Qty: <strong>'+p.qty+'</strong> · Min: '+(p.lowLevel||5)+'</div>'
           + '<div style="margin-top:5px"><div class="progress"><div class="progress-fill" style="width:'+pct+'%;background:'+lc+'"></div></div></div>'
@@ -343,11 +343,11 @@ var Dashboard = {
           + '</div>';
       }).join('');
       alertsHtml = '<div class="sec">'
-        + '<div class="sec-title">⚠️ Low Stock Alert '
+        + '<div class="sec-title"><span class="sec-ico" style="color:var(--er)">'+Icons.svg('alert-triangle',17)+'</span>Low Stock Alert '
         + '<span style="background:var(--er);color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:99px;margin-left:4px">'+allAlerts.length+'</span>'
         + '<span class="sec-link" onclick="Router.go(\'products\')">View All</span></div>'
         + '<div class="card">'+alertRows+'</div>'
-        + '<div style="padding:10px 14px 0"><button class="btn-ghost" style="width:100%;font-size:12px" onclick="Router.go(\'products\')">📋 View All Stock</button></div>'
+        + '<div style="padding:10px 14px 0"><button class="btn-ghost" style="width:100%;font-size:12px" onclick="Router.go(\'products\')"><span style="display:inline-flex;vertical-align:-3px;margin-right:6px">'+Icons.svg('package',16)+'</span>View All Stock</button></div>'
         + '</div>';
     }
 
@@ -365,18 +365,18 @@ var Dashboard = {
     var topProds = Object.keys(prodMap).map(function(n){ return {name:n,qty:prodMap[n].qty,rev:prodMap[n].rev}; })
       .sort(function(a,b){ return b.qty-a.qty; }).slice(0,5);
 
-    var topProdsHtml = '<div class="sec"><div class="sec-title">🏆 Top Products Today</div>'
+    var topProdsHtml = '<div class="sec"><div class="sec-title"><span class="sec-ico">'+Icons.svg('trophy',17)+'</span>Top Products Today</div>'
       + (topProds.length>0 ? '<div class="card card-body">'
           + topProds.map(function(p,i) {
-              var medals=['🥇','🥈','🥉','4️⃣','5️⃣'];
+              var rk='<span class="rank r'+(i+1)+'">'+(i+1)+'</span>';
               return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd)">'
-                + '<span style="font-size:16px;flex-shrink:0">'+(medals[i]||'·')+'</span>'
+                + rk
                 + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+Utils.esc(p.name)+'</div>'
                 + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+p.qty+' units sold</div></div>'
                 + '<div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700;color:var(--g)">'+showMoney(p.rev)+'</div></div>'
                 + '</div>';
             }).join('')+'</div>'
-        : '<div class="empty" style="padding:20px"><div class="empty-icon" style="font-size:28px">📦</div><div class="empty-title" style="font-size:13px">No sales today yet</div></div>')
+        : '<div class="empty" style="padding:20px"><div class="empty-icon" style="color:var(--t3);display:flex;justify-content:center">'+Icons.svg('package',30)+'</div><div class="empty-title" style="font-size:13px">No sales today yet</div></div>')
       + '</div>';
 
     // ════════════════════════════════════════════════════════════════════
@@ -401,10 +401,10 @@ var Dashboard = {
             +'<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:800;background:'+sb+';border:1px solid '+sc+'40;color:'+sc+'">'+st+'</span>'
             +'</div></div>';
         }).join('');
-        suppHtml = '<div class="sec"><div class="sec-title">🏭 Supplier Payments Due <span class="sec-link" onclick="Router.go(\'suppliers\')">View All →</span></div>'
+        suppHtml = '<div class="sec"><div class="sec-title"><span class="sec-ico">'+Icons.svg('building-warehouse',17)+'</span>Supplier Payments Due <span class="sec-link" onclick="Router.go(\'suppliers\')">View All →</span></div>'
           + '<div class="card">'+suppRows+'</div></div>';
       } else {
-        suppHtml = '<div class="sec"><div class="sec-title">🏭 Supplier Payments</div>'
+        suppHtml = '<div class="sec"><div class="sec-title"><span class="sec-ico">'+Icons.svg('building-warehouse',17)+'</span>Supplier Payments</div>'
           + '<div style="padding:12px 14px;background:var(--okb);border:1px solid var(--okbd);border-radius:var(--r10);text-align:center;font-size:13px;font-weight:600;color:var(--ok)">✓ All suppliers paid</div></div>';
       }
     }
@@ -414,12 +414,12 @@ var Dashboard = {
     // ════════════════════════════════════════════════════════════════════
     var qaHtml = '<div class="sec"><div class="sec-title">Quick Actions</div>'
       + '<div class="qa-grid" style="grid-template-columns:repeat(3,1fr)">'
-      + '<div class="qa-btn" onclick="Sales.openNewSale()"><div class="qa-icon" style="background:var(--okb)">💵</div><div class="qa-label">New Sale</div></div>'
-      + '<div class="qa-btn" onclick="Products.openAddModal()"><div class="qa-icon" style="background:var(--gb)">📦</div><div class="qa-label">Add Stock</div></div>'
-      + '<div class="qa-btn" onclick="Expenses.openAddModal()"><div class="qa-icon" style="background:var(--erb)">💸</div><div class="qa-label">Add Expense</div></div>'
-      + '<div class="qa-btn" onclick="Router.go(\'suppliers\')"><div class="qa-icon" style="background:var(--wab)">🚛</div><div class="qa-label">Suppliers</div></div>'
-      + '<div class="qa-btn" onclick="Router.go(\'reports\')"><div class="qa-icon" style="background:var(--inb)">📊</div><div class="qa-label">Reports</div></div>'
-      + '<div class="qa-btn" onclick="Router.go(\'ai\')"><div class="qa-icon" style="background:var(--gb)">🤖</div><div class="qa-label">AI Assistant</div></div>'
+      + '<div class="qa-btn" onclick="Sales.openNewSale()"><div class="qa-icon" style="background:var(--okb);color:var(--ok)">'+Icons.svg('cash',22)+'</div><div class="qa-label">New Sale</div></div>'
+      + '<div class="qa-btn" onclick="Products.openAddModal()"><div class="qa-icon" style="background:var(--gb);color:var(--g)">'+Icons.svg('package',22)+'</div><div class="qa-label">Add Stock</div></div>'
+      + '<div class="qa-btn" onclick="Expenses.openAddModal()"><div class="qa-icon" style="background:var(--erb);color:var(--er)">'+Icons.svg('wallet',22)+'</div><div class="qa-label">Add Expense</div></div>'
+      + '<div class="qa-btn" onclick="Router.go(\'suppliers\')"><div class="qa-icon" style="background:var(--wab);color:var(--wa)">'+Icons.svg('truck',22)+'</div><div class="qa-label">Suppliers</div></div>'
+      + '<div class="qa-btn" onclick="Router.go(\'reports\')"><div class="qa-icon" style="background:var(--inb);color:var(--in)">'+Icons.svg('report-analytics',22)+'</div><div class="qa-label">Reports</div></div>'
+      + '<div class="qa-btn" onclick="Router.go(\'ai\')"><div class="qa-icon" style="background:var(--gb);color:var(--g)">'+Icons.svg('robot',22)+'</div><div class="qa-label">AI Assistant</div></div>'
       + '</div></div>';
 
     // ════════════════════════════════════════════════════════════════════
@@ -433,25 +433,56 @@ var Dashboard = {
       + '<div style="text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:3px">Net Profit</div><div style="font-size:13px;font-weight:800;color:'+(todayNet>=0?'var(--g)':'var(--er)')+'">'+showMoney(todayNet)+'</div></div>'
       + '<div style="text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:3px">Transactions</div><div style="font-size:13px;font-weight:800;color:var(--in)">'+todaySales.length+'</div></div>'
       + '</div>'
-      + (canSeeMoney?'<button class="btn-ghost" style="width:100%;font-size:12px" onclick="Dashboard.printDailyReport()">🖨 Print Daily Report</button>':'')
+      + (canSeeMoney?'<button class="btn-ghost" style="width:100%;font-size:12px" onclick="Dashboard.printDailyReport()"><span style="display:inline-flex;vertical-align:-3px;margin-right:6px">'+Icons.svg('printer',16)+'</span>Print Daily Report</button>':'')
       + '</div>';
 
+    // ════════════════════════════════════════════════════════════════════
+    // AREA 11 — 7-DAY SALES TREND CHART
+    // ════════════════════════════════════════════════════════════════════
+    var trendHtml = Charts.salesTrend(sales, cur, canSeeMoney);
+
+    // Smooth loading: first sync on a new device → placeholders instead of $0.00
+    if (!sales.length && DB._syncing) {
+      pg.innerHTML = Dashboard._skeleton();
+      return;
+    }
+
     // ── ASSEMBLE ──────────────────────────────────────────────────────────
+    // Phone: one column. Desktop (≥1024px, desktop.css): main column + side column.
     pg.innerHTML = '<div style="padding-top:6px">'
-      + greetHtml
-      + heroHtml
-      + statCards
-      + detailHtml
-      + recentHtml
-      + alertsHtml
-      + topProdsHtml
-      + suppHtml
-      + qaHtml
-      + weekChart()
-      + stripHtml
+      + '<div class="dash-greet-row">' + greetHtml + heroHtml + '</div>'
+      + '<div class="dash-grid">'
+      +   '<div class="dash-main">' + statCards + trendHtml + detailHtml + recentHtml + qaHtml + '</div>'
+      +   '<div class="dash-side">' + alertsHtml + topProdsHtml + suppHtml + weekChart() + stripHtml + '</div>'
+      + '</div>'
       + '</div>';
 
     Dashboard.animateCountUp();
+  },
+
+  // Re-draw when the window crosses the phone/desktop width (chart size + layout)
+  _watchResize: (function() {
+    var narrow = (window.innerWidth || 1024) < 640, t;
+    window.addEventListener('resize', function() {
+      clearTimeout(t);
+      t = setTimeout(function() {
+        var n = window.innerWidth < 640;
+        if (n !== narrow) { narrow = n; if (typeof Router !== 'undefined' && Router.current === 'dashboard') Dashboard.render(); }
+      }, 250);
+    });
+    return true;
+  })(),
+
+  // Shimmer placeholders shown while the first cloud sync is running
+  _skeleton: function() {
+    function block(h, extra) { return '<div class="skel" style="height:' + h + 'px;' + (extra || '') + '"></div>'; }
+    return '<div style="padding:6px 14px 20px" aria-busy="true" aria-label="Loading your business data">'
+      + '<div class="dash-greet-row">' + block(96, 'margin-bottom:14px') + block(96, 'margin-bottom:14px') + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+      + block(104) + block(104) + block(104) + block(104) + '</div>'
+      + block(230, 'margin-bottom:14px')
+      + block(180)
+      + '</div>';
   },
 
   // ── TOGGLE: Allocated Expenses ON / OFF ───────────────────────────────────
@@ -541,21 +572,11 @@ function analyticsSection() {
     ? '<span style="color:var(--ok);font-size:11px;font-weight:700">▲ '+weekChange+'%</span>'
     : '<span style="color:var(--er);font-size:11px;font-weight:700">▼ '+Math.abs(weekChange)+'%</span>';
 
+  // (the 7-day revenue chart now lives at the top of the dashboard: Charts.salesTrend)
   return '<div class="sec">'
-    // ── WEEK REVENUE CHART ──────────────────────────────────────────────
-    + '<div class="card card-body" style="margin-bottom:12px">'
-    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'
-    + '<div><div class="chart-title">📈 This Week Revenue</div>'
-    + '<div class="chart-sub">'+cur+' daily breakdown · 7-day total: <strong>'+Utils.cur(weekTotal,cur)+'</strong></div>'
-    + '</div>'
-    + weekTrend
-    + '</div>'
-    + weekHtml
-    + '</div>'
-
     // ── REVENUE vs EXPENSES ─────────────────────────────────────────────
     + '<div class="card card-body" style="margin-bottom:12px">'
-    + '<div style="margin-bottom:12px"><div class="chart-title">📊 Revenue vs Expenses</div>'
+    + '<div style="margin-bottom:12px"><div class="chart-title"><span class="sec-ico">'+Icons.svg('chart-bar',17)+'</span>Revenue vs Expenses</div>'
     + '<div class="chart-sub">Last 6 months comparison</div>'
     + '</div>'
     + revExpHtml
@@ -563,7 +584,7 @@ function analyticsSection() {
 
     // ── TOP PRODUCTS ────────────────────────────────────────────────────
     + '<div class="card card-body">'
-    + '<div style="margin-bottom:14px"><div class="chart-title">🏆 Top Products</div>'
+    + '<div style="margin-bottom:14px"><div class="chart-title"><span class="sec-ico">'+Icons.svg('trophy',17)+'</span>Top Products</div>'
     + '<div class="chart-sub">By revenue — all time</div>'
     + '</div>'
     + topProdHtml

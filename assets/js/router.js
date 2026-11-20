@@ -21,6 +21,8 @@ var Router = {
       var btn = Utils.get('bn-' + p);
       if (btn) btn.classList.toggle('active', p === page || (p==='more' && !BN_PAGES.includes(page)));
     });
+    // Desktop side menu highlight
+    if (typeof Sidebar !== 'undefined') Sidebar.setActive(page);
     // Close sidebar
     UI.closeSidebar();
     // Scroll to top

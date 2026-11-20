@@ -10,6 +10,9 @@ var UI = {
     document.documentElement.setAttribute('data-theme', theme || 'dark');
     var mc = document.querySelector('meta[name="theme-color"]');
     if (mc) mc.content = theme === 'light' ? '#f2f3f8' : '#070A12';
+    // Top-bar theme button shows what you switch TO
+    var tb = document.getElementById('theme-btn');
+    if (tb && typeof Icons !== 'undefined') tb.innerHTML = Icons.svg(theme === 'light' ? 'moon' : 'sun', 19);
   },
   closeSidebar: function() {},
 };
@@ -47,6 +50,7 @@ var App = {
       if (av && user.name) av.textContent = user.name[0].toUpperCase();
       if (s.bizLogo && typeof Settings !== 'undefined') Settings._applyBizLogo(s.bizLogo);
       if (user.photo && typeof Settings !== 'undefined') Settings._applyUserPhoto(user.photo, user);
+      if (typeof Sidebar !== 'undefined') Sidebar.syncBrand();
       try { Notifs.check(); } catch(e2) {}
       Router.go('dashboard');
     } catch(e) { console.error('showShell:', e); Router.go('dashboard'); }
