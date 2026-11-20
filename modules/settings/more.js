@@ -3,6 +3,13 @@ var MorePage = {
   render: function() {
     var pg = Utils.get('pg-more');
     if (!pg) return;
+    var installItem = [];
+    if (typeof Install !== 'undefined' && !Install.isInstalled()) {
+      var mob = Install.device().mobile;
+      installItem.push({ icon: mob ? '📱' : '💻', label: mob ? 'Install Mobile App' : 'Install Desktop App',
+        desc: mob ? 'Home-screen icon, full screen, works offline' : 'Own window & desktop icon, works offline',
+        bg:'var(--gb)', action:'Install.install()', badge:'APP' });
+    }
     var sections = [
       {
         label: 'Business',
@@ -31,13 +38,13 @@ var MorePage = {
       },
       {
         label: 'System',
-        items: [
+        items: installItem.concat([
           { icon:'⚙️', label:'Settings',           desc:'App configuration & profile',      bg:'var(--gb)',  action:"Router.go('settings')" },
           { icon:'🔔', label:'Notifications',      desc:'Stock & salary alerts',            bg:'var(--erb)', action:"Notifs.check();UI.toggleNotifPanel()" },
           { icon:'📥', label:'Export Data',        desc:'Download backup as JSON',          bg:'var(--okb)', action:"Settings.exportData()" },
           { icon:'🌙', label:'Toggle Theme',       desc:'Switch dark / light mode',         bg:'var(--bg3)', action:"Settings.toggleTheme()" },
           { icon:'🚪', label:'Sign Out',           desc:'Log out of this account',          bg:'var(--erb)', action:"Auth.logout()", danger:true },
-        ]
+        ])
       }
     ];
 

@@ -1,4 +1,4 @@
-const CACHE = 'ssp-v6.4';
+const CACHE = 'ssp-v6.5';
 const ASSETS = [
   './',
   'index.html',
@@ -42,6 +42,7 @@ const ASSETS = [
   'modules/support/support.js',
   'modules/settings/backup.js',
   'modules/products/stock.js',
+  'assets/js/install.js',
   'assets/js/boot.js',
   'pwa/manifest.json',
   'pwa/icon-192.png',
