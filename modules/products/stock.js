@@ -172,8 +172,8 @@ var Stock = {
 
     var oldQty = parseInt(prods[idx].qty)||0;
     var newQty = Math.max(0, oldQty + qty);
-    prods[idx].qty = newQty;
-    DB.set('products', prods);
+    // updateProduct also uploads the change (DB.set only saved it on this device)
+    DB.updateProduct(prodId, { qty: newQty });
 
     // Record movement
     var mv = {

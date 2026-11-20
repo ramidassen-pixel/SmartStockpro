@@ -590,6 +590,7 @@ var Sales = {
   // ── SAVE SALE ──────────────────────────────────────────────────────────────
   saveSale: function(action){
     action=action||'close';
+    if (this._saving) return;
     if(!this.cart.length){ Toast.show('Add at least one product','err'); return; }
     var custName = Utils.val('s-cust-name').trim()||'Walk-in Customer';
     var custId   = Utils.val('s-cust-id')||null;
@@ -605,11 +606,6 @@ var Sales = {
     }
     var custPhone = (Utils.val('s-cust-phone')||'').trim();
     var _amtStr  = Utils.val('s-amt-paid').trim();
-    // Empty field = full payment, except on Credit where it means nothing paid yet
-    var paidRaw  = _amtStr === '' ? (method==='Credit' ? 0 : total) : (parseFloat(_amtStr)||0);
-    var paid     = Math.min(paidRaw, total);
-    var balance  = Math.max(0, total-paid);
-    var status   = paid>0&&balance>0?'Partial':(paid<=0&&method==='Credit')?'Credit':'Paid';
 
     var finalCustId = custId;
     if (!finalCustId && custName && custName.toLowerCase()!=='walk-in customer') {
@@ -621,43 +617,99 @@ var Sales = {
       var ex = DB.getCustomers().find(function(c){ return c.id===finalCustId; });
       if (ex && (ex.phone||'') !== custPhone) DB.updateCustomer(finalCustId, { phone: custPhone });
     }
-    var cust = finalCustId ? DB.getCustomers().find(function(c){ return c.id===finalCustId; }) : null;
 
+    var form = {
+      id: Utils.uid('INV'), invNo: invNo, custName: custName, custId: finalCustId, custPhone: custPhone,
+      method: method, sub: sub, disc: disc, total: total, amtStr: _amtStr,
+      date: Utils.val('s-date')||Utils.today(), notes: Utils.val('s-notes'),
+      items: this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:parseInt(i.qty)||1}; }),
+    };
+
+    // Online: the server checks stock, reduces it and fixes the invoice number in one step
+    if (DB._bizId && DB._token && navigator.onLine !== false && DB.rpc) {
+      var self = this;
+      this._setSaving(true);
+      DB.rpc('record_sale', { p_sale: {
+        id: form.id, invoice_no: invNo, date: form.date, customer_id: finalCustId, customer_name: custName,
+        customer_phone: custPhone, items: form.items, discount_type: disc.type, discount_value: disc.value,
+        payment_method: method, amount_paid: _amtStr === '' ? null : (parseFloat(_amtStr)||0), notes: form.notes,
+        created_by_name: (Auth.currentUser && Auth.currentUser.name) || 'Unknown',
+      }}).then(function(res) {
+        self._setSaving(false);
+        DB.applyServerSale(res);
+        self._afterSave(res.sale, action, form);
+      }, function(err) {
+        self._setSaving(false);
+        if (err && err.network) {
+          // No connection (or the server is down): save on this device; it uploads later
+          self._saveLocal(action, form);
+          Toast.show('Saved offline — stock will be checked when you\'re back online', 'warn');
+        } else {
+          Toast.show((err && err.message) || 'The sale could not be saved', 'err');
+          if (err && /Not enough stock/i.test(err.message||'')) { try { DB.syncFromCloud(); } catch(e){} }
+        }
+      });
+      return;
+    }
+    this._saveLocal(action, form);
+  },
+
+  _setSaving: function(on) {
+    this._saving = on;
+    var btns = document.querySelectorAll('#modal-overlay .modal-foot button');
+    for (var i = 0; i < btns.length; i++) btns[i].disabled = on;
+    var main = document.querySelector('#modal-overlay button[onclick*="saveSale(\'close\')"]');
+    if (main) main.innerHTML = on ? 'Saving…' : '🧾 Save Invoice';
+  },
+
+  // Offline / fallback: the previous on-device behaviour
+  _saveLocal: function(action, form) {
+    var method = form.method, total = form.total;
+    var paidRaw  = form.amtStr === '' ? (method==='Credit' ? 0 : total) : (parseFloat(form.amtStr)||0);
+    var paid     = Math.min(paidRaw, total);
+    var balance  = Math.max(0, total-paid);
+    var status   = paid>0&&balance>0?'Partial':(paid<=0&&method==='Credit')?'Credit':'Paid';
     var sale = DB.addSale({
-      customer:custName, customerId:finalCustId||null, customerPhone:custPhone||'',
-      invoiceNo: invNo || undefined,
-      items:this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty}; }),
-      subtotal:sub, discount:Math.round(disc.pct*100)/100, discountType:disc.type, discountValue:disc.value, discountAmount:discAmt, total:total,
+      id: form.id,
+      customer:form.custName, customerId:form.custId||null, customerPhone:form.custPhone||'',
+      invoiceNo: form.invNo || undefined,
+      items: form.items,
+      subtotal:form.sub, discount:Math.round(form.disc.pct*100)/100, discountType:form.disc.type, discountValue:form.disc.value, discountAmount:form.disc.amount, total:total,
       amountPaid:status==='Paid'?total:paid,
       balance:status==='Paid'?0:balance,
       payment:method, status:status,
-      date:Utils.val('s-date')||Utils.today(),
-      notes:Utils.val('s-notes'),
+      date:form.date, notes:form.notes,
       createdBy: (Auth.currentUser && Auth.currentUser.id) || null,
       createdByName: (Auth.currentUser && Auth.currentUser.name) || 'Unknown',
     });
-
     if (paid>0 || status==='Paid') {
-      DB.addPayment({ saleId:sale.id, customerId:finalCustId||null,
+      DB.addPayment({ saleId:sale.id, customerId:form.custId||null,
         amount:status==='Paid'?total:paid, method:method,
         note:'Initial payment', invoiceRef:sale.id });
     }
-    this.cart.forEach(function(item){
+    form.items.forEach(function(item){
       var p=DB.getProducts().find(function(x){ return x.id===item.id; });
       if(p) DB.updateProduct(item.id,{qty:Math.max(0,(p.qty||0)-(parseInt(item.qty)||0))});
     });
-    if(cust) DB.updateCustomer(finalCustId,{totalSpent:(cust.totalSpent||0)+total,purchases:(cust.purchases||0)+1});
+    this._afterSave(sale, action, form);
+  },
+
+  // Shared finish: customer totals, next invoice number, form reset or print prompt
+  _afterSave: function(sale, action, form) {
+    var cust = form.custId ? DB.getCustomers().find(function(c){ return c.id===form.custId; }) : null;
+    if(cust) DB.updateCustomer(form.custId,{totalSpent:(cust.totalSpent||0)+(parseFloat(sale.total)||0),purchases:(cust.purchases||0)+1});
 
     // Remember the next invoice number (synced to every device through settings)
-    if (invNo) { var nxt = Sales.nextInvoiceNo(invNo); if (nxt) DB.saveSettings({ invoiceNextNo: nxt }); }
+    var used = sale.invoiceNo || form.invNo;
+    if (used) { var nxt = Sales.nextInvoiceNo(used); if (nxt) DB.saveSettings({ invoiceNextNo: nxt }); }
     Toast.show('Invoice '+Sales.no(sale)+' saved ✓','ok');
     Notifs.check();
 
     if(action==='new'){
       this.cart=[]; this.discount=0;
       var n=Utils.get('s-cust-name'); if(n) n.value='Walk-in Customer';
-      Utils.get('s-cust-id').value='';
-      Utils.get('s-cust-tag').style.display='none';
+      var ci=Utils.get('s-cust-id'); if(ci) ci.value='';
+      var tg=Utils.get('s-cust-tag'); if(tg) tg.style.display='none';
       var d=Utils.get('s-disc'); if(d) d.value='';
       var dt=Utils.get('s-disc-type'); if(dt) dt.value='percent';
       var ph=Utils.get('s-cust-phone'); if(ph) ph.value='';
@@ -665,12 +717,12 @@ var Sales = {
       var p2=Utils.get('s-amt-paid'); if(p2) p2.value='';
       var nt=Utils.get('s-notes'); if(nt) nt.value='';
       this.renderCart();
+      this.updateTotals();
       Toast.show('Ready for next sale','ok');
       this.render();
     } else {
       Modal.close();
       this.render();
-      // Show print prompt after close
       var sid = sale.id;
       setTimeout(function(){ Sales.showPrintPrompt(sid,'invoice'); }, 350);
     }

@@ -538,8 +538,51 @@ var DB = {
 
   // ── Sales ─────────────────────────────────────────────────────────────────
   getSales: function() { return this.get('sales') || []; },
+  // Call a database function (e.g. record_sale). Rejects with err.network=true when offline,
+  // or err.server=true + the server's message when the server refused it.
+  rpc: function(fn, body) {
+    var self = this;
+    var call = function() {
+      var h = Object.assign({}, self._hdr()); delete h.Prefer;
+      return fetch(self._url() + '/rest/v1/rpc/' + fn, { method: 'POST', headers: h, body: JSON.stringify(body) });
+    };
+    return self._ensureToken().then(call).then(function(r) {
+      if (r.status !== 401) return r;
+      if (typeof Auth !== 'undefined' && Auth._session) Auth._session.expires_at = 0;
+      return self._ensureToken().then(call);
+    }).then(function(r) {
+      return r.json().catch(function() { return {}; }).then(function(d) {
+        if (r.ok) return d;
+        var e = new Error((d && (d.message || d.msg)) || ('Server error ' + r.status));
+        e.status = r.status; e.server = r.status < 500; e.network = r.status >= 500;
+        throw e;
+      });
+    }, function() { var e = new Error('offline'); e.network = true; throw e; });
+  },
+
+  // Put what the server saved (record_sale) into this device's copy — nothing to upload again
+  applyServerSale: function(res) {
+    if (!res || !res.sale) return;
+    var self = this, s = res.sale;
+    var sales = this.get('sales'), i = sales.findIndex(function(x){ return x.id === s.id; });
+    if (i > -1) sales[i] = s; else sales.unshift(s);
+    if (res.payment) {
+      var pays = this.get('payments');
+      if (!pays.some(function(x){ return x.id === res.payment.id; })) pays.unshift(res.payment);
+    }
+    (res.products || []).forEach(function(p) {
+      var prods = self.get('products'), j = prods.findIndex(function(x){ return x.id === p.id; });
+      var rec = Object.assign({}, p.data, { id: p.id });
+      if (j > -1) prods[j] = rec; else prods.push(rec);
+    });
+    var mvs = this.get('stockMovements') || [];
+    (res.movements || []).forEach(function(m) { if (!mvs.some(function(x){ return x.id === m.id; })) mvs.unshift(m); });
+    this._data.stockMovements = mvs;
+    this.save();
+  },
+
   addSale: function(s) {
-    s.id = Utils.uid('INV'); s.createdAt = Utils.today();
+    s.id = s.id || Utils.uid('INV'); s.createdAt = Utils.today();
     var arr = this.get('sales'); arr.unshift(s); this.save();
     this._push('biz_sales', s.id, s);
     return s;
