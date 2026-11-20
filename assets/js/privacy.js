@@ -97,6 +97,20 @@ var Privacy = {
       + '<span class="pw-eye" onclick="Auth.togglePw(\'' + id + '\')">' + Icons.svg('eye', 18) + '</span></div></div>';
   },
 
+  // Account password box that works like the sign-in screen: the browser can fill in the SAVED
+  // password for this account (a hidden username field tells it which one). Many people sign in
+  // with the saved password and don't know it exactly, so typing from memory can be refused.
+  _accountField: function() {
+    var email = Utils.esc((Auth.currentUser && Auth.currentUser.email) || '');
+    return '<form onsubmit="Privacy.submit();return false" autocomplete="on">'
+      + '<input type="email" name="email" autocomplete="username" value="' + email + '" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" tabindex="-1" aria-hidden="true">'
+      + '<div class="fg"><label class="fl" for="pv-pass">Your SmartStock account password</label>'
+      + '<div class="pw-wrap"><input class="fi" id="pv-pass" name="password" type="password" autocomplete="current-password" placeholder="Click here and choose your saved password">'
+      + '<span class="pw-eye" onclick="Auth.togglePw(\'pv-pass\')">' + Icons.svg('eye', 18) + '</span></div>'
+      + '<div class="pv-hint">Tip: click the box and pick the password your browser saved for SmartStock — the same one it fills in when you sign in.</div></div>'
+      + '</form>';
+  },
+
   // mode: 'pin' (enter PIN), 'create' (first time: make a PIN), 'password' (account password)
   openUnlock: function(mode) {
     var self = this;
@@ -117,7 +131,7 @@ var Privacy = {
           + '<div class="pv-or"><span>or</span></div>';
         body += mode === 'pin'
           ? self._field('pv-pin', 'Your privacy PIN', '••••', true)
-          : self._field('pv-pass', 'Your SmartStock account password', 'Type your password', false);
+          : self._accountField();
       }
       if (ok && !has) body += '<label class="pv-check"><input type="checkbox" id="pv-enrol" checked> Use fingerprint / face to unlock next time</label>';
       body += '<div id="pv-err" class="form-err hidden"></div>';
@@ -131,7 +145,8 @@ var Privacy = {
           + '<button class="btn-primary" style="flex:1" id="pv-go" onclick="Privacy.submit()">' + ico('lock-open', 18) + (mode === 'create' ? ' Save PIN &amp; show' : ' Show figures') + '</button>',
       });
       setTimeout(function() {
-        ['pv-pin', 'pv-pin2', 'pv-pass'].forEach(function(id) { var i = document.getElementById(id); if (i) i.value = ''; });
+        // Clear the PIN boxes only — the account password box is left for the browser to fill
+        ['pv-pin', 'pv-pin2'].forEach(function(id) { var i = document.getElementById(id); if (i) i.value = ''; });
         var first = document.getElementById(mode === 'password' ? 'pv-pass' : 'pv-pin');
         if (first && !has) { first.removeAttribute('readonly'); first.focus(); }
       }, 150);
@@ -204,7 +219,7 @@ var Privacy = {
         self._success(hadPin ? 'PIN cleared — you\'ll create a new one next time' : null);
       } else if (r.status === 429) self._err('Too many tries. Wait a minute and try again.');
       else {
-        self._err('Your account says this password isn\'t right. Use your PIN or fingerprint instead.');
+        self._err('Your account says this password isn\'t right. Click the box and choose the password your browser saved for SmartStock — that\'s the one that signs you in.');
         var box = document.getElementById('pv-pass'); if (box) { box.value = ''; box.focus(); }
       }
     }).catch(function() {
