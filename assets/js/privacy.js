@@ -2,7 +2,7 @@
    Privacy lock for the dashboard's "today" figures ONLY:
    Today's Net Profit, Today Sales, Today Expenses, COGS and Allocated. Every other amount is always visible.
    - Hidden ($••••) whenever the app opens; the eye button on the Net Profit card toggles them.
-   - Showing them needs the device's fingerprint / Face ID / Windows Hello, or the account password.
+   - Showing them needs a privacy PIN (made once per device), the device's fingerprint / face, or the account password.
    - They hide again after 10 minutes without use, or when the app is left for more than 30 seconds. */
 var Privacy = {
   hidden: true,
@@ -70,30 +70,78 @@ var Privacy = {
     return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(function() { return false; });
   },
 
-  openUnlock: function() {
+  // ── Privacy PIN (4–6 digits, this device only; stored as a salted PBKDF2 hash) ──
+  _pinKey: function() { return 'ssp_pin_' + location.hostname + '_' + ((Auth.currentUser && Auth.currentUser.id) || 'user'); },
+  _pinRec: function() { try { return JSON.parse(localStorage.getItem(this._pinKey()) || 'null'); } catch (e) { return null; } },
+  _hashPin: function(pin, saltB64, iter) {
+    var self = this, enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveBits'])
+      .then(function(k) { return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: self._unb64(saltB64), iterations: iter }, k, 256); })
+      .then(function(bits) { return self._b64(bits); });
+  },
+  _savePin: function(pin) {
+    var self = this, salt = this._b64(this._rand(16)), iter = 150000;
+    return this._hashPin(pin, salt, iter).then(function(h) {
+      try { localStorage.setItem(self._pinKey(), JSON.stringify({ s: salt, h: h, i: iter })); } catch (e) {}
+    });
+  },
+  _fails: 0, _lockUntil: 0,
+
+  _field: function(id, label, placeholder, numeric) {
+    // read-only until tapped + autocomplete off: the browser can't slip a saved password in
+    return '<div class="fg"><label class="fl" for="' + id + '">' + label + '</label>'
+      + '<div class="pw-wrap"><input class="fi" id="' + id + '" name="' + id + '-' + Date.now() + '" type="password"'
+      + (numeric ? ' inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"' : ' autocomplete="new-password"')
+      + ' data-lpignore="true" data-1p-ignore readonly onfocus="this.removeAttribute(\'readonly\')" onpointerdown="this.removeAttribute(\'readonly\')" ontouchstart="this.removeAttribute(\'readonly\')"'
+      + ' placeholder="' + placeholder + '" onkeydown="if(event.key===\'Enter\')Privacy.submit()">'
+      + '<span class="pw-eye" onclick="Auth.togglePw(\'' + id + '\')">' + Icons.svg('eye', 18) + '</span></div></div>';
+  },
+
+  // mode: 'pin' (enter PIN), 'create' (first time: make a PIN), 'password' (account password)
+  openUnlock: function(mode) {
     var self = this;
     this._bioSupported().then(function(ok) {
       var has = ok && !!self._bioId();
+      var pinRec = self._pinRec();
+      mode = mode || (pinRec ? 'pin' : 'create');
+      self._mode = mode;
       var ico = function(n, s) { return Icons.svg(n, s); };
+      var body = '<div class="pv-lock">' + ico('shield-lock', 30) + '</div>';
+      if (mode === 'create') {
+        body += '<p class="pv-text">Create a privacy PIN to show today\'s figures. You\'ll use it (or your fingerprint) every time. It works on this device only.</p>'
+          + self._field('pv-pin', 'New PIN (4–6 digits)', '••••', true)
+          + self._field('pv-pin2', 'Type the PIN again', '••••', true);
+      } else {
+        body += '<p class="pv-text">Today\'s profit, sales and costs are hidden so people near your screen can\'t see them.</p>';
+        if (has) body += '<button class="btn-primary btn-full pv-bio" onclick="Privacy.unlockWithBiometric()">' + ico('fingerprint', 20) + '<span>Use fingerprint / face</span></button>'
+          + '<div class="pv-or"><span>or</span></div>';
+        body += mode === 'pin'
+          ? self._field('pv-pin', 'Your privacy PIN', '••••', true)
+          : self._field('pv-pass', 'Your SmartStock account password', 'Type your password', false);
+      }
+      if (ok && !has) body += '<label class="pv-check"><input type="checkbox" id="pv-enrol" checked> Use fingerprint / face to unlock next time</label>';
+      body += '<div id="pv-err" class="form-err hidden"></div>';
+      if (mode === 'pin') body += '<button class="pv-link" onclick="Privacy.openUnlock(\'password\')">Forgot your PIN? Use your account password</button>';
+      if (mode === 'password' && pinRec) body += '<button class="pv-link" onclick="Privacy.openUnlock(\'pin\')">Use your PIN instead</button>';
+      if (mode === 'password' && !pinRec) body += '<button class="pv-link" onclick="Privacy.openUnlock(\'create\')">Create a PIN instead</button>';
       Modal.open({
-        title: 'Show figures', sub: 'Confirm it\'s you', barColor: 'var(--g)',
-        body: '<div class="pv-lock">' + ico('shield-lock', 30) + '</div>'
-          + '<p class="pv-text">Sales totals, profit and other amounts are hidden so people near your screen can\'t see them.</p>'
-          + (has ? '<button class="btn-primary btn-full pv-bio" onclick="Privacy.unlockWithBiometric()">' + ico('fingerprint', 20) + '<span>Use fingerprint / face</span></button>'
-                   + '<div class="pv-or"><span>or use your password</span></div>' : '')
-          + '<div class="fg"><label class="fl" for="pv-pass">Your SmartStock password</label>'
-          // readonly-until-focus + new-password stop the browser auto-filling a saved password here:
-          // it's hidden behind dots, so anything typed was being added to the saved one
-          + '<div class="pw-wrap"><input class="fi" id="pv-pass" name="pv-check-' + Date.now() + '" type="password" autocomplete="new-password" data-lpignore="true" data-1p-ignore readonly onfocus="this.removeAttribute(\'readonly\')" onpointerdown="this.removeAttribute(\'readonly\')" ontouchstart="this.removeAttribute(\'readonly\')" placeholder="Type your password" onkeydown="if(event.key===\'Enter\')Privacy.unlockWithPassword()">'
-          + '<span class="pw-eye" onclick="Auth.togglePw(\'pv-pass\')">' + ico('eye', 18) + '</span></div></div>'
-          + (ok && !has ? '<label class="pv-check"><input type="checkbox" id="pv-enrol" checked> Use fingerprint / face to unlock next time</label>' : '')
-          + '<div id="pv-err" class="form-err hidden"></div>',
+        title: 'Show figures', sub: mode === 'create' ? 'Set up your privacy PIN' : 'Confirm it\'s you', barColor: 'var(--g)',
+        body: body,
         footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-          + '<button class="btn-primary" style="flex:1" id="pv-go" onclick="Privacy.unlockWithPassword()">' + ico('lock-open', 18) + ' Show figures</button>',
+          + '<button class="btn-primary" style="flex:1" id="pv-go" onclick="Privacy.submit()">' + ico('lock-open', 18) + (mode === 'create' ? ' Save PIN &amp; show' : ' Show figures') + '</button>',
       });
-      // Start empty even if the browser filled something in, then focus
-      setTimeout(function() { var i = document.getElementById('pv-pass'); if (i) { i.value = ''; if (!has) i.focus(); } }, 150);
+      setTimeout(function() {
+        ['pv-pin', 'pv-pin2', 'pv-pass'].forEach(function(id) { var i = document.getElementById(id); if (i) i.value = ''; });
+        var first = document.getElementById(mode === 'password' ? 'pv-pass' : 'pv-pin');
+        if (first && !has) { first.removeAttribute('readonly'); first.focus(); }
+      }, 150);
     });
+  },
+
+  submit: function() {
+    if (this._mode === 'create') return this.createPin();
+    if (this._mode === 'password') return this.unlockWithPassword();
+    return this.unlockWithPin();
   },
 
   _err: function(msg) {
@@ -101,7 +149,42 @@ var Privacy = {
     if (e) { e.textContent = msg; e.classList.remove('hidden'); }
   },
 
-  // Check the password against the real account (Supabase Auth)
+  // After a successful check: optionally set up fingerprint, then show
+  _success: function(note) {
+    var self = this;
+    var enrol = (document.getElementById('pv-enrol') || {}).checked;
+    if (enrol) {
+      self.register().then(function() { self._reveal(); Toast.show('Fingerprint / face unlock set up ✓', 'ok'); },
+                           function() { self._reveal(); if (note) Toast.show(note, 'ok'); });
+    } else { self._reveal(); if (note) Toast.show(note, 'ok'); }
+  },
+
+  createPin: function() {
+    var self = this;
+    var a = (document.getElementById('pv-pin') || {}).value || '';
+    var b = (document.getElementById('pv-pin2') || {}).value || '';
+    if (!/^\d{4,6}$/.test(a)) { this._err('Use 4 to 6 digits for your PIN.'); return; }
+    if (a !== b) { this._err('The two PINs don\'t match. Type them again.'); document.getElementById('pv-pin2').value = ''; return; }
+    this._savePin(a).then(function() { self._success('Privacy PIN saved ✓'); },
+                          function() { self._err('This browser can\'t save a PIN. Use your account password instead.'); });
+  },
+
+  unlockWithPin: function() {
+    var self = this, rec = this._pinRec(), box = document.getElementById('pv-pin');
+    var pin = (box || {}).value || '';
+    if (Date.now() < this._lockUntil) { this._err('Too many wrong PINs. Wait a minute, or use your account password.'); return; }
+    if (!rec) { this.openUnlock('create'); return; }
+    if (!pin) { this._err('Enter your PIN.'); return; }
+    this._hashPin(pin, rec.s, rec.i).then(function(h) {
+      if (h === rec.h) { self._fails = 0; self._success(); return; }
+      self._fails++;
+      if (box) { box.value = ''; box.focus(); }
+      if (self._fails >= 5) { self._lockUntil = Date.now() + 60000; self._fails = 0; self._err('Too many wrong PINs. Wait a minute, or use your account password.'); }
+      else self._err('That PIN isn\'t right. Try again.');
+    });
+  },
+
+  // Check the password against the real account (Supabase Auth). Success also clears a forgotten PIN.
   unlockWithPassword: function() {
     var self = this;
     var pw = (document.getElementById('pv-pass') || {}).value || '';
@@ -109,27 +192,24 @@ var Privacy = {
     if (!pw) { this._err('Enter your password.'); return; }
     if (!email) { this._err('Sign in again to use this.'); return; }
     var btn = document.getElementById('pv-go'); if (btn) btn.disabled = true;
-    var enrol = (document.getElementById('pv-enrol') || {}).checked;
     fetch(SUPABASE_AUTH_URL + '/token?grant_type=password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
-      body: JSON.stringify({ email: email, password: pw }),
+      body: JSON.stringify({ email: String(email).trim().toLowerCase(), password: pw }),
     }).then(function(r) {
       if (btn) btn.disabled = false;
       if (r.ok) {
-        if (enrol) {
-          // Ask for the fingerprint now while the user is here; reveal either way
-          self.register().then(function() { self._reveal(); Toast.show('Fingerprint / face unlock set up ✓', 'ok'); },
-                               function() { self._reveal(); });
-        } else self._reveal();
+        var hadPin = !!self._pinRec();
+        try { localStorage.removeItem(self._pinKey()); } catch (e) {}
+        self._success(hadPin ? 'PIN cleared — you\'ll create a new one next time' : null);
       } else if (r.status === 429) self._err('Too many tries. Wait a minute and try again.');
       else {
-        self._err('That password isn\'t right. The box has been cleared — type it again (tap the eye to see what you type).');
+        self._err('Your account says this password isn\'t right. Use your PIN or fingerprint instead.');
         var box = document.getElementById('pv-pass'); if (box) { box.value = ''; box.focus(); }
       }
     }).catch(function() {
       if (btn) btn.disabled = false;
-      self._err(self._bioId() ? 'No internet — use your fingerprint / face instead.' : 'No internet connection. Try again when you\'re online.');
+      self._err('No internet connection — use your PIN or fingerprint instead.');
     });
   },
 
