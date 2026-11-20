@@ -82,14 +82,17 @@ var Privacy = {
           + (has ? '<button class="btn-primary btn-full pv-bio" onclick="Privacy.unlockWithBiometric()">' + ico('fingerprint', 20) + '<span>Use fingerprint / face</span></button>'
                    + '<div class="pv-or"><span>or use your password</span></div>' : '')
           + '<div class="fg"><label class="fl" for="pv-pass">Your SmartStock password</label>'
-          + '<div class="pw-wrap"><input class="fi" id="pv-pass" type="password" autocomplete="current-password" placeholder="Password" onkeydown="if(event.key===\'Enter\')Privacy.unlockWithPassword()">'
+          // readonly-until-focus + new-password stop the browser auto-filling a saved password here:
+          // it's hidden behind dots, so anything typed was being added to the saved one
+          + '<div class="pw-wrap"><input class="fi" id="pv-pass" name="pv-check-' + Date.now() + '" type="password" autocomplete="new-password" data-lpignore="true" data-1p-ignore readonly onfocus="this.removeAttribute(\'readonly\')" onpointerdown="this.removeAttribute(\'readonly\')" ontouchstart="this.removeAttribute(\'readonly\')" placeholder="Type your password" onkeydown="if(event.key===\'Enter\')Privacy.unlockWithPassword()">'
           + '<span class="pw-eye" onclick="Auth.togglePw(\'pv-pass\')">' + ico('eye', 18) + '</span></div></div>'
           + (ok && !has ? '<label class="pv-check"><input type="checkbox" id="pv-enrol" checked> Use fingerprint / face to unlock next time</label>' : '')
           + '<div id="pv-err" class="form-err hidden"></div>',
         footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
           + '<button class="btn-primary" style="flex:1" id="pv-go" onclick="Privacy.unlockWithPassword()">' + ico('lock-open', 18) + ' Show figures</button>',
       });
-      if (!has) setTimeout(function() { var i = document.getElementById('pv-pass'); if (i) i.focus(); }, 150);
+      // Start empty even if the browser filled something in, then focus
+      setTimeout(function() { var i = document.getElementById('pv-pass'); if (i) { i.value = ''; if (!has) i.focus(); } }, 150);
     });
   },
 
@@ -120,7 +123,10 @@ var Privacy = {
                                function() { self._reveal(); });
         } else self._reveal();
       } else if (r.status === 429) self._err('Too many tries. Wait a minute and try again.');
-      else self._err('That password isn\'t right.');
+      else {
+        self._err('That password isn\'t right. The box has been cleared — type it again (tap the eye to see what you type).');
+        var box = document.getElementById('pv-pass'); if (box) { box.value = ''; box.focus(); }
+      }
     }).catch(function() {
       if (btn) btn.disabled = false;
       self._err(self._bioId() ? 'No internet — use your fingerprint / face instead.' : 'No internet connection. Try again when you\'re online.');
