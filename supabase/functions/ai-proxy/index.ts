@@ -31,7 +31,14 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!isSignedInUser(req)) return json({ error: "Please sign in to use the AI assistant.", type: "not_signed_in" }, 401);
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
+  // Tolerate copy-paste mistakes: surrounding spaces, line breaks or quotes
+  const rawKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
+  const apiKey = rawKey.trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+  // What kind of value is saved (never the value itself) — for clear error messages
+  const keyKind = apiKey.startsWith("sk-ant-api") ? "api"
+    : apiKey.startsWith("sk-ant-admin") ? "admin"
+    : apiKey.startsWith("sk-ant-oat") ? "oauth"
+    : "other";
   if (!apiKey) {
     return json({ error: "The AI service is not set up yet: ANTHROPIC_API_KEY is missing in Supabase.", type: "not_configured" }, 500);
   }
@@ -83,7 +90,16 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
-      return json({ error: "The Anthropic API key saved in Supabase was rejected. Create a new key at console.anthropic.com and update the ANTHROPIC_API_KEY secret.", type: "invalid_api_key" }, 502);
+      // Diagnostics only — kind and length, never the key
+      console.log(JSON.stringify({ event: "anthropic_auth_failed", keyKind, keyLength: apiKey.length, cleanedPaste: rawKey !== apiKey }));
+      const hint = keyKind === "admin"
+        ? " The saved value is an Admin key (starts with sk-ant-admin). Admin keys can't be used for chat: create a normal key under API Keys (it starts with sk-ant-api)."
+        : keyKind === "oauth"
+        ? " The saved value is a Claude subscription token (starts with sk-ant-oat), not an API key. Create a key under API Keys at console.anthropic.com (it starts with sk-ant-api)."
+        : keyKind === "other"
+        ? " The saved value doesn't look like an Anthropic API key — it should start with sk-ant-api. Copy the whole key again."
+        : " The key looks correct in format but Anthropic rejected it: it may have been deleted or disabled, or copied incompletely. Create a new key and save it again.";
+      return json({ error: "The Anthropic API key saved in Supabase was rejected." + hint, type: "invalid_api_key", key_kind: keyKind }, 502);
     }
     if (error instanceof Anthropic.PermissionDeniedError) {
       return json({ error: "The Anthropic account doesn't have access to this model or has run out of credit. Check Plans & Billing at console.anthropic.com.", type: "permission_denied" }, 502);
