@@ -169,3 +169,19 @@ html body { background:var(--bg); }
 .pv-link { display:block; width:100%; margin-top:10px; padding:8px; font-size:12.5px; font-weight:700; color:var(--g); text-align:center; border-radius:var(--r8); }
 .pv-link:hover { background:var(--gb); }
 .pv-hint { font-size:11.5px; color:var(--t3); margin-top:6px; line-height:1.45; }
+
+/* ── Sales: multi-select delete ─────────────────────── */
+.sel-bar { position:sticky; top:0; z-index:20; margin:0 14px 12px; padding:12px; background:var(--bg2); border:1px solid var(--bd2); border-radius:var(--r14); box-shadow:var(--sh); }
+.sel-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; font-size:13px; font-weight:700; color:var(--t1); }
+.sel-quick { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+.sel-quick .chip { margin:0; }
+.sel-pick { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--t2); }
+.sel-pick input { background:var(--bg3); border:1px solid var(--bd2); border-radius:var(--r8); color:var(--t1); padding:6px 8px; font-size:13px; min-height:34px; color-scheme:dark; }
+[data-theme="light"] .sel-pick input { color-scheme:light; }
+.sel-box { width:22px; height:22px; margin:0 6px 0 2px; flex-shrink:0; border:2px solid var(--t3); border-radius:6px; display:flex; align-items:center; justify-content:center; transition:background .12s, border-color .12s; }
+.sel-on .sel-box { background:var(--er); border-color:var(--er); }
+.sel-on .sel-box::after { content:""; width:6px; height:11px; border:solid #fff; border-width:0 2.5px 2.5px 0; transform:translateY(-1px) rotate(45deg); }
+.sel-row { cursor:pointer; }
+.sel-row .list-actions { display:none; }
+.sel-row.sel-on { background:var(--erb); }
+@media (min-width:1024px) { .sel-bar { margin-left:0; margin-right:0; } }

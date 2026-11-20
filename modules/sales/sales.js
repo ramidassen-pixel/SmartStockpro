@@ -53,8 +53,11 @@ var Sales = {
       var payBtn = s.status!=='Paid'
         ? '<button class="btn-ok btn-sm" onclick="event.stopPropagation();Sales.openPayBalance(\''+s.id+'\')">💳 Pay</button>'
         : '';
-      return '<div class="list-item" onclick="Sales.viewInvoice(\''+s.id+'\') ">'
-        + '<div class="list-icon" style="background:var(--gb3);border-color:rgba(201,168,76,.15);font-size:20px">🧾</div>'
+      var selMode = Sales._selMode, on = !!Sales._sel[s.id];
+      return '<div class="list-item'+(selMode?' sel-row'+(on?' sel-on':''):'')+'" data-sid="'+s.id+'" onclick="'+(selMode?'Sales.toggleSel(\''+s.id+'\')':'Sales.viewInvoice(\''+s.id+'\')')+'">'
+        + (selMode
+            ? '<span class="sel-box" role="checkbox" aria-checked="'+on+'" aria-label="Select invoice '+Utils.esc(Sales.no(s))+'"></span>'
+            : '<div class="list-icon" style="background:var(--gb3);border-color:rgba(201,168,76,.15);font-size:20px">🧾</div>')
         + '<div class="list-info">'
         + '<div class="list-name">'+Utils.esc(s.customer||'Walk-in')+'</div>'
         + '<div class="list-meta">'+Utils.esc(Sales.no(s))+' · '+Utils.date(s.date)+'</div>'
@@ -82,7 +85,9 @@ var Sales = {
 
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Sales</div><div class="page-sub">'+all.length+' invoices total</div></div>'
-      + '<div class="page-actions"><button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
+      + '<div class="page-actions">'
+      + (all.length ? '<button class="btn-ghost btn-sm" onclick="Sales.toggleSelectMode()">'+(this._selMode?'Done':'☑ Select')+'</button>' : '')
+      + '<button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
       + '</div>'
       + '<div class="sec"><div class="kpi-grid">'
       + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value">'+Utils.cur(totalRev,cur)+'</div><div class="kpi-sub">'+all.length+' invoices</div></div>'
@@ -91,10 +96,101 @@ var Sales = {
       + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)"><div class="kpi-icon">📊</div><div class="kpi-label">Invoices</div><div class="kpi-value">'+all.length+'</div><div class="kpi-sub">All time</div></div>'
       + '</div></div>'
       + '<div class="chips">'+chips+'</div>'
+      + (this._selMode ? this._selBar(filtered) : '')
       + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>' : emptyState)+'</div>';
   },
 
-  setFilter: function(f) { this.filter=f; this.render(); },
+  setFilter: function(f) { this.filter=f; this._sel={}; this.render(); },
+
+  // ── MULTI-SELECT DELETE ────────────────────────────────────────────────────
+  _selMode: false,
+  _sel: {},
+  _selDay: '',
+  _selMonth: '',
+
+  toggleSelectMode: function() {
+    this._selMode = !this._selMode;
+    this._sel = {}; this._selDay = ''; this._selMonth = '';
+    this.render();
+  },
+  _shown: function() {
+    var all = DB.getSales();
+    return this.filter === 'All' ? all : all.filter(function(s){ return s.status === Sales.filter; });
+  },
+  _selBar: function(shown) {
+    return '<div class="sel-bar" role="region" aria-label="Select invoices">'
+      + '<div class="sel-top"><span id="sel-count" aria-live="polite">'+this._selText()+'</span>'
+      + '<button class="btn-ghost btn-sm" onclick="Sales.toggleSelectMode()">Done</button></div>'
+      + '<div class="sel-quick">'
+      + '<button class="chip" onclick="Sales.selectAll()">All shown ('+shown.length+')</button>'
+      + '<label class="sel-pick">Day <input type="date" value="'+this._selDay+'" onchange="Sales.selectDay(this.value)"></label>'
+      + '<label class="sel-pick">Month <input type="month" value="'+this._selMonth+'" onchange="Sales.selectMonth(this.value)"></label>'
+      + '<button class="chip" onclick="Sales.clearSel()">Clear</button>'
+      + '</div>'
+      + '<button class="btn-danger btn-full" onclick="Sales.deleteSelected()">🗑 Delete selected</button>'
+      + '</div>';
+  },
+  _selText: function() {
+    var ids = Object.keys(this._sel), cur = DB.getSettings().currency || '$';
+    if (!ids.length) return 'Tap invoices to select them, or pick a day or month';
+    var tot = DB.getSales().filter(function(s){ return Sales._sel[s.id]; }).reduce(function(a,s){ return a+(parseFloat(s.total)||0); },0);
+    return ids.length + ' selected · ' + Utils.cur(tot, cur);
+  },
+  _updateSelBar: function() { var el = Utils.get('sel-count'); if (el) el.textContent = this._selText(); },
+  toggleSel: function(id) {
+    if (this._sel[id]) delete this._sel[id]; else this._sel[id] = true;
+    var row = document.querySelector('[data-sid="'+id+'"]');
+    if (row) { row.classList.toggle('sel-on', !!this._sel[id]); var cb = row.querySelector('.sel-box'); if (cb) cb.setAttribute('aria-checked', String(!!this._sel[id])); }
+    this._updateSelBar();
+  },
+  _setSel: function(list, emptyMsg) {
+    this._sel = {};
+    list.forEach(function(s){ Sales._sel[s.id] = true; });
+    this.render();
+    if (!list.length && emptyMsg) Toast.show(emptyMsg, 'warn');
+  },
+  selectAll: function() { this._selDay = ''; this._selMonth = ''; this._setSel(this._shown()); },
+  selectDay: function(v) {
+    if (!v) return; this._selDay = v; this._selMonth = '';
+    this._setSel(this._shown().filter(function(s){ return s.date === v; }), 'No invoices on ' + Utils.date(v));
+  },
+  selectMonth: function(v) {
+    if (!v) return; this._selMonth = v; this._selDay = '';
+    this._setSel(this._shown().filter(function(s){ return s.date && s.date.slice(0,7) === v; }), 'No invoices in that month');
+  },
+  clearSel: function() { this._selDay = ''; this._selMonth = ''; this._setSel([]); },
+
+  deleteSelected: function() {
+    var ids = Object.keys(this._sel);
+    if (!ids.length) { Toast.show('Select at least one invoice first', 'warn'); return; }
+    var cur = DB.getSettings().currency || '$';
+    var picked = DB.getSales().filter(function(s){ return Sales._sel[s.id]; });
+    var tot = picked.reduce(function(a,s){ return a+(parseFloat(s.total)||0); },0);
+    var big = ids.length >= 20;
+    Modal.open({
+      title: 'Delete ' + ids.length + ' invoice' + (ids.length>1?'s':'') + '?', barColor: 'var(--er)',
+      body: '<p style="font-size:14px;color:var(--t1);line-height:1.6;margin:0 0 10px">'
+          + '<strong>' + ids.length + '</strong> invoice' + (ids.length>1?'s':'') + ' totalling <strong>' + Utils.cur(tot, cur) + '</strong> will be removed from this app on every device.</p>'
+          + '<p style="font-size:12.5px;color:var(--t2);line-height:1.55;margin:0 0 12px">Stock isn\'t returned and payment records stay, the same as deleting one invoice. Your nightly backup keeps a copy for 30 days if you need them back.</p>'
+          + (big ? '<div class="fg"><label class="fl" for="del-confirm">Type DELETE to confirm</label><input class="fi" id="del-confirm" autocomplete="off" placeholder="DELETE"></div>' : '')
+          + '<div id="del-err" class="form-err hidden"></div>',
+      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
+            + '<button class="btn-danger" style="flex:1" onclick="Sales._confirmBulkDelete('+(big?'true':'false')+')">Delete ' + ids.length + '</button>',
+    });
+  },
+  _confirmBulkDelete: function(big) {
+    if (big && ((Utils.val('del-confirm') || '').trim().toUpperCase() !== 'DELETE')) {
+      var e = Utils.get('del-err'); if (e) { e.textContent = 'Type DELETE to confirm.'; e.classList.remove('hidden'); }
+      return;
+    }
+    var ids = Object.keys(this._sel);
+    DB.deleteSales(ids);
+    Modal.close();
+    this._sel = {}; this._selMode = false; this._selDay = ''; this._selMonth = '';
+    this.render();
+    try { Notifs.check(); } catch (e2) {}
+    Toast.show(ids.length + ' invoice' + (ids.length>1?'s':'') + ' deleted', 'warn');
+  },
 
   // ── NEW SALE FORM ──────────────────────────────────────────────────────────
   openNewSale: function() {

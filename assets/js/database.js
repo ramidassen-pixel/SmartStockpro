@@ -137,7 +137,9 @@ var DB = {
     this._scheduleFlush();
   },
   _isPending: function(cloudTable, id) {
-    return (this._pendingUploads || []).some(function(x) { return x.cloudTable === cloudTable && x.id === id; });
+    return (this._pendingUploads || []).some(function(x) {
+      return x.cloudTable === cloudTable && (x.id === id || (x.op === 'delbulk' && x.ids.indexOf(id) >= 0));
+    });
   },
   _scheduleFlush: function() {
     var self = this;
@@ -171,6 +173,11 @@ var DB = {
     var hdr = self._hdr();
     if (item.op === 'del') {
       url = self._rest(item.cloudTable) + '?id=eq.' + encodeURIComponent(item.id) + '&business_id=eq.' + encodeURIComponent(self._bizId);
+      opts = { method: 'PATCH', headers: hdr, body: JSON.stringify({ deleted: true }) };
+    } else if (item.op === 'delbulk') {
+      // Soft-delete many records in one request: id=in.("a","b",...)
+      var list = item.ids.map(function(x){ return '"' + String(x).replace(/"/g, '') + '"'; }).join(',');
+      url = self._rest(item.cloudTable) + '?id=in.(' + encodeURIComponent(list) + ')&business_id=eq.' + encodeURIComponent(self._bizId);
       opts = { method: 'PATCH', headers: hdr, body: JSON.stringify({ deleted: true }) };
     } else if (item.op === 'settings') {
       url = self._rest('biz_settings');
@@ -544,6 +551,18 @@ var DB = {
   deleteSale: function(id) {
     this._data.sales = this.get('sales').filter(function(x){ return x.id!==id; }); this.save();
     this._pushDelete('biz_sales', id);
+  },
+  // Delete many invoices at once (same effect as deleteSale for each), synced in batches of 100
+  deleteSales: function(ids) {
+    var gone = {}; ids.forEach(function(id){ gone[id] = true; });
+    this._data.sales = this.get('sales').filter(function(x){ return !gone[x.id]; }); this.save();
+    // drop any queued upload for these invoices, then queue the batched soft-deletes
+    this._pendingUploads = (this._pendingUploads || []).filter(function(x){ return !(x.cloudTable === 'biz_sales' && gone[x.id]); });
+    for (var i = 0; i < ids.length; i += 100) {
+      this._pendingUploads.push({ op: 'delbulk', cloudTable: 'biz_sales', id: '_delbulk_' + Date.now() + '_' + i, ids: ids.slice(i, i + 100) });
+    }
+    this._saveQueue();
+    this._scheduleFlush();
   },
 
   // ── Customers ─────────────────────────────────────────────────────────────
