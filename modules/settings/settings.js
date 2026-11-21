@@ -104,13 +104,16 @@ var Settings = {
       + '<div class="settings-item" onclick="Settings.openCurrencyModal()">'
       + '<div class="settings-icon" style="background:var(--gb)">💱</div>'
       + '<div class="settings-info"><div class="settings-name">Currency</div>'
-      + '<div class="settings-desc">'+Utils.esc(s.currency||'$')+'</div></div>'
+      + '<div class="settings-desc">'+Utils.esc(s.currency||'$')+(Settings._currentCurrencyCode(s)?' · '+Settings._currentCurrencyCode(s):'')+'</div></div>'
       + '<div class="settings-arrow">›</div></div>'
-      + '<div class="settings-item" onclick="Settings.openExchangeRateModal()">'
-      + '<div class="settings-icon" style="background:var(--gb)">💵</div>'
-      + '<div class="settings-info"><div class="settings-name">LRD Exchange Rate</div>'
-      + '<div class="settings-desc">'+(s.lrdRate?'1 USD = L$'+s.lrdRate:'Tap to set rate for dual currency')+'</div></div>'
-      + '<div class="settings-arrow">›</div></div>'
+      // The USD ↔ LRD dual-currency option only matters to shops in Liberia
+      + ((['USD','LRD'].indexOf(Settings._currentCurrencyCode(s)) !== -1 || s.lrdRate)
+        ? '<div class="settings-item" onclick="Settings.openExchangeRateModal()">'
+        + '<div class="settings-icon" style="background:var(--gb)">💵</div>'
+        + '<div class="settings-info"><div class="settings-name">LRD Exchange Rate</div>'
+        + '<div class="settings-desc">'+(s.lrdRate?'1 USD = L$'+s.lrdRate:'Tap to set rate for dual currency')+'</div></div>'
+        + '<div class="settings-arrow">›</div></div>'
+        : '')
       + '<div class="settings-item" onclick="Settings.openLowStockModal()">'
       + '<div class="settings-icon" style="background:var(--wab)">⚠️</div>'
       + '<div class="settings-info"><div class="settings-name">Low Stock Alert Level</div>'
@@ -323,25 +326,81 @@ var Settings = {
   },
 
   // ═══ CURRENCY ════════════════════════════════════════════════════════════
+  // Every currency in the world, built from the browser's own currency data.
+  // Symbols already in use keep the exact text saved before (e.g. 'L$', 'Ksh').
+  _currencyList: function() {
+    if (Settings._currencies) return Settings._currencies;
+    var fixed = { USD:'$', EUR:'€', GBP:'£', LRD:'L$', NGN:'₦', GHS:'₵', ZAR:'R', KES:'Ksh' };
+    var codes = [];
+    try { codes = Intl.supportedValuesOf('currency'); } catch(e) {}
+    if (!codes || !codes.length) codes = Object.keys(fixed);
+    var names = null;
+    try { names = new Intl.DisplayNames(['en'], { type:'currency' }); } catch(e) {}
+    var list = codes.map(function(code) {
+      var sym = fixed[code];
+      if (!sym) {
+        try {
+          var parts = new Intl.NumberFormat('en', { style:'currency', currency:code, currencyDisplay:'narrowSymbol' }).formatToParts(1);
+          for (var i = 0; i < parts.length; i++) if (parts[i].type === 'currency') sym = parts[i].value;
+        } catch(e) {}
+      }
+      var name = code;
+      try { if (names) name = names.of(code) || code; } catch(e) {}
+      return { code:code, sym:sym || code, name:name };
+    });
+    list.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    Settings._currencies = list;
+    return list;
+  },
+
+  _currentCurrencyCode: function(s) {
+    if (s.currencyCode) return s.currencyCode;
+    var old = { '$':'USD', '€':'EUR', '£':'GBP', 'L$':'LRD', '₦':'NGN', '₵':'GHS', 'R':'ZAR', 'Ksh':'KES' };
+    return old[s.currency || '$'] || '';
+  },
+
   openCurrencyModal: function() {
-    var s=DB.getSettings();
-    var currencies=[['$','USD — Dollar'],['€','EUR — Euro'],['£','GBP — Pound'],
-      ['L$','LRD — Liberian Dollar'],['₦','NGN — Naira'],['₵','GHS — Cedi'],['R','ZAR — Rand'],['Ksh','KES — Shilling']];
+    var s = DB.getSettings();
+    var current = Settings._currentCurrencyCode(s);
+    var list = Settings._currencyList();
     Modal.open({
       title:'Currency',
-      body:'<div class="fg"><label class="fl">Select Currency</label>'
-          +'<select class="fi" id="set-cur">'
-          +currencies.map(function(c){ return '<option value="'+c[0]+'"'+(s.currency===c[0]?' selected':'')+'>'+c[1]+' ('+c[0]+')</option>'; }).join('')
-          +'</select></div>',
+      body:'<div class="fg"><label class="fl">Search your currency</label>'
+          +'<input class="fi" id="set-cur-q" placeholder="e.g. naira, rupee, peso, CFA…" oninput="Settings.filterCurrencies(this.value)" autocomplete="off"></div>'
+          +'<div class="fg"><label class="fl">Select Currency</label>'
+          +'<select class="fi" id="set-cur" size="8" style="height:auto">'
+          +list.map(function(c){ return '<option value="'+c.code+'"'+(c.code===current?' selected':'')+'>'+Utils.esc(c.name)+' — '+c.code+' ('+Utils.esc(c.sym)+')</option>'; }).join('')
+          +'</select></div>'
+          +'<div style="font-size:11px;color:var(--t3)">Prices, invoices and reports will use this currency. Existing amounts are not converted.</div>',
       footer:'<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
             +'<button class="btn-primary" style="flex:1" onclick="Settings.saveCurrency()">Save</button>',
     });
+    var sel = Utils.get('set-cur');
+    if (sel && sel.selectedIndex >= 0 && sel.options[sel.selectedIndex]) sel.options[sel.selectedIndex].scrollIntoView({ block:'center' });
+  },
+
+  filterCurrencies: function(q) {
+    var sel = Utils.get('set-cur');
+    if (!sel) return;
+    q = (q || '').trim().toLowerCase();
+    var firstShown = null;
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i];
+      var show = !q || o.text.toLowerCase().indexOf(q) !== -1;
+      o.hidden = !show;
+      if (show && !firstShown) firstShown = o;
+    }
+    if (firstShown && (sel.selectedIndex < 0 || sel.options[sel.selectedIndex].hidden)) firstShown.selected = true;
   },
 
   saveCurrency: function() {
-    var el=Utils.get('set-cur');
-    DB.saveSettings({currency:el?el.value:'$'});
-    Toast.show('Currency updated ✓','ok');
+    var el = Utils.get('set-cur');
+    var code = el && el.value;
+    var c = null, list = Settings._currencyList();
+    for (var i = 0; i < list.length; i++) if (list[i].code === code) c = list[i];
+    if (!c) { Toast.show('Pick a currency from the list','err'); return; }
+    DB.saveSettings({ currency:c.sym, currencyCode:c.code });
+    Toast.show('Currency set to '+c.name+' ('+c.sym+') ✓','ok');
     Modal.close();
     Settings.render();
   },

@@ -1,0 +1,473 @@
+<title>SmartStock Pro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a shop counter. Left = the pitch, right = a till receipt that reprints in the visitor's own currency. Sections below read like aisles: short, labelled, scannable. */
+:root {
+  --bg: #F3F6F4;
+  --surface: #FFFFFF;
+  --ink: #13201B;
+  --muted: #55665F;
+  --line: #D6DFDA;
+  --accent: #0E7A5C;
+  --accent-ink: #FFFFFF;
+  --tag: #E9A23B;
+  --paper: #FFFFFF;
+  --paper-ink: #1B1B1B;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1412; --surface: #15201C; --ink: #E5EEE9; --muted: #9AACA4; --line: #26342F;
+    --accent: #3CC796; --accent-ink: #06140F; --tag: #F0B256; --paper: #F7F7F2; --paper-ink: #1B1B1B;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1412; --surface: #15201C; --ink: #E5EEE9; --muted: #9AACA4; --line: #26342F;
+  --accent: #3CC796; --accent-ink: #06140F; --tag: #F0B256; --paper: #F7F7F2; --paper-ink: #1B1B1B;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.08; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2.4rem, 5.6vw, 4.2rem); font-weight: 800; }
+h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+p { margin: 0; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.lede { color: var(--muted); font-size: 1.15rem; max-width: 34rem; }
+
+/* Top bar */
+.top { padding-block: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 800; font-size: 1.2rem; text-decoration: none; }
+.brand-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 0.95rem; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 22px; border-radius: 999px; font-weight: 600; text-decoration: none;
+  font-family: var(--font-body); font-size: 1rem; border: 2px solid transparent; cursor: pointer;
+  transition: transform .15s ease, background-color .15s ease;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { transform: translateY(-1px); }
+.btn-ghost { border-color: var(--line); color: var(--ink); background: transparent; }
+.btn-ghost:hover { border-color: var(--ink); }
+.btn-sm { padding: 9px 16px; font-size: 0.92rem; }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; padding-block: 40px 72px; }
+.hero > * { min-width: 0; }
+.hero-copy { display: flex; flex-direction: column; gap: 22px; }
+.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.hero-note { font-size: 0.9rem; color: var(--muted); }
+.hl { background: linear-gradient(transparent 62%, color-mix(in srgb, var(--tag) 55%, transparent) 62%); padding: 0 .1em; }
+
+/* Receipt */
+.till { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.cur-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 0.92rem; color: var(--muted); }
+.cur-pick select {
+  font-family: var(--font-body); font-size: 0.95rem; padding: 8px 12px; border-radius: 10px;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); max-width: 100%;
+}
+.receipt {
+  width: 100%; max-width: 360px; background: var(--paper); color: var(--paper-ink);
+  font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.55;
+  padding: 26px 22px 30px; position: relative;
+  box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 18px 40px -18px rgba(0,0,0,.35);
+  transform: rotate(1.2deg);
+  --zig: 10px;
+  -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig) 100%;
+          mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig) 100%;
+}
+.receipt .r-head { text-align: center; display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.receipt .r-shop { font-weight: 600; font-size: 0.95rem; letter-spacing: 0.04em; }
+.receipt .r-dim { color: #6B6B6B; }
+.receipt .rule { border: 0; border-top: 1.5px dashed #B9B9B9; margin: 10px 0; }
+.receipt .row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.receipt .row span:last-child { text-align: right; white-space: nowrap; }
+.receipt .item-name { font-weight: 600; }
+.receipt .total { font-weight: 600; font-size: 1rem; }
+.receipt .due { background: #1B1B1B; color: #FFF; padding: 4px 8px; margin: 6px -8px 0; }
+.receipt .r-foot { text-align: center; margin-top: 14px; color: #6B6B6B; }
+.receipt.flash .amt { animation: flash .5s ease; }
+@keyframes flash { from { background: color-mix(in srgb, #E9A23B 55%, transparent); } to { background: transparent; } }
+.example-tag { font-size: 0.78rem; color: var(--muted); text-align: center; max-width: 320px; }
+
+/* Sections */
+section.band { padding-block: 72px; border-top: 1px solid var(--line); }
+.sec-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; max-width: 40rem; }
+
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px 32px; }
+.feat { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 2px solid var(--ink); min-width: 0; }
+.feat p { color: var(--muted); font-size: 0.97rem; }
+.feat .code { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); }
+
+.ask { margin-top: 44px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.ask > * { min-width: 0; }
+.bubble { background: var(--bg); border-radius: 14px 14px 14px 4px; padding: 12px 14px; font-size: 0.95rem; }
+.bubble.me { background: var(--accent); color: var(--accent-ink); border-radius: 14px 14px 4px 14px; justify-self: end; max-width: 30rem; }
+.chat { display: flex; flex-direction: column; gap: 10px; }
+
+.world { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+.world > * { min-width: 0; }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.checks li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; }
+.checks li::before { content: "✓"; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 0.75rem; font-weight: 700; margin-top: 2px; }
+.checks b { display: block; }
+.checks span { color: var(--muted); font-size: 0.95rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--font-mono); font-size: 0.85rem; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+.shops { margin-top: 26px; color: var(--muted); font-size: 0.95rem; }
+
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; counter-reset: s; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.step::before { counter-increment: s; content: counter(s); font-family: var(--font-display); font-weight: 800; font-size: 2rem; color: var(--accent); line-height: 1; }
+.step p { color: var(--muted); font-size: 0.95rem; }
+
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
+.plan { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 26px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.plan.pick { border: 2px solid var(--accent); }
+.plan .price { font-family: var(--font-display); font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.plan .price small { font-family: var(--font-body); font-size: 0.95rem; color: var(--muted); font-weight: 500; letter-spacing: 0; }
+.plan ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.95rem; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.badge { align-self: flex-start; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; background: var(--tag); color: #1B1B1B; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+.plan-note { margin-top: 18px; color: var(--muted); font-size: 0.9rem; }
+
+.faq { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
+details { border-top: 1px solid var(--line); padding-block: 16px; min-width: 0; }
+summary { font-weight: 600; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font-family: var(--font-mono); color: var(--accent); font-size: 1.2rem; line-height: 1; }
+details[open] summary::after { content: "–"; }
+details p { color: var(--muted); margin-top: 10px; font-size: 0.97rem; }
+
+.final { padding-block: 80px; border-top: 1px solid var(--line); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.final .lede { margin: 0 auto; }
+.link-box { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; font-family: var(--font-mono); font-size: 0.85rem; color: var(--muted); }
+.link-box code { background: var(--surface); border: 1px solid var(--line); padding: 6px 10px; border-radius: 8px; word-break: break-all; }
+footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+@media (max-width: 900px) {
+  .hero, .world { grid-template-columns: 1fr; gap: 40px; }
+  .features, .steps, .plans { grid-template-columns: 1fr 1fr; }
+  .ask { grid-template-columns: 1fr; }
+  .faq { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .features, .steps, .plans { grid-template-columns: 1fr; }
+  .hero { padding-block: 16px 56px; }
+  section.band { padding-block: 56px; }
+  .receipt { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#top" id="top"><span class="brand-mark">SS</span>SmartStock Pro</a>
+    <a class="btn btn-primary btn-sm" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Open the app</a>
+  </header>
+
+  <div class="hero">
+    <div class="hero-copy">
+      <span class="eyebrow">Stock · Sales · Invoices · Debts</span>
+      <h1>Know what you sold, what you have, and <span class="hl">who still owes you.</span></h1>
+      <p class="lede">SmartStock Pro runs your shop from your phone. Record a sale in seconds, watch stock go down by itself, print the invoice, and see every customer's balance. In your own currency, wherever your shop is.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free for 14 days</a>
+        <a class="btn btn-ghost" href="#how">See how it starts</a>
+      </div>
+      <p class="hero-note">No card needed. Works on any phone, tablet or computer with a browser.</p>
+    </div>
+
+    <div class="till">
+      <label class="cur-pick" for="cur">Show this receipt in
+        <select id="cur" aria-label="Currency for the sample receipt"></select>
+      </label>
+      <div class="receipt" id="receipt" aria-live="polite">
+        <div class="r-head">
+          <span class="r-shop">CORNER MART</span>
+          <span class="r-dim">INVOICE INV-2026-0142</span>
+          <span class="r-dim" id="r-date"></span>
+        </div>
+        <div class="row r-dim"><span>Customer</span><span>A. Mensah</span></div>
+        <hr class="rule">
+        <div id="r-items"></div>
+        <hr class="rule">
+        <div class="row total"><span>TOTAL</span><span class="amt" id="r-total"></span></div>
+        <div class="row"><span>Paid today</span><span class="amt" id="r-paid"></span></div>
+        <div class="row total due"><span>BALANCE OWED</span><span class="amt" id="r-due"></span></div>
+        <hr class="rule">
+        <div class="row r-dim"><span>Stock left · Cooking oil</span><span>4 ⚠ low</span></div>
+        <p class="r-foot">Thank you for shopping with us</p>
+      </div>
+      <p class="example-tag">Example invoice. Prices are rough local amounts for illustration only.</p>
+    </div>
+  </div>
+</div>
+
+<section class="band" id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">What it does</span>
+      <h2>Everything a shop counter needs, in one app</h2>
+    </div>
+    <div class="features">
+      <div class="feat">
+        <h3>Sales and invoices</h3>
+        <p>Ring up a sale, take part payment or full payment, and print a clean A4 invoice or receipt.</p>
+        <span class="code">INV · receipt · part payment</span>
+      </div>
+      <div class="feat">
+        <h3>Stock that counts itself</h3>
+        <p>Every sale takes items out of stock. You get a warning before a best seller runs out.</p>
+        <span class="code">low-stock alerts · SKU · barcode</span>
+      </div>
+      <div class="feat">
+        <h3>Customer debts</h3>
+        <p>See who owes you, how much, and since when. Record payments as they come in.</p>
+        <span class="code">credit · balances · history</span>
+      </div>
+      <div class="feat">
+        <h3>Suppliers and orders</h3>
+        <p>Make purchase orders, receive goods, and track what you owe your suppliers.</p>
+        <span class="code">PO · GRN · supplier bills</span>
+      </div>
+      <div class="feat">
+        <h3>Quotations</h3>
+        <p>Send a price quote with discounts and tax, then turn it into an invoice with one tap.</p>
+        <span class="code">QT · discount · tax</span>
+      </div>
+      <div class="feat">
+        <h3>Staff with limits</h3>
+        <p>Add sales staff who can sell but not see profits or delete records. You approve every new account.</p>
+        <span class="code">owner · staff · approvals</span>
+      </div>
+    </div>
+
+    <div class="ask">
+      <div>
+        <span class="eyebrow">Built-in assistant</span>
+        <h3 style="margin-top:8px">Ask your shop a question</h3>
+      </div>
+      <div class="chat">
+        <div class="bubble me">Which products will run out this week?</div>
+        <div class="bubble">Cooking oil 5L (4 left, you sell about 2 a day) and Rice 25kg (6 left). Reorder both from your usual supplier before Friday.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap world">
+    <div class="sec-head" style="margin-bottom:0">
+      <span class="eyebrow">Works in your country</span>
+      <h2>Your currency. Your phone. Your shop.</h2>
+      <p class="lede">Pick your currency once in Settings, from over 160. Prices, invoices and reports all use it from then on.</p>
+      <div class="chips" aria-label="Some supported currencies">
+        <span class="chip">₦ NGN</span><span class="chip">Ksh KES</span><span class="chip">₵ GHS</span>
+        <span class="chip">F CFA XOF</span><span class="chip">₹ INR</span><span class="chip">Rs PKR</span>
+        <span class="chip">₱ PHP</span><span class="chip">R$ BRL</span><span class="chip">€ EUR</span>
+        <span class="chip">L$ LRD</span><span class="chip">R ZAR</span><span class="chip">$ USD</span>
+      </div>
+    </div>
+    <div>
+      <ul class="checks">
+        <li><div><b>Installs like an app</b><span>Add it to your home screen on Android, iPhone or a computer. No app store needed.</span></div></li>
+        <li><div><b>Your data is backed up</b><span>Records are saved online every night, so a lost or broken phone does not mean lost sales.</span></div></li>
+        <li><div><b>Each shop sees only its own data</b><span>Your sales, stock and customers are private to your business and the staff you approve.</span></div></li>
+        <li><div><b>Two currencies where you need them</b><span>Shops in Liberia can price in US dollars and take payment in Liberian dollars at your own rate.</span></div></li>
+      </ul>
+      <p class="shops">Used for mini-markets, phone and electronics shops, pharmacies, hardware stores, boutiques, building supplies and wholesale.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Getting started</span>
+      <h2>Selling in under 15 minutes</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><h3>Register your shop</h3><p>Open the app, enter your shop name and email, and confirm your account.</p></div>
+      <div class="step"><h3>Add your products</h3><p>Name, cost price, selling price and how many you have. Start with your top 20 items.</p></div>
+      <div class="step"><h3>Make your first sale</h3><p>Pick the items, take the payment, print or share the receipt. Stock updates on its own.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="pricing">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Pricing</span>
+      <h2>Try it free. Pay monthly if it helps.</h2>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <h3>Free trial</h3>
+        <div class="price">0 <small>for 14 days</small></div>
+        <ul><li>Every feature unlocked</li><li>Owner account</li><li>Keep your data if you subscribe</li></ul>
+        <a class="btn btn-ghost" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free</a>
+      </div>
+      <div class="plan pick">
+        <span class="badge">Most shops</span>
+        <h3>Shop</h3>
+        <div class="price" data-usd="9">$9 <small>/ month</small></div>
+        <ul><li>1 shop, up to 3 staff</li><li>Unlimited products and sales</li><li>Invoices, debts, reports</li><li>AI assistant</li></ul>
+        <a class="btn btn-primary" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free, then $9</a>
+      </div>
+      <div class="plan">
+        <h3>Business</h3>
+        <div class="price" data-usd="19">$19 <small>/ month</small></div>
+        <ul><li>Up to 10 staff</li><li>Suppliers, purchase orders, salary</li><li>Help setting up your stock list</li><li>Priority support</li></ul>
+        <a class="btn btn-ghost" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free, then $19</a>
+      </div>
+    </div>
+    <p class="plan-note">Prices in US dollars. You can pay the same amount in your local currency.</p>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <div class="sec-head"><span class="eyebrow">Questions</span><h2>Before you start</h2></div>
+    <div class="faq">
+      <details><summary>Do I need a computer?</summary><p>No. A phone with a browser is enough. You can also use a tablet or computer, and switch between them.</p></details>
+      <details><summary>Does it work without internet?</summary><p>The app opens and keeps working when the connection drops, then saves your records online when you are back.</p></details>
+      <details><summary>Can I change the currency later?</summary><p>Yes, in Settings. Amounts you already entered are not converted, so pick your main currency at the start.</p></details>
+      <details><summary>Can my staff steal or delete records?</summary><p>Staff accounts can sell, but cannot delete sales or see profit unless you allow it. You approve every new staff account.</p></details>
+      <details><summary>What happens after the free trial?</summary><p>You choose a plan to keep going. If you do not, nothing is charged.</p></details>
+      <details><summary>Can you set it up for me?</summary><p>Yes. Send your product list and we will load it into the app for you on the Business plan.</p></details>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="final">
+    <h2>Open your shop on SmartStock Pro today</h2>
+    <p class="lede">Fourteen days free. Set your currency, add your products and make your first sale.</p>
+    <a class="btn btn-primary" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free for 14 days</a>
+    <div class="link-box"><span>Or open this link on your phone:</span><code id="app-link">ramidassen-pixel.github.io/SmartStockpro</code><button class="btn btn-ghost btn-sm" id="copy-btn" type="button">Copy link</button></div>
+  </div>
+  <footer><span>SmartStock Pro</span><span>Stock, sales and invoices for shops everywhere</span></footer>
+</div>
+
+<script>
+(function () {
+  // Rough example rates (local units per 1 USD). For the sample receipt only.
+  var RATES = {
+    USD:1, EUR:0.92, GBP:0.78, NGN:1500, GHS:15, KES:130, UGX:3700, TZS:2600, RWF:1400, ETB:130,
+    ZAR:18, XOF:600, XAF:600, LRD:190, SLE:23, GMD:70, EGP:50, MAD:10, AED:3.67, SAR:3.75,
+    INR:85, PKR:280, BDT:120, LKR:300, NPR:135, PHP:57, IDR:16000, VND:25000, MYR:4.5, THB:35,
+    BRL:5.5, MXN:18, COP:4000, PEN:3.7, CLP:950, ARS:1000, TRY:40, JMD:157, CAD:1.38, AUD:1.52
+  };
+  var REGION = {
+    US:'USD', NG:'NGN', GH:'GHS', KE:'KES', UG:'UGX', TZ:'TZS', RW:'RWF', ET:'ETB', ZA:'ZAR',
+    SN:'XOF', CI:'XOF', ML:'XOF', BF:'XOF', BJ:'XOF', TG:'XOF', NE:'XOF', CM:'XAF', GA:'XAF', CG:'XAF', TD:'XAF',
+    LR:'LRD', SL:'SLE', GM:'GMD', EG:'EGP', MA:'MAD', AE:'AED', SA:'SAR', IN:'INR', PK:'PKR', BD:'BDT',
+    LK:'LKR', NP:'NPR', PH:'PHP', ID:'IDR', VN:'VND', MY:'MYR', TH:'THB', BR:'BRL', MX:'MXN', CO:'COP',
+    PE:'PEN', CL:'CLP', AR:'ARS', TR:'TRY', JM:'JMD', CA:'CAD', AU:'AUD', GB:'GBP',
+    FR:'EUR', DE:'EUR', ES:'EUR', IT:'EUR', PT:'EUR', NL:'EUR', BE:'EUR', IE:'EUR'
+  };
+  var ITEMS = [
+    { name:'Rice 25kg bag', qty:2, usd:21 },
+    { name:'Cooking oil 5L', qty:1, usd:9.5 },
+    { name:'Phone charger', qty:3, usd:4 },
+    { name:'Bar soap (box)', qty:1, usd:6 }
+  ];
+  var PAID_SHARE = 0.6;
+
+  var names = null;
+  try { names = new Intl.DisplayNames(['en'], { type:'currency' }); } catch (e) {}
+  function label(code) { try { return names ? names.of(code) : code; } catch (e) { return code; } }
+
+  function fmt(code, n) {
+    try {
+      return new Intl.NumberFormat(undefined, { style:'currency', currency:code, currencyDisplay:'narrowSymbol', maximumFractionDigits: n >= 1000 ? 0 : 2 }).format(n);
+    } catch (e) { return code + ' ' + n.toFixed(2); }
+  }
+  function nice(n) {
+    if (n >= 10000) return Math.round(n / 100) * 100;
+    if (n >= 1000) return Math.round(n / 50) * 50;
+    if (n >= 100) return Math.round(n / 5) * 5;
+    if (n >= 10) return Math.round(n * 2) / 2;
+    return Math.round(n * 100) / 100;
+  }
+
+  var sel = document.getElementById('cur');
+  var codes = Object.keys(RATES).sort(function (a, b) { return label(a).localeCompare(label(b)); });
+  codes.forEach(function (c) {
+    var o = document.createElement('option');
+    o.value = c; o.textContent = label(c) + ' (' + c + ')';
+    sel.appendChild(o);
+  });
+
+  function guess() {
+    try { var saved = localStorage.getItem('ssp-cur'); if (saved && RATES[saved]) return saved; } catch (e) {}
+    var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en-US'];
+    for (var i = 0; i < langs.length; i++) {
+      var m = /[-_]([A-Za-z]{2})$/.exec(langs[i] || '');
+      if (m && REGION[m[1].toUpperCase()]) return REGION[m[1].toUpperCase()];
+    }
+    return 'USD';
+  }
+
+  var receipt = document.getElementById('receipt');
+  function render(code, animate) {
+    var rate = RATES[code] || 1, total = 0, html = '';
+    ITEMS.forEach(function (it) {
+      var unit = nice(it.usd * rate), line = unit * it.qty;
+      total += line;
+      html += '<div class="row"><span class="item-name">' + it.name + '</span><span></span></div>'
+        + '<div class="row r-dim"><span>' + it.qty + ' × ' + fmt(code, unit) + '</span><span class="amt">' + fmt(code, line) + '</span></div>';
+    });
+    var paid = nice(total * PAID_SHARE);
+    document.getElementById('r-items').innerHTML = html;
+    document.getElementById('r-total').textContent = fmt(code, total);
+    document.getElementById('r-paid').textContent = fmt(code, paid);
+    document.getElementById('r-due').textContent = fmt(code, total - paid);
+    if (animate) { receipt.classList.remove('flash'); void receipt.offsetWidth; receipt.classList.add('flash'); }
+  }
+
+  document.getElementById('r-date').textContent = new Date().toLocaleDateString(undefined, { year:'numeric', month:'short', day:'2-digit' });
+  var start = guess();
+  sel.value = start;
+  render(start, false);
+  sel.addEventListener('change', function () {
+    render(sel.value, true);
+    try { localStorage.setItem('ssp-cur', sel.value); } catch (e) {}
+  });
+
+  var btn = document.getElementById('copy-btn');
+  btn.addEventListener('click', function () {
+    var text = 'https://ramidassen-pixel.github.io/SmartStockpro/';
+    function done(msg) { btn.textContent = msg; setTimeout(function () { btn.textContent = 'Copy link'; }, 1800); }
+    try {
+      navigator.clipboard.writeText(text).then(function () { done('Copied'); }, function () { selectLink(); done('Select and copy'); });
+    } catch (e) { selectLink(); done('Select and copy'); }
+  });
+  function selectLink() {
+    try { var r = document.createRange(); r.selectNodeContents(document.getElementById('app-link')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) {}
+  }
+})();
+</script>
