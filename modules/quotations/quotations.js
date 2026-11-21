@@ -370,18 +370,306 @@ var Quotations = {
         +'<span style="font-size:24px">'+icon+'</span><span style="flex:1"><span style="display:block;font-weight:800;font-size:14px">'+title+'</span>'
         +'<span style="display:block;font-size:11px;opacity:.75;font-weight:500">'+sub+'</span></span></button>';
     };
+    var canFiles = !!(navigator.canShare && window.File);
+    var head = function(t){ return '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin:4px 0 8px">'+t+'</div>'; };
     Modal.open({
       title: 'Send Quotation', sub: q.id + ' · ' + Utils.esc(q.clientName||''), barColor: 'var(--ok)',
-      body: (phone
-          ? opt('💬','WhatsApp to '+Utils.esc(q.clientName||'client'), '+'+phone, 'Quotations.sendWhatsApp(\''+id+'\',true)', true)
-          : '<div style="font-size:12px;color:var(--t3);margin-bottom:10px">No phone number on this quotation. Tap ✏️ Edit to add one, or choose the contact in WhatsApp.</div>')
-        + opt('👥','WhatsApp: choose a contact','Send to a friend, a group or anyone', 'Quotations.sendWhatsApp(\''+id+'\',false)', !phone)
-        + (navigator.share ? opt('📲','Other apps','SMS, Messenger, Telegram, email…', 'Quotations.shareOther(\''+id+'\')') : '')
-        + opt('📋','Copy text','Paste it anywhere', 'Quotations.copyText(\''+id+'\')')
-        + '<div class="fg" style="margin-top:6px"><label class="fl">Message preview</label>'
-        + '<div style="white-space:pre-wrap;font-size:12px;line-height:1.5;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:10px 12px;max-height:220px;overflow:auto;color:var(--t2)">'+Utils.esc(this._message(q))+'</div></div>',
+      body: head('📸 As a photo')
+        + '<div id="qt-photo-prev" style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:8px;margin-bottom:10px;text-align:center;min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:12px">Making the photo…</div>'
+        + opt('📸', canFiles ? 'Send photo' : 'Save photo',
+              canFiles ? 'Pick WhatsApp, then the client or a friend' : 'Saves the picture, then attach it in WhatsApp',
+              'Quotations.sendPhoto(\''+id+'\')', true)
+        + head('💬 As a text message')
+        + (phone
+          ? opt('💬','WhatsApp text to '+Utils.esc(q.clientName||'client'), '+'+phone, 'Quotations.sendWhatsApp(\''+id+'\',true)')
+          : '')
+        + opt('👥','WhatsApp text: choose a contact','Send to a friend, a group or anyone', 'Quotations.sendWhatsApp(\''+id+'\',false)')
+        + (navigator.share ? opt('📲','Text to other apps','SMS, Messenger, Telegram, email…', 'Quotations.shareOther(\''+id+'\')') : '')
+        + opt('📋','Copy text','Paste it anywhere', 'Quotations.copyText(\''+id+'\')'),
       footer: '<button class="btn-ghost" style="flex:1" onclick="Modal.close()">Close</button>',
     });
+    // Make the picture now, so tapping "Send photo" can share it straight away
+    this._photo = null;
+    this._makeImage(q).then(function(blob){
+      Quotations._photo = { id: id, blob: blob };
+      var el = Utils.get('qt-photo-prev'); if (!el) return;
+      el.innerHTML = '<img src="'+URL.createObjectURL(blob)+'" alt="Quotation photo" style="width:100%;max-height:340px;object-fit:contain;border-radius:6px;background:#fff">';
+    }).catch(function(){
+      var el = Utils.get('qt-photo-prev'); if (el) el.textContent = 'Could not make the photo. Use the text options below.';
+    });
+  },
+
+  // ── Quotation as a PNG picture ─────────────────────────────────────────────
+  _photo: null,
+
+  _photoFile: function(q, blob) {
+    var name = 'Quotation-' + q.id + '.png';
+    try { return new File([blob], name, { type: 'image/png' }); } catch (e) { return null; }
+  },
+
+  sendPhoto: function(id) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; }); if(!q) return;
+    var ph = this._photo;
+    if (!ph || ph.id !== id) { Toast.show('The photo is still being made, try again in a second','warn'); return; }
+    var file = this._photoFile(q, ph.blob);
+    var cur = DB.getSettings().currency || '$';
+    var bizName = DB.getSettings().bizName || 'SmartStock Pro';
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'Quotation ' + q.id,
+        text: 'Quotation ' + q.id + ' from ' + bizName + ' · Total ' + Utils.cur(q.total||0, cur) })
+        .then(function(){ Quotations._markSent(id); })
+        .catch(function(e){ if (e && e.name !== 'AbortError') Quotations._downloadPhoto(q, ph.blob); });
+    } else {
+      this._downloadPhoto(q, ph.blob);
+    }
+  },
+
+  _downloadPhoto: function(q, blob) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'Quotation-' + q.id + '.png';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+    Toast.show('Photo saved ✓ Attach it in WhatsApp from your gallery or downloads','ok');
+    if (q.status === 'Draft') { DB.updateQuotation(q.id, {status:'Sent'}); this.render(); }
+  },
+
+  _loadImg: function(src) {
+    return new Promise(function(res){
+      if (!src) return res(null);
+      var img = new Image();
+      if (!/^data:|^blob:/.test(src)) img.crossOrigin = 'anonymous';
+      img.onload = function(){ res(img); };
+      img.onerror = function(){ res(null); };
+      img.src = src;
+      setTimeout(function(){ res(null); }, 5000);
+    });
+  },
+
+  // Draws the quotation on a canvas (navy and gold design) and returns a PNG blob.
+  _makeImage: function(q) {
+    var self = this;
+    var st = DB.getSettings();
+    return this._loadImg(st.bizLogo || '').then(function(logo){
+      var blob = function(withLogo){
+        var c = self._drawQuote(q, st, withLogo);
+        return new Promise(function(res, rej){
+          try { c.toBlob(function(b){ b ? res(b) : rej(new Error('no image')); }, 'image/png'); }
+          catch (e) { rej(e); }   // a logo from another site can block the export
+        });
+      };
+      return blob(logo).catch(function(){ return blob(null); });
+    });
+  },
+
+  _drawQuote: function(q, st, logo) {
+    var NAVY = '#0f2557', GOLD = '#f2b51c', LIGHT = '#eef3fb', LINE = '#c9d3e3', INK = '#111827', SOFT = '#374151';
+    var F = 'Arial, Helvetica, sans-serif';
+    var cur = st.currency || '$';
+    var items = q.items || [];
+    var W = 1050, ROW = 57;
+    var hasTax = (parseFloat(q.taxAmount)||0) > 0;
+    var noteLines = [];
+    var W2 = W;
+
+    var c = document.createElement('canvas');
+    var x = c.getContext('2d');
+    // measure notes first (needs a context)
+    x.font = '20px ' + F;
+    var wrap = function(text, maxW) {
+      var out = [], line = '';
+      String(text).split(/\s+/).forEach(function(w){
+        var t = line ? line + ' ' + w : w;
+        if (x.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+      });
+      if (line) out.push(line);
+      return out;
+    };
+    if (q.notes) noteLines = noteLines.concat(wrap('Notes: ' + q.notes, W2 - 80));
+    if (q.terms) noteLines = noteLines.concat(wrap('Terms & Conditions: ' + q.terms, W2 - 80));
+
+    var tableY = 520, headH = 62;
+    var rowsEnd = tableY + headH + items.length * ROW;
+    var totalsH = 70 + (hasTax ? 46 : 0) + 76;
+    var notesY = rowsEnd + totalsH + 30;
+    var notesH = noteLines.length ? noteLines.length * 28 + 30 : 0;
+    var sigY = notesY + notesH + (notesH ? 50 : 20);
+    var H = sigY + 330;
+
+    var scale = 1.5;
+    c.width = W * scale; c.height = H * scale;
+    x.scale(scale, scale);
+
+    var rr = function(px, py, w, h, r, fill, stroke) {
+      var tl = r.tl!=null ? r.tl : r, tr = r.tr!=null ? r.tr : r, br = r.br!=null ? r.br : r, bl = r.bl!=null ? r.bl : r;
+      x.beginPath();
+      x.moveTo(px+tl, py); x.lineTo(px+w-tr, py); x.quadraticCurveTo(px+w, py, px+w, py+tr);
+      x.lineTo(px+w, py+h-br); x.quadraticCurveTo(px+w, py+h, px+w-br, py+h);
+      x.lineTo(px+bl, py+h); x.quadraticCurveTo(px, py+h, px, py+h-bl);
+      x.lineTo(px, py+tl); x.quadraticCurveTo(px, py, px+tl, py); x.closePath();
+      if (fill) { x.fillStyle = fill; x.fill(); }
+      if (stroke) { x.strokeStyle = stroke; x.lineWidth = 1.5; x.stroke(); }
+    };
+    var text = function(t, px, py, font, color, align, maxW) {
+      x.font = font; x.fillStyle = color; x.textAlign = align || 'left'; x.textBaseline = 'alphabetic';
+      t = String(t == null ? '' : t);
+      if (maxW) {
+        if (x.measureText(t).width > maxW) {
+          while (t.length > 1 && x.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+          t += '…';
+        }
+      }
+      x.fillText(t, px, py);
+    };
+    // shrink a font until the text fits
+    var fit = function(t, px, py, size, weight, color, maxW, align) {
+      var s = size;
+      do { x.font = weight + ' ' + s + 'px ' + F; s--; } while (s > 12 && x.measureText(t).width > maxW);
+      text(t, px, py, x.font, color, align, maxW);
+    };
+    var money = function(v){ return Utils.cur(parseFloat(v)||0, cur); };
+
+    // page
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, W, H);
+
+    // logo box
+    x.fillStyle = '#000'; x.fillRect(18, 20, 185, 192);
+    if (logo) {
+      var s = Math.min(175 / logo.width, 182 / logo.height);
+      var lw = logo.width * s, lh = logo.height * s;
+      x.drawImage(logo, 18 + (185 - lw) / 2, 20 + (192 - lh) / 2, lw, lh);
+    } else {
+      fit((st.bizName || 'LOGO').toUpperCase(), 110, 125, 30, '900', GOLD, 165, 'center');
+    }
+
+    // business block
+    var bizMax = 748 - 232 - 16;
+    fit(st.bizName || 'SmartStock Pro', 232, 100, 56, 'bold', NAVY, bizMax);
+    var by = 142;
+    var info = [];
+    if (st.bizAddress) info.push(['📍', st.bizAddress]);
+    if (st.bizPhone)   info.push(['📞', 'Tel: ' + st.bizPhone]);
+    if (st.bizEmail)   info.push(['✉', st.bizEmail]);
+    info.forEach(function(row){
+      text(row[0], 232, by, '18px ' + F, NAVY);
+      fit(row[1], 264, by, 20, 'normal', INK, bizMax - 32);
+      by += 33;
+    });
+
+    // QUOTATION badge
+    rr(748, 36, 285, 172, 14, LIGHT);
+    rr(748, 36, 285, 70, {tl:14, tr:14, br:0, bl:0}, NAVY);
+    fit('QUOTATION', 890, 90, 46, 'bold', '#ffffff', 260, 'center');
+    fit(q.id, 890, 150, 30, 'bold', INK, 260, 'center');
+    text('Date: ' + Utils.date(q.date), 890, 188, '24px ' + F, INK, 'center', 260);
+
+    // gold + navy stripes
+    var stripe = function(py, color, x0) {
+      x.fillStyle = color; x.beginPath();
+      x.moveTo(x0, py); x.lineTo(W, py - 3); x.lineTo(W, py + 4); x.lineTo(x0, py + 7); x.closePath(); x.fill();
+    };
+    stripe(246, GOLD, 0); stripe(261, NAVY, 70);
+
+    // Bill To / Details cards
+    var card = function(px, w, title, lines) {
+      rr(px, 305, w, 178, 14, LIGHT, LINE);
+      rr(px, 305, w, 46, {tl:14, tr:14, br:0, bl:0}, NAVY);
+      text(title, px + 26, 337, 'bold 24px ' + F, '#ffffff');
+      var ly = 390;
+      lines.forEach(function(l){
+        if (!l) return;
+        if (l.b) {
+          x.font = 'bold 23px ' + F; x.fillStyle = INK; x.textAlign = 'left';
+          var bw = x.measureText(l.b).width;
+          x.fillText(l.b, px + 26, ly);
+          text(l.t, px + 26 + bw + 6, ly, '23px ' + F, INK, 'left', w - 60 - bw);
+        } else {
+          text(l.t, px + 26, ly, (l.bold ? 'bold ' : '') + '23px ' + F, INK, 'left', w - 52);
+        }
+        ly += 34;
+      });
+    };
+    card(20, 488, 'BILL TO', [
+      { t: q.clientName || 'Client', bold: true },
+      q.clientPhone ? { t: 'Tel: ' + q.clientPhone } : null,
+      q.clientAddress ? { t: q.clientAddress } : null,
+      q.clientEmail ? { t: q.clientEmail } : null,
+    ].filter(Boolean).slice(0, 3));
+    card(535, 496, 'QUOTATION DETAILS', [
+      { b: 'Payment Terms:', t: q.payTerms || 'Immediate' },
+      { b: 'Prepared by:', t: st.bizName || '' },
+      q.expiryDate ? { b: 'Valid until:', t: Utils.date(q.expiryDate) } : { b: 'Generated:', t: new Date().toLocaleDateString() },
+    ]);
+
+    // items table
+    var cols = [20, 372, 475, 578, 748, 857, 1030];
+    var tW = cols[6] - cols[0];
+    rr(cols[0], tableY, tW, headH + items.length * ROW + totalsH, 14, '#ffffff', LINE);
+    rr(cols[0], tableY, tW, headH, {tl:14, tr:14, br:0, bl:0}, NAVY);
+    var heads = [['DESCRIPTION','left'],['QTY','center'],['UNIT','center'],['UNIT PRICE','center'],['DISC.','center'],['AMOUNT','right']];
+    heads.forEach(function(h, i){
+      var px = h[1] === 'left' ? cols[i] + 20 : h[1] === 'right' ? cols[i+1] - 30 : (cols[i] + cols[i+1]) / 2;
+      text(h[0], px, tableY + 40, 'bold 23px ' + F, '#ffffff', h[1]);
+    });
+    items.forEach(function(it, i){
+      var y0 = tableY + headH + i * ROW;
+      x.fillStyle = i % 2 ? '#ffffff' : '#f4f7fc'; x.fillRect(cols[0] + 1, y0, tW - 2, ROW);
+      x.strokeStyle = LINE; x.lineWidth = 1.5;
+      x.beginPath(); x.moveTo(cols[0], y0 + ROW); x.lineTo(cols[6], y0 + ROW); x.stroke();
+      for (var k = 1; k < 6; k++) { x.beginPath(); x.moveTo(cols[k], y0); x.lineTo(cols[k], y0 + ROW); x.stroke(); }
+      var disc = parseFloat(it.discount) || 0;
+      var lt = (parseFloat(it.qty)||0) * (parseFloat(it.price)||0) * (1 - disc/100);
+      var ty = y0 + 37;
+      text(it.name, cols[0] + 20, ty, '23px ' + F, INK, 'left', cols[1] - cols[0] - 30);
+      text(it.qty, (cols[1]+cols[2])/2, ty, '23px ' + F, INK, 'center');
+      text(it.unit || '', (cols[2]+cols[3])/2, ty, '23px ' + F, INK, 'center', cols[3]-cols[2]-10);
+      text(money(it.price), (cols[3]+cols[4])/2, ty, '23px ' + F, INK, 'center');
+      text(disc > 0 ? disc + '%' : '—', (cols[4]+cols[5])/2, ty, '23px ' + F, disc > 0 ? '#dc2626' : INK, 'center');
+      text(money(lt), cols[6] - 30, ty, '23px ' + F, INK, 'right');
+    });
+
+    // totals
+    var ty2 = rowsEnd + 42;
+    text('Subtotal', 750, ty2, 'bold 24px ' + F, INK, 'right');
+    text(money(q.subtotal), cols[6] - 30, ty2, 'bold 26px ' + F, INK, 'right');
+    if (hasTax) {
+      ty2 += 46;
+      text('Tax (' + q.taxPct + '%)', 750, ty2, 'bold 24px ' + F, INK, 'right');
+      text(money(q.taxAmount), cols[6] - 30, ty2, 'bold 26px ' + F, INK, 'right');
+    }
+    var gy = ty2 + 22;
+    rr(623, gy, 408, 76, 12, NAVY);
+    text('TOTAL', 650, gy + 50, 'bold 34px ' + F, '#ffffff');
+    fit(money(q.total), 1010, gy + 50, 34, 'bold', '#ffffff', 220, 'right');
+
+    // notes
+    if (noteLines.length) {
+      rr(20, notesY, tW, notesH, 12, LIGHT, LINE);
+      noteLines.forEach(function(l, i){ text(l, 40, notesY + 36 + i * 28, '20px ' + F, SOFT); });
+    }
+
+    // signatures
+    x.strokeStyle = NAVY; x.lineWidth = 3;
+    x.beginPath(); x.moveTo(28, sigY); x.lineTo(472, sigY); x.stroke();
+    x.beginPath(); x.moveTo(672, sigY); x.lineTo(1028, sigY); x.stroke();
+    text('Authorized Signature     Date: ____________', 28, sigY + 34, '22px ' + F, INK);
+    text('Client Acceptance   Date: _________', 672, sigY + 34, '22px ' + F, INK, 'left', 356);
+
+    // footer
+    var fy = sigY + 135;
+    text((st.bizName || '') + (st.bizPhone ? ' –  Tel: ' + st.bizPhone : ''), W/2, fy, 'italic bold 24px Georgia, serif', NAVY, 'center', W - 80);
+    text('Thank you for your business!', W/2, fy + 36, 'italic bold 24px Georgia, serif', NAVY, 'center');
+
+    // bottom waves
+    var bottom = H;
+    x.fillStyle = GOLD; x.beginPath();
+    x.moveTo(0, bottom - 135); x.quadraticCurveTo(W*0.3, bottom - 60, W/2 + 20, bottom - 30);
+    x.quadraticCurveTo(W*0.75, bottom - 70, W, bottom - 135); x.lineTo(W, bottom); x.lineTo(0, bottom); x.closePath(); x.fill();
+    x.fillStyle = NAVY; x.beginPath();
+    x.moveTo(0, bottom - 100); x.quadraticCurveTo(W*0.3, bottom - 35, W/2 + 20, bottom - 8);
+    x.quadraticCurveTo(W*0.75, bottom - 45, W, bottom - 105); x.lineTo(W, bottom); x.lineTo(0, bottom); x.closePath(); x.fill();
+
+    return c;
   },
 
   _markSent: function(id) {
