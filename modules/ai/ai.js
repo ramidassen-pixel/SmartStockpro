@@ -3,9 +3,9 @@ var AI = {
   history: [],
   busy: false,
   inited: false,
-  // The Anthropic key now lives only inside the ai-proxy Supabase Edge
-  // Function as a server-side secret — it is never present in this file
-  // or shipped to the browser.
+  // Questions go to the ai-agent Supabase Edge Function. It looks up the real
+  // numbers with read-only tools and asks the AI provider configured in the
+  // Supabase secrets (AI_API_KEY) — no key is ever present in the browser.
 
   render: function() {
     var pg = Utils.get('pg-ai');
@@ -46,7 +46,7 @@ var AI = {
 
     if (!this.inited) {
       this.inited = true;
-      this._addBot('👋 Hi! I\'m SmartStock AI, your business assistant.\n\nI have access to your live data and can help with:\n• 📦 Inventory & stock analysis\n• 💰 Sales & revenue insights\n• 📊 Profit & expense reports\n• 💡 Smart recommendations\n• 📋 **Full Daily Business Report** — tap the gold button above\n\nUse the quick buttons above or type your question!');
+      this._addBot('👋 Hi! I\'m SmartStock AI, your business assistant.\n\nAsk me anything about your business — I look up the real numbers in your sales, customers, stock and expenses. For example:\n• How much did I sell in October, and how much was Mobile Money?\n• Who are my top 10 customers? How much has Otis bought?\n• What is low in stock?\n• Find invoice 3104\n• How do I record a customer payment?\n• 📋 **Full Business Report**: tap the gold button above\n\nType your question below!');
     }
   },
 
@@ -237,7 +237,7 @@ var AI = {
 
     var self = this;
     self._authHeaders().then(function(headers) {
-      return fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
+      return fetch(SUPABASE_URL + '/functions/v1/ai-agent', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -424,12 +424,12 @@ var AI = {
     this._addTyping(tid);
     var self = this;
     try {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ai-agent', {
         method: 'POST',
         headers: await this._authHeaders(),
         body: JSON.stringify({
           mode: 'chat',
-          system: 'You are SmartStock AI — expert business assistant and accountant.\n\nLIVE DATA:\n' + this._context() + '\n\nBe concise, practical, and use bullet points. Always give specific numbers from the data.',
+          // The agent fetches the numbers it needs itself (all sales, customers, stock…)
           messages: this.history.slice(-10),
         }),
       });
