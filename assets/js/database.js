@@ -794,10 +794,17 @@ var DB = {
 
   // ── Quotations ────────────────────────────────────────────────────────────
   getQuotations: function() { return this.get('quotations') || []; },
+  // Highest number used this year + 1, so deleting a quotation never makes
+  // the next one reuse (and overwrite) an existing number.
+  nextQuotationId: function() {
+    var yr = new Date().getFullYear(), pre = 'QT-' + yr + '-', max = 0;
+    this.getQuotations().forEach(function(x){
+      if (x.id && x.id.indexOf(pre) === 0) { var n = parseInt(x.id.slice(pre.length), 10); if (n > max) max = n; }
+    });
+    return pre + String(max + 1).padStart(4,'0');
+  },
   addQuotation: function(q) {
-    var yr = new Date().getFullYear();
-    var num = String(this.getQuotations().length + 1).padStart(4,'0');
-    q.id = 'QT-' + yr + '-' + num; q.createdAt = Utils.today();
+    q.id = this.nextQuotationId(); q.createdAt = Utils.today();
     var arr = this.get('quotations'); arr.unshift(q); this.save();
     this._push('biz_quotations', q.id, q);
     return q;

@@ -38,7 +38,7 @@ var Quotations = {
     var rows = filtered.map(function(q) {
       var sc = {Draft:'var(--t3)',Sent:'var(--in)',Approved:'var(--ok)',Declined:'var(--er)',Expired:'var(--wa)'}[q.status]||'var(--t3)';
       var expired = q.expiryDate && q.expiryDate < today && q.status !== 'Declined';
-      return '<div class="list-item" onclick="Quotations.viewQuotation(\''+q.id+'\')">'
+      return '<div class="list-item" style="flex-wrap:wrap" onclick="Quotations.viewQuotation(\''+q.id+'\')">'
         +'<div class="list-icon" style="background:var(--inb);font-size:18px">📄</div>'
         +'<div class="list-info">'
         +'<div class="list-name">'+Utils.esc(q.clientName||'No client')+'</div>'
@@ -48,11 +48,14 @@ var Quotations = {
         +'<div class="list-right">'
         +'<div class="list-val">'+Utils.cur(q.total||0,cur)+'</div>'
         +'<span style="padding:2px 8px;border-radius:99px;font-size:9px;font-weight:800;background:'+sc+'18;color:'+sc+';border:1px solid '+sc+'40">'+q.status+'</span>'
-        +'<div class="list-actions">'
+        +'</div>'
+        +'<div class="list-actions" style="width:100%;margin-top:8px">'
+        +(q.convertedToInvoice?'':'<button class="btn-ghost btn-sm" onclick="event.stopPropagation();Quotations.openEdit(\''+q.id+'\')" title="Edit">✏️ Edit</button>')
+        +'<button class="btn-ghost btn-sm" onclick="event.stopPropagation();Quotations.openSend(\''+q.id+'\')" title="Send">📤 Send</button>'
         +'<button class="btn-ghost btn-sm btn-icon" onclick="event.stopPropagation();Quotations.printQuotation(\''+q.id+'\')" title="Print">🖨</button>'
         +(q.status!=='Approved'&&q.status!=='Declined'?'<button class="btn-ok btn-sm" onclick="event.stopPropagation();Quotations.convertToInvoice(\''+q.id+'\')">→ Invoice</button>':'')
         +'<button class="btn-danger btn-sm btn-icon" onclick="event.stopPropagation();Quotations.del(\''+q.id+'\')">🗑</button>'
-        +'</div></div></div>';
+        +'</div></div>';
     }).join('');
 
     pg.innerHTML = '<div class="page-header">'
@@ -83,21 +86,36 @@ var Quotations = {
   _discount: 0,
   _tax: 0,
 
-  openNewQuotation: function() {
-    this._cart = [];
+  _editId: null,
+
+  openNewQuotation: function() { this._openForm(null); },
+
+  openEdit: function(id) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; }); if(!q) return;
+    if (q.convertedToInvoice) {
+      Toast.show('This quotation is already an invoice. Edit the invoice in Sales instead.','err');
+      return;
+    }
+    Modal.close();
+    setTimeout(function(){ Quotations._openForm(q); }, 50);
+  },
+
+  _openForm: function(q) {
+    this._editId = q ? q.id : null;
+    this._cart = q ? (q.items||[]).map(function(i){ return Object.assign({discount:0,tax:0,unit:'Pcs'},i); }) : [];
     this._discount = 0;
-    this._tax = 0;
+    this._tax = q ? (parseFloat(q.taxPct)||0) : 0;
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
     var custs    = DB.getCustomers();
-    var nextNum  = this._nextNumber();
+    var nextNum  = q ? q.id : this._nextNumber();
 
     var custSugg = custs.slice(0,50).map(function(c){
       return '<option value="'+Utils.esc(c.name)+'">';
     }).join('');
 
     Modal.open({
-      title: 'New Quotation', sub: nextNum, barColor: 'var(--in)',
+      title: q ? 'Edit Quotation' : 'New Quotation', sub: nextNum, barColor: 'var(--in)',
       body: '<datalist id="qt-cust-list">'+custSugg+'</datalist>'
 
         // Client info
@@ -146,19 +164,25 @@ var Quotations = {
         +'<input class="fi" id="qt-terms" placeholder="e.g. Prices valid for 30 days. Delivery not included."></div>'
         +'</div>',
       footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-ghost" onclick="Quotations.saveQuotation(\'draft\')" style="color:var(--t2)">💾 Save Draft</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Quotations.saveQuotation(\'sent\')">📤 Save &amp; Print</button>',
+            + (q
+              ? '<button class="btn-ghost" onclick="Quotations.saveQuotation(\'keep\')" style="color:var(--t2)">💾 Save</button>'
+                + '<button class="btn-primary" style="flex:1" onclick="Quotations.saveQuotation(\'send\')">📤 Save &amp; Send</button>'
+              : '<button class="btn-ghost" onclick="Quotations.saveQuotation(\'draft\')" style="color:var(--t2)">💾 Draft</button>'
+                + '<button class="btn-ghost" onclick="Quotations.saveQuotation(\'sent\')" style="color:var(--t2)">🖨 Print</button>'
+                + '<button class="btn-primary" style="flex:1" onclick="Quotations.saveQuotation(\'send\')">📤 Save &amp; Send</button>'),
     });
+    if (q) {
+      var setV = function(id, v){ var el = Utils.get(id); if (el && v != null) el.value = v; };
+      setV('qt-client', q.clientName); setV('qt-phone', q.clientPhone); setV('qt-email', q.clientEmail);
+      setV('qt-addr', q.clientAddress); setV('qt-date', q.date); setV('qt-expiry', q.expiryDate);
+      setV('qt-notes', q.notes); setV('qt-terms', q.terms);
+      if (q.payTerms) setV('qt-payterms', q.payTerms);
+    }
     this._renderItems();
     this._renderTotals();
   },
 
-  _nextNumber: function() {
-    var list = DB.getQuotations();
-    var year = new Date().getFullYear();
-    var num  = list.length + 1;
-    return 'QT-' + year + '-' + String(num).padStart(4,'0');
-  },
+  _nextNumber: function() { return DB.nextQuotationId(); },
 
   _onClientInput: function(val) {
     var infoEl = Utils.get('qt-client-info');
@@ -249,13 +273,15 @@ var Quotations = {
     var subtotal = this._cart.reduce(function(a,item){ return a+item.qty*item.price*(1-(item.discount/100)); },0);
     var taxAmt   = subtotal * (this._tax/100);
     var total    = subtotal + taxAmt;
-    var status   = action==='sent' ? 'Sent' : 'Draft';
+    var editing  = this._editId ? DB.getQuotations().find(function(x){ return x.id===Quotations._editId; }) : null;
+    var status   = editing ? editing.status : (action==='draft' ? 'Draft' : 'Sent');
+    if (editing && status==='Expired' && (Utils.val('qt-expiry')||'') >= Utils.today()) status = 'Sent';
 
     // Auto-create or link customer
     var cust = DB.findOrCreateCustomer(clientName, Utils.val('qt-phone'));
     if (cust && Utils.val('qt-email')) DB.updateCustomer(cust.id,{email:Utils.val('qt-email'),address:Utils.val('qt-addr')});
 
-    var qt = DB.addQuotation({
+    var data = {
       clientName:   clientName,
       clientPhone:  Utils.val('qt-phone'),
       clientEmail:  Utils.val('qt-email'),
@@ -272,14 +298,125 @@ var Quotations = {
       date:         Utils.val('qt-date')||Utils.today(),
       expiryDate:   Utils.val('qt-expiry')||'',
       status:       status,
-    });
+    };
+    var qt;
+    if (editing) {
+      data.updatedAt = Utils.today();
+      DB.updateQuotation(editing.id, data);
+      qt = DB.getQuotations().find(function(x){ return x.id===editing.id; });
+    } else {
+      qt = DB.addQuotation(data);
+    }
+    this._editId = null;
 
-    Toast.show('Quotation '+qt.id+' saved ✓','ok');
+    Toast.show('Quotation '+qt.id+(editing?' updated':' saved')+' ✓','ok');
     Modal.close();
     this.render();
     if (action === 'sent') {
       setTimeout(function(){ Quotations.printQuotation(qt.id); }, 400);
+    } else if (action === 'send') {
+      setTimeout(function(){ Quotations.openSend(qt.id); }, 400);
     }
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SEND — WhatsApp to the client, to a friend, or any app on the phone
+  // ══════════════════════════════════════════════════════════════════════════
+  _message: function(q) {
+    var settings = DB.getSettings();
+    var cur      = settings.currency || '$';
+    var bizName  = settings.bizName  || 'SmartStock Pro';
+    var bizPhone = settings.bizPhone || '';
+    var nl = '\n', line = '─────────────────────' + nl;
+    var msg = '📄 *QUOTATION — ' + bizName + '*' + nl + line;
+    msg += '📋 *' + q.id + '*' + nl;
+    msg += '📅 Date: ' + Utils.date(q.date) + nl;
+    if (q.expiryDate) msg += '⏳ Valid until: ' + Utils.date(q.expiryDate) + nl;
+    msg += '👤 ' + (q.clientName || 'Client') + nl + nl;
+    msg += '*Items:*' + nl;
+    (q.items||[]).forEach(function(item){
+      var disc = parseFloat(item.discount)||0;
+      var lt = (parseFloat(item.qty)||0) * (parseFloat(item.price)||0) * (1 - disc/100);
+      msg += '• ' + item.name + ' — ' + item.qty + ' ' + (item.unit||'') + ' × ' + Utils.cur(item.price,cur)
+        + (disc > 0 ? ' (−' + disc + '%)' : '') + ' = ' + Utils.cur(lt,cur) + nl;
+    });
+    msg += line;
+    if ((parseFloat(q.taxAmount)||0) > 0) {
+      msg += 'Subtotal: ' + Utils.cur(q.subtotal,cur) + nl;
+      msg += 'Tax (' + q.taxPct + '%): ' + Utils.cur(q.taxAmount,cur) + nl;
+    }
+    msg += '💰 *TOTAL: ' + Utils.cur(q.total,cur) + '*' + nl;
+    if (q.payTerms) msg += '💳 Payment terms: ' + q.payTerms + nl;
+    if (q.notes) msg += '📝 ' + q.notes + nl;
+    if (q.terms) msg += 'Terms: ' + q.terms + nl;
+    msg += nl + 'Thank you! 🙏';
+    if (bizPhone) msg += nl + '📞 ' + bizPhone;
+    return msg;
+  },
+
+  // Liberian numbers are often typed as 0886...; WhatsApp needs 231886...
+  _waPhone: function(phone) {
+    var d = String(phone||'').replace(/[^0-9]/g,'');
+    if (d.indexOf('00') === 0) d = d.slice(2);
+    else if (d.charAt(0) === '0') d = '231' + d.slice(1);
+    return d.length >= 8 ? d : '';
+  },
+
+  openSend: function(id) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; }); if(!q) return;
+    var phone = this._waPhone(q.clientPhone);
+    var opt = function(icon, title, sub, onclick, primary) {
+      return '<button class="'+(primary?'btn-primary':'btn-ghost')+'" onclick="'+onclick+'" style="width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;margin-bottom:10px">'
+        +'<span style="font-size:24px">'+icon+'</span><span style="flex:1"><span style="display:block;font-weight:800;font-size:14px">'+title+'</span>'
+        +'<span style="display:block;font-size:11px;opacity:.75;font-weight:500">'+sub+'</span></span></button>';
+    };
+    Modal.open({
+      title: 'Send Quotation', sub: q.id + ' · ' + Utils.esc(q.clientName||''), barColor: 'var(--ok)',
+      body: (phone
+          ? opt('💬','WhatsApp to '+Utils.esc(q.clientName||'client'), '+'+phone, 'Quotations.sendWhatsApp(\''+id+'\',true)', true)
+          : '<div style="font-size:12px;color:var(--t3);margin-bottom:10px">No phone number on this quotation. Tap ✏️ Edit to add one, or choose the contact in WhatsApp.</div>')
+        + opt('👥','WhatsApp: choose a contact','Send to a friend, a group or anyone', 'Quotations.sendWhatsApp(\''+id+'\',false)', !phone)
+        + (navigator.share ? opt('📲','Other apps','SMS, Messenger, Telegram, email…', 'Quotations.shareOther(\''+id+'\')') : '')
+        + opt('📋','Copy text','Paste it anywhere', 'Quotations.copyText(\''+id+'\')')
+        + '<div class="fg" style="margin-top:6px"><label class="fl">Message preview</label>'
+        + '<div style="white-space:pre-wrap;font-size:12px;line-height:1.5;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:10px 12px;max-height:220px;overflow:auto;color:var(--t2)">'+Utils.esc(this._message(q))+'</div></div>',
+      footer: '<button class="btn-ghost" style="flex:1" onclick="Modal.close()">Close</button>',
+    });
+  },
+
+  _markSent: function(id) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; });
+    if (q && q.status === 'Draft') DB.updateQuotation(id, {status:'Sent'});
+    Modal.close();
+    this.render();
+  },
+
+  sendWhatsApp: function(id, toClient) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; }); if(!q) return;
+    Sales._openWhatsApp(this._message(q), toClient ? this._waPhone(q.clientPhone) : '');
+    this._markSent(id);
+  },
+
+  shareOther: function(id) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; }); if(!q) return;
+    navigator.share({ title: 'Quotation ' + q.id, text: this._message(q) })
+      .then(function(){ Quotations._markSent(id); })
+      .catch(function(){ /* cancelled */ });
+  },
+
+  copyText: function(id) {
+    var q = DB.getQuotations().find(function(x){ return x.id===id; }); if(!q) return;
+    var msg = this._message(q);
+    var done = function(){ Toast.show('Quotation text copied ✓','ok'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(msg).then(done, function(){ Quotations._copyFallback(msg); done(); });
+    } else { this._copyFallback(msg); done(); }
+  },
+
+  _copyFallback: function(msg) {
+    var ta = document.createElement('textarea'); ta.value = msg; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
   },
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -321,6 +458,8 @@ var Quotations = {
           +'</div>'
           +(q.notes?'<div style="background:var(--bg3);border-radius:var(--r8);padding:10px 12px;margin-top:10px;font-size:12px;color:var(--t2)">📝 '+Utils.esc(q.notes)+'</div>':''),
       footer: '<button class="btn-ghost" onclick="Modal.close()">Close</button>'
+            + (q.convertedToInvoice ? '' : '<button class="btn-ghost btn-icon" onclick="Quotations.openEdit(\''+id+'\')">✏️ Edit</button>')
+            + '<button class="btn-ghost btn-icon" onclick="Modal.close();setTimeout(function(){Quotations.openSend(\''+id+'\')},50)">📤 Send</button>'
             + '<button class="btn-ghost btn-icon" onclick="Quotations.printQuotation(\''+id+'\')">🖨 Print</button>'
             + (q.status!=='Approved'&&q.status!=='Declined'?'<button class="btn-primary" style="flex:1" onclick="Modal.close();Quotations.convertToInvoice(\''+id+'\')">→ Convert to Invoice</button>':''),
     });
