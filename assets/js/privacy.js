@@ -1,6 +1,7 @@
 /* === privacy.js ===
-   Privacy lock for the dashboard's "today" figures ONLY:
-   Today's Net Profit, Today Sales, Today Expenses, COGS and Allocated. Every other amount is always visible.
+   Privacy lock for the dashboard's "today" figures (Today's Net Profit, Today Sales, Today Expenses,
+   COGS, Allocated) and the Sales page totals (Total Revenue, Collected, Outstanding).
+   Every other amount is always visible. One unlock shows both pages.
    - Hidden ($••••) whenever the app opens; the eye button on the Net Profit card toggles them.
    - Showing them needs a privacy PIN (made once per device), the device's fingerprint / face, or the account password.
    - They hide again after 10 minutes without use, or when the app is left for more than 30 seconds. */
@@ -122,7 +123,7 @@ var Privacy = {
       var ico = function(n, s) { return Icons.svg(n, s); };
       var body = '<div class="pv-lock">' + ico('shield-lock', 30) + '</div>';
       if (mode === 'create') {
-        body += '<p class="pv-text">Create a privacy PIN to show today\'s figures. You\'ll use it (or your fingerprint) every time. It works on this device only.</p>'
+        body += '<p class="pv-text">Create a privacy PIN to show your hidden figures (Dashboard and Sales). You\'ll use it (or your fingerprint) every time. It works on this device only.</p>'
           + self._field('pv-pin', 'New PIN (4–6 digits)', '••••', true)
           + self._field('pv-pin2', 'Type the PIN again', '••••', true);
       } else {

@@ -83,16 +83,25 @@ var Sales = {
       return '<div class="chip'+(Sales.filter===f?' active':'')+'" onclick="Sales.setFilter(\''+f+'\')">'+f+' ('+cnt+')</div>';
     }).join('');
 
+    // Privacy lock (same as the dashboard): the money totals show $•••• until unlocked
+    var locked = typeof Privacy !== 'undefined' && Privacy.masked();
+    function pm(val) { return locked ? cur + '••••' : Utils.cur(val, cur); }
+    var eyeBtn = (typeof Privacy !== 'undefined')
+      ? '<button class="pv-toggle'+(locked?'':' pv-on')+'" onclick="Privacy.toggle()" title="'+(locked?'Show figures':'Hide figures')+'" aria-label="'+(locked?'Show sales figures':'Hide sales figures')+'" aria-pressed="'+(!locked)+'">'
+        + Icons.svg(locked?'eye-off':'eye',20) + '<span>'+(locked?'Show':'Hide')+'</span></button>'
+      : '';
+
     pg.innerHTML = '<div class="page-header">'
       + '<div><div class="page-title">Sales</div><div class="page-sub">'+all.length+' invoices total</div></div>'
       + '<div class="page-actions">'
+      + eyeBtn
       + (all.length ? '<button class="btn-ghost btn-sm" onclick="Sales.toggleSelectMode()">'+(this._selMode?'Done':'☑ Select')+'</button>' : '')
       + '<button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div>'
       + '</div>'
       + '<div class="sec"><div class="kpi-grid">'
-      + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value">'+Utils.cur(totalRev,cur)+'</div><div class="kpi-sub">'+all.length+' invoices</div></div>'
-      + '<div class="kpi" style="--kc:var(--ok);--kibg:var(--okb)"><div class="kpi-icon">✅</div><div class="kpi-label">Collected</div><div class="kpi-value">'+Utils.cur(collected+partPaid,cur)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status==='Paid';}).length+' paid</div></div>'
-      + '<div class="kpi" style="--kc:var(--wa);--kibg:var(--wab)"><div class="kpi-icon">⏳</div><div class="kpi-label">Outstanding</div><div class="kpi-value">'+Utils.cur(outstanding,cur)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status!=='Paid';}).length+' open</div></div>'
+      + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value">'+pm(totalRev)+'</div><div class="kpi-sub">'+all.length+' invoices</div></div>'
+      + '<div class="kpi" style="--kc:var(--ok);--kibg:var(--okb)"><div class="kpi-icon">✅</div><div class="kpi-label">Collected</div><div class="kpi-value">'+pm(collected+partPaid)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status==='Paid';}).length+' paid</div></div>'
+      + '<div class="kpi" style="--kc:var(--wa);--kibg:var(--wab)"><div class="kpi-icon">⏳</div><div class="kpi-label">Outstanding</div><div class="kpi-value">'+pm(outstanding)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status!=='Paid';}).length+' open</div></div>'
       + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)"><div class="kpi-icon">📊</div><div class="kpi-label">Invoices</div><div class="kpi-value">'+all.length+'</div><div class="kpi-sub">All time</div></div>'
       + '</div></div>'
       + '<div class="chips">'+chips+'</div>'
