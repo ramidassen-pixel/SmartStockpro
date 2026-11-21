@@ -1,7 +1,9 @@
 # SmartStock Pro — outreach messages
 
-Replace `[LINK]` with your landing page link (or the app link:
-https://ramidassen-pixel.github.io/SmartStockpro/) and `[NAME]` with your name.
+Replace `[LINK]` with the public landing page:
+https://ramidassen-pixel.github.io/SmartStockpro/landing.html
+(it shows a preview card with the app icon in WhatsApp and Facebook).
+Replace `[NAME]` with your name.
 Send to one person at a time. A personal message gets replies; a mass blast gets blocked.
 
 ---
