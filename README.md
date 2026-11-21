@@ -91,7 +91,6 @@ https://ramidassen-pixel.github.io/SmartStockpro/
 SmartStockpro/
 │
 ├── index.html                    ← Entry point (links external CSS + JS)
-├── admin.html                    ← Platform admin portal
 ├── sw.js                         ← Service worker (root scope, offline cache)
 ├── README.md
 │
