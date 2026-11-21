@@ -36,7 +36,9 @@ var Sales = {
   render() {
     var pg = Utils.get('pg-sales');
     if (!pg) return;
-    var all      = DB.getSales();
+    var everything = DB.getSales();
+    var fOn      = this._fCount() > 0;
+    var all      = fOn ? this._applyF(everything) : everything;   // totals and chips follow the Filters
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
     var filtered = this.filter === 'All' ? all : all.filter(function(s){ return s.status === Sales.filter; });
@@ -74,9 +76,12 @@ var Sales = {
     }).join('');
 
     var emptyState = '<div class="empty"><div class="empty-icon">🧾</div>'
-      + '<div class="empty-title">No '+(this.filter!=='All'?this.filter+' ':'')+'sales yet</div>'
-      + '<div class="empty-sub">Tap "+ New Sale" to get started</div>'
-      + '<div class="empty-action"><button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div></div>';
+      + (fOn
+          ? '<div class="empty-title">No sales match these filters</div>'
+            + '<div class="empty-action"><button class="btn-ghost btn-sm" onclick="Sales.clearF()">Clear filters</button></div></div>'
+          : '<div class="empty-title">No '+(this.filter!=='All'?this.filter+' ':'')+'sales yet</div>'
+            + '<div class="empty-sub">Tap "+ New Sale" to get started</div>'
+            + '<div class="empty-action"><button class="btn-primary btn-sm" onclick="Sales.openNewSale()">＋ New Sale</button></div></div>');
 
     var chips = ['All','Paid','Partial','Credit'].map(function(f){
       var cnt = f==='All' ? all.length : all.filter(function(s){ return s.status===f; }).length;
@@ -92,7 +97,7 @@ var Sales = {
       : '';
 
     pg.innerHTML = '<div class="page-header">'
-      + '<div><div class="page-title">Sales</div><div class="page-sub">'+all.length+' invoices total</div></div>'
+      + '<div><div class="page-title">Sales</div><div class="page-sub">'+(fOn ? all.length+' of '+everything.length+' invoices' : all.length+' invoices total')+'</div></div>'
       + '<div class="page-actions">'
       + eyeBtn
       + (all.length ? '<button class="btn-ghost btn-sm" onclick="Sales.toggleSelectMode()">'+(this._selMode?'Done':'☑ Select')+'</button>' : '')
@@ -102,14 +107,198 @@ var Sales = {
       + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value">'+pm(totalRev)+'</div><div class="kpi-sub">'+all.length+' invoices</div></div>'
       + '<div class="kpi" style="--kc:var(--ok);--kibg:var(--okb)"><div class="kpi-icon">✅</div><div class="kpi-label">Collected</div><div class="kpi-value">'+pm(collected+partPaid)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status==='Paid';}).length+' paid</div></div>'
       + '<div class="kpi" style="--kc:var(--wa);--kibg:var(--wab)"><div class="kpi-icon">⏳</div><div class="kpi-label">Outstanding</div><div class="kpi-value">'+pm(outstanding)+'</div><div class="kpi-sub">'+all.filter(function(s){return s.status!=='Paid';}).length+' open</div></div>'
-      + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)"><div class="kpi-icon">📊</div><div class="kpi-label">Invoices</div><div class="kpi-value">'+all.length+'</div><div class="kpi-sub">All time</div></div>'
+      + '<div class="kpi" style="--kc:var(--in);--kibg:var(--inb)"><div class="kpi-icon">📊</div><div class="kpi-label">Invoices</div><div class="kpi-value">'+all.length+'</div><div class="kpi-sub">'+(fOn?'Filtered':'All time')+'</div></div>'
       + '</div></div>'
+      + this._fBar()
       + '<div class="chips">'+chips+'</div>'
       + (this._selMode ? this._selBar(filtered) : '')
       + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>' : emptyState)+'</div>';
   },
 
   setFilter: function(f) { this.filter=f; this._sel={}; this.render(); },
+
+  // ── FILTERS (date, payment mode, customer, staff, invoice) ─────────────────
+  f: { date: 'all', day: '', from: '', to: '', payment: [], customer: [], staff: [], invoice: '' },
+  _fd: null,        // draft while the Filters screen is open
+  _fTab: 'date',
+  _fCustQ: '',
+
+  _blankF: function() { return { date: 'all', day: '', from: '', to: '', payment: [], customer: [], staff: [], invoice: '' }; },
+  _ymd: function(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); },
+  _dateRange: function(f) {
+    var now = new Date(), t = this._ymd(now);
+    switch (f.date) {
+      case 'today': return [t, t];
+      case 'yesterday': var y = this._ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)); return [y, y];
+      case 'month': return [t.slice(0, 7) + '-01', t];
+      case 'lastmonth':
+        var a = new Date(now.getFullYear(), now.getMonth() - 1, 1), b = new Date(now.getFullYear(), now.getMonth(), 0);
+        return [this._ymd(a), this._ymd(b)];
+      case 'day': return f.day ? [f.day, f.day] : null;
+      case 'range': return (f.from || f.to) ? [f.from || '0000-00-00', f.to || '9999-12-31'] : null;
+    }
+    return null;
+  },
+  _fCount: function(f) {
+    f = f || this.f;
+    return (this._dateRange(f) ? 1 : 0) + (f.payment.length ? 1 : 0) + (f.customer.length ? 1 : 0) + (f.staff.length ? 1 : 0) + (f.invoice.trim() ? 1 : 0);
+  },
+  _applyF: function(list, f) {
+    f = f || this.f;
+    var r = this._dateRange(f), inv = f.invoice.trim().toLowerCase();
+    var pay = f.payment, cust = f.customer.map(function(c){ return c.toLowerCase(); }), staff = f.staff;
+    return list.filter(function(s) {
+      if (r && !((s.date || '') >= r[0] && (s.date || '') <= r[1])) return false;
+      if (pay.length && pay.indexOf(s.payment || 'Cash') < 0) return false;
+      if (cust.length && cust.indexOf(String(s.customer || 'Walk-in Customer').toLowerCase()) < 0) return false;
+      if (staff.length && staff.indexOf(s.createdByName || 'Unknown') < 0) return false;
+      if (inv && String(Sales.no(s)).toLowerCase().indexOf(inv) < 0) return false;
+      return true;
+    });
+  },
+  _dateLabel: function(f) {
+    return { all: 'All Time', today: 'Today', yesterday: 'Yesterday', month: 'This Month', lastmonth: 'Last Month',
+      day: f.day ? Utils.date(f.day) : 'Single Day', range: (f.from ? Utils.date(f.from) : '…') + ' – ' + (f.to ? Utils.date(f.to) : '…') }[f.date];
+  },
+
+  // Active filter pills under the Filters button
+  _fBar: function() {
+    var f = this.f, n = this._fCount(), pills = [];
+    if (this._dateRange(f)) pills.push(['date', '📅 ' + this._dateLabel(f)]);
+    if (f.payment.length) pills.push(['payment', '💳 ' + f.payment.join(', ')]);
+    if (f.customer.length) pills.push(['customer', '👤 ' + (f.customer.length > 2 ? f.customer.length + ' customers' : f.customer.join(', '))]);
+    if (f.staff.length) pills.push(['staff', '🧑‍💼 ' + f.staff.join(', ')]);
+    if (f.invoice.trim()) pills.push(['invoice', '🧾 ' + f.invoice.trim()]);
+    return '<div class="flt-bar">'
+      + '<button class="flt-btn' + (n ? ' on' : '') + '" onclick="Sales.openFilters()" aria-label="Filters' + (n ? ', ' + n + ' active' : '') + '">'
+      + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>'
+      + 'Filters' + (n ? ' <span class="flt-n">' + n + '</span>' : '') + '</button>'
+      + pills.map(function(p) {
+          return '<span class="flt-pill">' + Utils.esc(p[1]) + '<button onclick="Sales.clearF(\'' + p[0] + '\')" aria-label="Remove filter">✕</button></span>';
+        }).join('')
+      + (n > 1 ? '<button class="flt-clear" onclick="Sales.clearF()">Clear all</button>' : '')
+      + '</div>';
+  },
+  clearF: function(key) {
+    if (!key) this.f = this._blankF();
+    else if (key === 'date') { this.f.date = 'all'; this.f.day = ''; this.f.from = ''; this.f.to = ''; }
+    else if (key === 'invoice') this.f.invoice = '';
+    else this.f[key] = [];
+    this._sel = {};
+    this.render();
+  },
+
+  openFilters: function() {
+    this._fd = JSON.parse(JSON.stringify(this.f));
+    this._fCustQ = '';
+    Modal.open({
+      title: 'Filters',
+      body: '<div class="flt-wrap"><div class="flt-tabs" role="tablist" id="flt-tabs"></div><div class="flt-opts" id="flt-opts"></div></div>',
+      footer: '<button class="btn-ghost" onclick="Sales._fClearDraft()">Clear all</button>'
+            + '<button class="btn-primary" style="flex:1" id="flt-apply" onclick="Sales.applyFilters()">Apply</button>',
+    });
+    var m = document.querySelector('#modal-overlay .modal'); if (m) m.classList.add('flt-modal');
+    this._fPaint();
+  },
+  _fClearDraft: function() { this._fd = this._blankF(); this._fCustQ = ''; this._fPaint(); },
+  applyFilters: function() {
+    this.f = this._fd; this._fd = null; this._sel = {};
+    Modal.close();
+    this.render();
+    var n = this._applyF(DB.getSales()).length;
+    Toast.show(this._fCount() ? n + ' invoice' + (n !== 1 ? 's' : '') + ' match' : 'Filters cleared', 'ok');
+  },
+  fTab: function(t) { this._fTab = t; this._fPaint(); },
+
+  _fSet: function(k, v) { this._fd[k] = v; this._fPaint(k === 'date' && (v === 'day' || v === 'range')); },
+  _fVal: function(k, v) { this._fd[k] = v; this._fPaintCount(); },
+  _fToggle: function(k, v) {
+    var a = this._fd[k], i = a.indexOf(v);
+    if (i < 0) a.push(v); else a.splice(i, 1);
+    this._fPaint();
+  },
+  _fCust: function(q) {
+    this._fCustQ = q; this._fPaintList();
+  },
+
+  _fPaintCount: function() {
+    var btn = Utils.get('flt-apply'); if (!btn) return;
+    var n = this._applyF(DB.getSales(), this._fd).length;
+    btn.textContent = 'Show ' + n + ' invoice' + (n !== 1 ? 's' : '');
+  },
+  _fPaint: function(focusDate) {
+    var d = this._fd, tab = this._fTab, self = this;
+    var tabs = [['date', 'Date', !!this._dateRange(d)], ['payment', 'Payment Mode', d.payment.length], ['customer', 'Customer', d.customer.length],
+      ['staff', 'Staff', d.staff.length], ['invoice', 'Invoice', !!d.invoice.trim()]];
+    var tEl = Utils.get('flt-tabs'), oEl = Utils.get('flt-opts');
+    if (!tEl || !oEl) return;
+    tEl.innerHTML = tabs.map(function(t) {
+      return '<button role="tab" aria-selected="' + (t[0] === tab) + '" class="flt-tab' + (t[0] === tab ? ' on' : '') + '" onclick="Sales.fTab(\'' + t[0] + '\')">'
+        + t[1] + (t[2] ? '<span class="flt-dot" aria-label="(set)"></span>' : '') + '</button>';
+    }).join('');
+
+    var radio = function(on) { return '<span class="flt-radio' + (on ? ' on' : '') + '"></span>'; };
+    var check = function(on) { return '<span class="flt-check' + (on ? ' on' : '') + '"></span>'; };
+    var html = '';
+    if (tab === 'date') {
+      html = [['all', 'All Time'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['month', 'This Month'], ['lastmonth', 'Last Month'], ['day', 'Single Day'], ['range', 'Date Range']]
+        .map(function(o) {
+          var on = d.date === o[0];
+          var extra = '';
+          if (on && o[0] === 'day') extra = '<input class="fi flt-in" type="date" id="flt-day" value="' + d.day + '" onclick="event.stopPropagation()" onchange="Sales._fVal(\'day\',this.value)">';
+          if (on && o[0] === 'range') extra = '<div class="flt-range" onclick="event.stopPropagation()"><label>From<input class="fi flt-in" type="date" id="flt-from" value="' + d.from + '" onchange="Sales._fVal(\'from\',this.value)"></label>'
+            + '<label>To<input class="fi flt-in" type="date" value="' + d.to + '" onchange="Sales._fVal(\'to\',this.value)"></label></div>';
+          return '<div class="flt-opt' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" tabindex="0" onclick="Sales._fSet(\'date\',\'' + o[0] + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}">'
+            + '<div class="flt-row">' + radio(on) + '<span>' + o[1] + '</span></div>' + extra + '</div>';
+        }).join('');
+    } else if (tab === 'payment' || tab === 'staff') {
+      var key = tab === 'payment' ? 'payment' : 'staff';
+      var counts = {};
+      DB.getSales().forEach(function(s) { var v = key === 'payment' ? (s.payment || 'Cash') : (s.createdByName || 'Unknown'); counts[v] = (counts[v] || 0) + 1; });
+      var vals = Object.keys(counts);
+      if (key === 'payment') ['Cash', 'Mobile Money', 'Bank Transfer', 'Credit'].forEach(function(m) { if (vals.indexOf(m) < 0) vals.push(m); });
+      vals.sort(function(a, b) { return (counts[b] || 0) - (counts[a] || 0); });
+      html = '<div class="flt-hint">Pick one or more</div>' + vals.map(function(v) {
+        var on = d[key].indexOf(v) >= 0;
+        return '<div class="flt-opt' + (on ? ' on' : '') + '" role="checkbox" aria-checked="' + on + '" tabindex="0" data-v="' + Utils.esc(v) + '" onclick="Sales._fToggle(\'' + key + '\',this.dataset.v)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}">'
+          + '<div class="flt-row">' + check(on) + '<span>' + Utils.esc(v) + '</span><span class="flt-cnt">' + (counts[v] || 0) + '</span></div></div>';
+      }).join('');
+    } else if (tab === 'customer') {
+      html = '<input class="fi flt-in" id="flt-cust-q" placeholder="Search customer…" value="' + Utils.esc(this._fCustQ) + '" oninput="Sales._fCust(this.value)" autocomplete="off">'
+        + (d.customer.length ? '<div class="flt-hint">' + d.customer.length + ' selected · <button class="flt-link" onclick="Sales._fd.customer=[];Sales._fPaint()">clear</button></div>' : '<div class="flt-hint">Pick one or more</div>')
+        + '<div id="flt-cust-list"></div>';
+    } else if (tab === 'invoice') {
+      html = '<div class="flt-hint">Invoice number (or part of it)</div>'
+        + '<input class="fi flt-in" id="flt-inv" placeholder="e.g. 3104 or CB-" value="' + Utils.esc(d.invoice) + '" oninput="Sales._fVal(\'invoice\',this.value)" autocomplete="off">';
+    }
+    oEl.innerHTML = html;
+    if (tab === 'customer') this._fPaintList();
+    this._fPaintCount();
+    if (focusDate) { var inp = Utils.get(d.date === 'day' ? 'flt-day' : 'flt-from'); if (inp) inp.focus(); }
+  },
+  _fPaintList: function() {
+    var box = Utils.get('flt-cust-list'); if (!box) return;
+    var d = this._fd, q = this._fCustQ.trim().toLowerCase(), counts = {}, names = {};
+    DB.getSales().forEach(function(s) {
+      var n = s.customer || 'Walk-in Customer', k = n.toLowerCase();
+      counts[k] = (counts[k] || 0) + 1; if (!names[k]) names[k] = n;
+    });
+    var sel = d.customer.map(function(c){ return c.toLowerCase(); });
+    var keys = Object.keys(counts).filter(function(k) { return !q || k.indexOf(q) >= 0; })
+      .sort(function(a, b) { var sa = sel.indexOf(a) >= 0, sb = sel.indexOf(b) >= 0; return sa !== sb ? (sa ? -1 : 1) : counts[b] - counts[a]; });
+    var more = keys.length - 60;
+    box.innerHTML = keys.slice(0, 60).map(function(k) {
+      var on = sel.indexOf(k) >= 0;
+      return '<div class="flt-opt' + (on ? ' on' : '') + '" role="checkbox" aria-checked="' + on + '" tabindex="0" data-v="' + Utils.esc(names[k]) + '" onclick="Sales._fToggleCust(this.dataset.v)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}">'
+        + '<div class="flt-row"><span class="flt-check' + (on ? ' on' : '') + '"></span><span>' + Utils.esc(names[k]) + '</span><span class="flt-cnt">' + counts[k] + '</span></div></div>';
+    }).join('') + (more > 0 ? '<div class="flt-hint">' + more + ' more — type to search</div>' : '') + (!keys.length ? '<div class="flt-hint">No customer matches</div>' : '');
+  },
+  _fToggleCust: function(name) {
+    var a = this._fd.customer, k = name.toLowerCase(), i = -1;
+    a.forEach(function(c, j) { if (c.toLowerCase() === k) i = j; });
+    if (i < 0) a.push(name); else a.splice(i, 1);
+    this._fPaint();   // redraws tabs, hint, list and the Apply count (search text is kept)
+  },
 
   // ── MULTI-SELECT DELETE ────────────────────────────────────────────────────
   _selMode: false,
@@ -123,7 +312,7 @@ var Sales = {
     this.render();
   },
   _shown: function() {
-    var all = DB.getSales();
+    var all = this._applyF(DB.getSales());
     return this.filter === 'All' ? all : all.filter(function(s){ return s.status === Sales.filter; });
   },
   _selBar: function(shown) {
