@@ -16,6 +16,8 @@
   --tag: #E9A23B;
   --paper: #FFFFFF;
   --paper-ink: #1B1B1B;
+  --wa: #1F8F4E;
+  --wa-ink: #FFFFFF;
   --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -71,6 +73,9 @@ a { color: inherit; }
 .btn-ghost { border-color: var(--line); color: var(--ink); background: transparent; }
 .btn-ghost:hover { border-color: var(--ink); }
 .btn-sm { padding: 9px 16px; font-size: 0.92rem; }
+.btn-wa { background: var(--wa); color: var(--wa-ink); }
+.btn-wa:hover { transform: translateY(-1px); }
+.top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Hero */
 .hero { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; padding-block: 40px 72px; }
@@ -185,7 +190,10 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
 <div class="wrap">
   <header class="top">
     <a class="brand" href="#top" id="top"><span class="brand-mark">SS</span>SmartStock Pro</a>
-    <a class="btn btn-primary btn-sm" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Open the app</a>
+    <div class="top-actions">
+      <a class="btn btn-ghost btn-sm" href="https://wa.me/231889756551?text=Hello%2C%20I%27m%20interested%20in%20SmartStock%20Pro%20for%20my%20shop." target="_blank" rel="noopener">WhatsApp us</a>
+      <a class="btn btn-primary btn-sm" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Open the app</a>
+    </div>
   </header>
 
   <div class="hero">
@@ -366,8 +374,12 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
   <div class="final">
     <h2>Open your shop on SmartStock Pro today</h2>
     <p class="lede">Fourteen days free. Set your currency, add your products and make your first sale.</p>
-    <a class="btn btn-primary" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free for 14 days</a>
-    <div class="link-box"><span>Or open this link on your phone:</span><code id="app-link">ramidassen-pixel.github.io/SmartStockpro</code><button class="btn btn-ghost btn-sm" id="copy-btn" type="button">Copy link</button></div>
+    <div class="hero-actions" style="justify-content:center">
+      <a class="btn btn-primary" href="https://ramidassen-pixel.github.io/SmartStockpro/" target="_blank" rel="noopener">Start free for 14 days</a>
+      <a class="btn btn-wa" href="https://wa.me/231889756551?text=Hello%2C%20I%27m%20interested%20in%20SmartStock%20Pro%20for%20my%20shop." target="_blank" rel="noopener">Chat on WhatsApp</a>
+    </div>
+    <div class="link-box"><span>WhatsApp or call:</span><code id="wa-number">+231 88 975 6551</code><button class="btn btn-ghost btn-sm copy-btn" type="button" data-copy="+231889756551" data-target="wa-number">Copy number</button></div>
+    <div class="link-box"><span>Open the app on your phone:</span><code id="app-link">ramidassen-pixel.github.io/SmartStockpro</code><button class="btn btn-ghost btn-sm copy-btn" type="button" data-copy="https://ramidassen-pixel.github.io/SmartStockpro/" data-target="app-link">Copy link</button></div>
   </div>
   <footer><span>SmartStock Pro</span><span>Stock, sales and invoices for shops everywhere</span></footer>
 </div>
@@ -458,16 +470,20 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
     try { localStorage.setItem('ssp-cur', sel.value); } catch (e) {}
   });
 
-  var btn = document.getElementById('copy-btn');
-  btn.addEventListener('click', function () {
-    var text = 'https://ramidassen-pixel.github.io/SmartStockpro/';
-    function done(msg) { btn.textContent = msg; setTimeout(function () { btn.textContent = 'Copy link'; }, 1800); }
-    try {
-      navigator.clipboard.writeText(text).then(function () { done('Copied'); }, function () { selectLink(); done('Select and copy'); });
-    } catch (e) { selectLink(); done('Select and copy'); }
+  Array.prototype.forEach.call(document.querySelectorAll('.copy-btn'), function (btn) {
+    var label = btn.textContent;
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy');
+      var target = document.getElementById(btn.getAttribute('data-target'));
+      function done(msg) { btn.textContent = msg; setTimeout(function () { btn.textContent = label; }, 1800); }
+      function selectIt() {
+        try { var r = document.createRange(); r.selectNodeContents(target); var s = getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) {}
+        done('Select and copy');
+      }
+      try {
+        navigator.clipboard.writeText(text).then(function () { done('Copied'); }, selectIt);
+      } catch (e) { selectIt(); }
+    });
   });
-  function selectLink() {
-    try { var r = document.createRange(); r.selectNodeContents(document.getElementById('app-link')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) {}
-  }
 })();
 </script>

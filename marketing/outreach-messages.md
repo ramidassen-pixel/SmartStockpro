@@ -33,12 +33,12 @@ Send to one person at a time. A personal message gets replies; a mass blast gets
 **English**
 > Shop owners: do you still write sales and debts in a notebook?
 > I made SmartStock Pro for small shops. Record a sale in seconds, stock updates by itself, print invoices, and see every customer's balance. Works on any phone, in your own currency, even when the internet drops.
-> Free for 14 days. Comment "SHOP" or message me and I'll help you set it up. [LINK]
+> Free for 14 days. Comment "SHOP" or WhatsApp me on +231 88 975 6551 and I'll help you set it up. [LINK]
 
 **Français**
 > Commerçants : vous notez encore vos ventes et vos crédits dans un cahier ?
 > J'ai créé SmartStock Pro pour les petites boutiques. Enregistrez une vente en quelques secondes, le stock se met à jour tout seul, imprimez vos factures et suivez ce que chaque client vous doit. Sur n'importe quel téléphone, dans votre monnaie, même quand internet coupe.
-> Gratuit pendant 14 jours. Commentez « BOUTIQUE » ou écrivez-moi et je vous aide à l'installer. [LINK]
+> Gratuit pendant 14 jours. Commentez « BOUTIQUE » ou écrivez-moi sur WhatsApp au +231 88 975 6551 et je vous aide à l'installer. [LINK]
 
 ---
 
