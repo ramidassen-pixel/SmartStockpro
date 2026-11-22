@@ -13,6 +13,9 @@
 // Every lookup uses the caller's own sign-in token, so row-level security limits it to their business.
 // Nothing is ever written: actions are only proposed, and the app carries them out after the user confirms.
 //
+// If Claude fails (key rejected, out of credit, busy, down) and a free AI key is saved
+// (GROQ_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY or AI_API_KEY),
+// the question is answered by ai-agent on the free providers instead.
 // Secrets: ANTHROPIC_API_KEY (required) · AI_MODEL (optional, default claude-opus-5-5)
 //          AI_EFFORT (optional: low | medium | high, default medium) · BUSINESS_TZ (default Africa/Monrovia)
 // Deploy with JWT verification ON.
@@ -460,6 +463,41 @@ Data views for query_data (all limited to the user's business; deleted records e
 - business: business_name, currency, address, phone, default_low_stock, tax_pct, lrd_rate (Liberian dollars per US dollar), cogs_enabled
 - data_quality: sales, sales_without_items, sales_without_invoice_no, walk_in_sales, first_sale_date, last_sale_date, products, products_without_cost, customers, customers_without_phone`;
 
+// ── Free-provider fallback (handled by ai-agent) ─────────────────────────────
+const FREE_KEYS = ["AI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY"];
+const HAS_FREE = FREE_KEYS.some((k) => clean(Deno.env.get(k)));
+
+// Errors a different provider can get past: bad key, no access/credit, rate limit, overload, outage, network.
+function shouldFallBack(error: unknown): boolean {
+  if (!HAS_FREE) return false;
+  if (error instanceof Anthropic.BadRequestError) return /credit|billing|balance/i.test(error.message);
+  if (error instanceof Anthropic.APIError) {
+    const s = error.status;
+    return s === undefined || s === 401 || s === 403 || s === 404 || s === 429 || s >= 500;
+  }
+  return true; // network / timeout
+}
+
+async function answerWithFreeAI(body: Row, auth: string, reason: string): Promise<Response | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON, Authorization: auth, "x-smartstock-fallback": "1" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null) as Row | null;
+    if (!data || !res.ok || !data.content) {
+      console.log(JSON.stringify({ event: "ai_agent_v2_fallback_failed", status: res.status, type: data?.type }));
+      return null;
+    }
+    console.log(JSON.stringify({ event: "ai_agent_v2_fallback", reason, provider: data.provider, model: data.model }));
+    return json({ ...data, fallback_from: "claude" });
+  } catch (e) {
+    console.log(JSON.stringify({ event: "ai_agent_v2_fallback_failed", message: String((e as Error).message).slice(0, 200) }));
+    return null;
+  }
+}
+
 // ── Request handler ──────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -566,6 +604,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: "The question needed too many steps. Try asking it more simply.", type: "too_many_steps", tools_used: used }, 200);
   } catch (error) {
     console.log(JSON.stringify({ event: "ai_agent_v2_error", model: MODEL, status: (error as { status?: number }).status, message: String((error as Error).message).slice(0, 300) }));
+    // Claude couldn't answer: let a free provider try before showing an error
+    if (shouldFallBack(error)) {
+      const reason = error instanceof Anthropic.APIError ? "status_" + error.status : "network";
+      const fallback = await answerWithFreeAI(body, auth, reason);
+      if (fallback) return fallback;
+    }
     if (error instanceof Anthropic.AuthenticationError) {
       return json({ error: "The Anthropic API key saved in Supabase was rejected. Create a new key (it starts with sk-ant-api) and save it again.", type: "invalid_api_key" }, 502);
     }
