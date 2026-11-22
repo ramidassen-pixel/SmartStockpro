@@ -465,7 +465,21 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!signedIn(req)) return json({ error: "Please sign in to use the AI assistant.", type: "not_signed_in" }, 401);
-  if (!API_KEY) return json({ error: "The AI is not set up yet: add the ANTHROPIC_API_KEY secret in Supabase (Edge Functions → Secrets).", type: "not_configured" }, 500);
+  // No Claude key: hand the question to the original assistant, which runs on free AI providers
+  // (GROQ_API_KEY, GEMINI_API_KEY, ... — see ai-agent). It never forwards back while this key is unset.
+  if (!API_KEY) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON, Authorization: req.headers.get("authorization") || "" },
+        body: await req.text(),
+      });
+      return new Response(await res.text(), { status: res.status, headers: { ...cors, "Content-Type": "application/json" } });
+    } catch (e) {
+      console.log(JSON.stringify({ event: "ai_agent_v2_forward_failed", message: String((e as Error).message).slice(0, 200) }));
+      return json({ error: "The AI service could not be reached. Please try again.", type: "network" }, 502);
+    }
+  }
 
   const body = (await req.json().catch(() => ({}))) as Row;
   const isReport = body.mode === "report";

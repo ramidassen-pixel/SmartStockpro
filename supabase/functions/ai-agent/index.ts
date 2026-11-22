@@ -2,12 +2,18 @@
 //
 // When the ANTHROPIC_API_KEY secret is set, every request is handed to ai-agent-v2 (Claude), so
 // older app versions that still call this function get the new assistant. Otherwise it
-// answers questions about the business by letting a free / low-cost AI model call
-// read-only "tools" that look up the real numbers. Works with any OpenAI-compatible
-// chat API (Groq, Google Gemini, OpenRouter, ...), chosen with Supabase secrets:
-//   AI_API_KEY   (required)  the provider's API key
-//   AI_BASE_URL  (optional)  default https://api.groq.com/openai/v1
-//   AI_MODEL     (optional)  default openai/gpt-oss-120b
+// answers questions about the business by letting free AI models call read-only "tools"
+// that look up the real numbers. Any number of free OpenAI-compatible providers can be set
+// up at once, as Supabase secrets; they are tried in this order, and when one is out of its
+// free limit (or down) the next one answers:
+//   GROQ_API_KEY        console.groq.com/keys            model: GROQ_MODEL        (default openai/gpt-oss-120b)
+//   GEMINI_API_KEY      aistudio.google.com/apikey       model: GEMINI_MODEL      (default gemini-2.5-flash)
+//   CEREBRAS_API_KEY    cloud.cerebras.ai                model: CEREBRAS_MODEL    (default gpt-oss-120b)
+//   OPENROUTER_API_KEY  openrouter.ai/keys               model: OPENROUTER_MODEL  (default openai/gpt-oss-120b:free)
+//   MISTRAL_API_KEY     console.mistral.ai/api-keys      model: MISTRAL_MODEL     (default mistral-small-latest)
+// The older single-provider secrets still work and are tried first:
+//   AI_API_KEY + AI_BASE_URL (default https://api.groq.com/openai/v1) + AI_MODEL (default openai/gpt-oss-120b)
+// AI_PROVIDERS (optional) changes the order, e.g. "gemini,groq".
 //
 // Data is read with the caller's own sign-in token, so the database's row-level
 // security limits every lookup to the caller's business. Nothing is ever written.
@@ -24,9 +30,37 @@ const json = (body: unknown, status = 200) =>
 const clean = (v: string | undefined) => (v || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const AI_KEY = clean(Deno.env.get("AI_API_KEY"));
-const AI_BASE = (clean(Deno.env.get("AI_BASE_URL")) || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
-const AI_MODEL = clean(Deno.env.get("AI_MODEL")) || "openai/gpt-oss-120b";
+
+type Provider = { name: string; base: string; key: string; model: string };
+const PROVIDER_DEFAULTS: Record<string, { base: string; model: string }> = {
+  groq:       { base: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b" },
+  gemini:     { base: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
+  cerebras:   { base: "https://api.cerebras.ai/v1", model: "gpt-oss-120b" },
+  openrouter: { base: "https://openrouter.ai/api/v1", model: "openai/gpt-oss-120b:free" },
+  mistral:    { base: "https://api.mistral.ai/v1", model: "mistral-small-latest" },
+};
+function loadProviders(): Provider[] {
+  const list: Provider[] = [];
+  const legacyKey = clean(Deno.env.get("AI_API_KEY"));
+  if (legacyKey) {
+    list.push({
+      name: "custom",
+      key: legacyKey,
+      base: (clean(Deno.env.get("AI_BASE_URL")) || PROVIDER_DEFAULTS.groq.base).replace(/\/+$/, ""),
+      model: clean(Deno.env.get("AI_MODEL")) || PROVIDER_DEFAULTS.groq.model,
+    });
+  }
+  const order = (clean(Deno.env.get("AI_PROVIDERS")) || Object.keys(PROVIDER_DEFAULTS).join(","))
+    .toLowerCase().split(/[\s,]+/).filter((n) => PROVIDER_DEFAULTS[n]);
+  for (const name of [...new Set(order)]) {
+    const key = clean(Deno.env.get(name.toUpperCase() + "_API_KEY"));
+    if (!key) continue;
+    const d = PROVIDER_DEFAULTS[name];
+    list.push({ name, key, base: d.base, model: clean(Deno.env.get(name.toUpperCase() + "_MODEL")) || d.model });
+  }
+  return list;
+}
+const PROVIDERS = loadProviders();
 const MAX_STEPS = 6;          // tool rounds per question
 const MAX_TOOL_CHARS = 6000;  // keep tool results small (free tiers have low token limits)
 
@@ -396,27 +430,50 @@ Rules:
 - Answer in the language the user writes in.`;
 }
 
-async function callModel(messages: Row[], withTools: boolean, maxTokens: number) {
-  const body: Row = { model: AI_MODEL, messages, max_tokens: maxTokens, temperature: 0.2 };
+async function callProvider(p: Provider, messages: Row[], withTools: boolean, maxTokens: number) {
+  const body: Row = { model: p.model, messages, max_tokens: maxTokens, temperature: 0.2 };
   if (withTools) {
     body.tools = TOOLS.map((t) => ({ type: "function", function: t }));
     body.tool_choice = "auto";
   }
-  const res = await fetch(`${AI_BASE}/chat/completions`, {
+  const res = await fetch(`${p.base}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${AI_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${p.key}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000),
   });
   const text = await res.text();
   let data: Row = {};
   try { data = JSON.parse(text); } catch { /* keep raw text for the error */ }
-  if (!res.ok) {
+  if (!res.ok || data.error) {
     const msg = (data.error && (data.error.message || data.error)) || text.slice(0, 300);
-    const err = new Error(String(msg)) as Error & { status: number };
-    err.status = res.status;
+    const err = new Error(String(msg)) as Error & { status: number; provider: string; model: string };
+    err.status = res.ok ? 502 : res.status;
+    err.provider = p.name;
+    err.model = p.model;
     throw err;
   }
   return data;
+}
+
+// Tries each free provider in turn, starting with the one that answered last time in this
+// question, and moves on when one is over its limit, rejects its key, lacks the model or is down.
+async function callModel(messages: Row[], withTools: boolean, maxTokens: number, state: { start: number }) {
+  let lastErr: unknown;
+  for (let i = 0; i < PROVIDERS.length; i++) {
+    const idx = (state.start + i) % PROVIDERS.length;
+    const p = PROVIDERS[idx];
+    try {
+      const data = await callProvider(p, messages, withTools, maxTokens);
+      state.start = idx;
+      return { data, provider: p };
+    } catch (e) {
+      lastErr = e;
+      const status = (e as { status?: number }).status || 0;
+      console.log(JSON.stringify({ event: "ai_provider_failed", provider: p.name, model: p.model, status, message: String((e as Error).message).slice(0, 200) }));
+    }
+  }
+  throw lastErr;
 }
 
 Deno.serve(async (req: Request) => {
@@ -443,9 +500,9 @@ Deno.serve(async (req: Request) => {
       return json({ error: "The AI service could not be reached. Please try again.", type: "network" }, 502);
     }
   }
-  if (!AI_KEY) {
+  if (!PROVIDERS.length) {
     return json({
-      error: "The AI assistant is not set up yet. In Supabase, open Edge Functions → Secrets and add ANTHROPIC_API_KEY (your Claude API key from console.anthropic.com, it starts with sk-ant-api).",
+      error: "The AI assistant is not set up yet. In Supabase, open Edge Functions → Secrets and add a free AI key: GROQ_API_KEY (console.groq.com/keys) or GEMINI_API_KEY (aistudio.google.com/apikey). Or add ANTHROPIC_API_KEY for Claude.",
       type: "not_configured",
     }, 500);
   }
@@ -465,15 +522,16 @@ Deno.serve(async (req: Request) => {
   messages.push(...history);
 
   const used: string[] = [];
+  const state = { start: 0 };
   try {
     for (let step = 0; step <= MAX_STEPS; step++) {
-      const data = await callModel(messages, step < MAX_STEPS, isReport ? 4000 : 1500);
+      const { data, provider } = await callModel(messages, step < MAX_STEPS, isReport ? 4000 : 1500, state);
       const msg = data.choices?.[0]?.message || {};
       const calls = msg.tool_calls || [];
       if (!calls.length) {
         const text = String(msg.content || "").trim();
         if (!text) return json({ error: "The AI returned an empty answer. Please try again.", type: "empty" }, 502);
-        return json({ content: [{ type: "text", text }], tools_used: used, model: data.model || AI_MODEL });
+        return json({ content: [{ type: "text", text }], tools_used: used, provider: provider.name, model: data.model || provider.model });
       }
       messages.push({ role: "assistant", content: msg.content || "", tool_calls: calls });
       for (const c of calls) {
@@ -489,11 +547,13 @@ Deno.serve(async (req: Request) => {
     }
     return json({ error: "The question needed too many steps. Try asking it more simply.", type: "too_many_steps" }, 200);
   } catch (e) {
-    const status = (e as { status?: number }).status || 0;
-    console.log(JSON.stringify({ event: "ai_agent_error", status, base: AI_BASE, model: AI_MODEL, message: String((e as Error).message).slice(0, 300) }));
-    if (status === 401 || status === 403) return json({ error: "The AI_API_KEY saved in Supabase was rejected by the AI provider. Create a new key and save it again.", type: "invalid_api_key" }, 502);
-    if (status === 429) return json({ error: "The free AI limit has been reached for now. Please wait a minute (or until tomorrow if the daily limit is used up) and try again.", type: "rate_limited" }, 429);
-    if (status === 404) return json({ error: `The AI model "${AI_MODEL}" was not found at the provider. Check the AI_MODEL secret.`, type: "bad_model" }, 502);
+    const err = e as { status?: number; provider?: string; model?: string };
+    const status = err.status || 0;
+    const many = PROVIDERS.length > 1;
+    console.log(JSON.stringify({ event: "ai_agent_error", status, provider: err.provider, model: err.model, message: String((e as Error).message).slice(0, 300) }));
+    if (status === 401 || status === 403) return json({ error: many ? "Every AI key saved in Supabase was rejected or is out of its free limit. Check the keys and save them again." : `The ${err.provider} API key saved in Supabase was rejected by the AI provider. Create a new key and save it again.`, type: "invalid_api_key" }, 502);
+    if (status === 429) return json({ error: "The free AI limit has been reached for now" + (many ? " on every provider" : "") + ". Please wait a minute (or until tomorrow if the daily limit is used up) and try again. Adding another free key (Groq, Gemini, Cerebras, OpenRouter) gives more room.", type: "rate_limited" }, 429);
+    if (status === 404) return json({ error: `The AI model "${err.model}" was not found at ${err.provider}. Check the ${err.provider === "custom" ? "AI_MODEL" : String(err.provider).toUpperCase() + "_MODEL"} secret.`, type: "bad_model" }, 502);
     if (status) return json({ error: "The AI provider had a problem (" + status + "): " + String((e as Error).message).slice(0, 200), type: "upstream_error" }, 502);
     return json({ error: "The AI service could not be reached. Please try again.", type: "network" }, 502);
   }

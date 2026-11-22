@@ -177,7 +177,7 @@ SmartStockpro/
 | Frontend | Vanilla JavaScript (ES5+) |
 | Styling | Custom CSS with CSS Variables |
 | Storage | localStorage (client-side) |
-| AI | Anthropic Claude Sonnet API |
+| AI | Anthropic Claude API, or free AI providers (Groq, Google Gemini, Cerebras, OpenRouter, Mistral) |
 | Hosting | GitHub Pages |
 | PWA | Service Worker + Web App Manifest |
 
@@ -186,9 +186,34 @@ SmartStockpro/
 ## 📋 Data & Privacy
 
 - All business data is stored **locally on your device** in localStorage
-- No data is sent to any server (except AI queries to Anthropic)
+- No data is sent to any server (except AI queries to the AI provider you set up)
 - Export a backup anytime: Settings → Export Data
 - Import backup: Settings → Import Backup
+
+---
+
+## 🆓 Free AI Setup
+
+The AI assistant can run on **free AI providers** instead of a paid Claude key. Get one or more free keys and save them in Supabase → **Edge Functions → Secrets**:
+
+| Secret | Where to get the free key | Default model (change with) |
+|---|---|---|
+| `GROQ_API_KEY` | https://console.groq.com/keys | `openai/gpt-oss-120b` (`GROQ_MODEL`) |
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey | `gemini-2.5-flash` (`GEMINI_MODEL`) |
+| `CEREBRAS_API_KEY` | https://cloud.cerebras.ai | `gpt-oss-120b` (`CEREBRAS_MODEL`) |
+| `OPENROUTER_API_KEY` | https://openrouter.ai/keys | `openai/gpt-oss-120b:free` (`OPENROUTER_MODEL`) |
+| `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys | `mistral-small-latest` (`MISTRAL_MODEL`) |
+
+- Add as many as you like: they are tried in the order above, and when one reaches its free limit the next one answers. Set `AI_PROVIDERS` (e.g. `gemini,groq`) to change the order.
+- **Leave `ANTHROPIC_API_KEY` unset** to use the free providers. When it is set, Claude answers instead.
+- Then deploy (JWT verification on):
+
+```bash
+supabase functions deploy ai-agent
+supabase functions deploy ai-agent-v2
+```
+
+Free tiers have per-minute and daily limits, and free models are less accurate than Claude on harder questions. Free models and their names change often; if one disappears, set its `*_MODEL` secret to a current one.
 
 ---
 
