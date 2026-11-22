@@ -69,12 +69,12 @@ async function ask(auth, text) {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/${endpoint}`, {
       method: "POST",
       headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${auth}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: text }] }),
+      body: JSON.stringify({ messages: [{ role: "user", content: text }], debug: true }),
     });
     const body = await res.json().catch(() => ({}));
     if (res.status === 429 && attempt === 0) { console.log("   (AI limit reached — waiting 60 s and trying once more)"); await sleep(60000); continue; }
     const answer = body.content?.[0]?.text || "";
-    return { ok: res.ok && !!answer, status: res.status, answer, error: body.error, tools: body.tools_used || [], model: body.model, ms: Date.now() - started };
+    return { ok: res.ok && !!answer, status: res.status, answer, error: body.error, tools: body.tools_used || [], trace: body.trace, usage: body.usage, model: body.model, ms: Date.now() - started };
   }
 }
 
@@ -138,7 +138,7 @@ for (const [i, q] of questions.entries()) {
   const text = fill(q.question);
   const r = await ask(auth, text);
   const g = r.ok ? grade(q, expected.answers?.[q.id], r.answer) : { result: "ERROR", checks: [] };
-  results.push({ id: q.id, category: q.category, question: text, ...g, answer: r.answer, error: r.error, status: r.status, tools: r.tools, model: r.model, ms: r.ms });
+  results.push({ id: q.id, category: q.category, question: text, ...g, answer: r.answer, error: r.error, status: r.status, tools: r.tools, trace: r.trace, usage: r.usage, model: r.model, ms: r.ms });
   const icon = { PASS: "✔", "PASS*": "✔", FAIL: "✖", ERROR: "!", REVIEW: "?" }[g.result];
   console.log(`${icon} ${q.id} ${g.result.padEnd(6)} ${(r.ms / 1000).toFixed(1)}s  ${text}`);
   if (g.result === "FAIL") g.checks.filter((c) => !c.pass).forEach((c) => console.log(`        missing ${c.what}`));
