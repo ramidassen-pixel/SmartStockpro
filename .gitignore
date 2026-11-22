@@ -1,0 +1,3 @@
+# AI test data (contains real business numbers and customer names)
+ai-eval/expected.json
+ai-eval/results/
