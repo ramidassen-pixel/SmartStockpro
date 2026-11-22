@@ -5,6 +5,7 @@
 //   business_snapshot  headline figures + what the data can't answer   (rpc ai_snapshot)
 //   query_data         filter / group / total any ai.* view              (rpc ai_query)
 //   profit_and_loss    sales, cost of goods, expenses, payroll for a period
+//   get_insights       today's computed insights (trends, stock, debts, lapsed customers...)  (table biz_insights)
 //   app_help           how to use the app
 //
 // Date words ("last week", "this month") are turned into exact dates HERE, in code, not by the model.
@@ -112,6 +113,31 @@ async function rpc(auth: string, fn: string, body: unknown): Promise<any> {
 }
 const query = (auth: string, spec: Row) => rpc(auth, "ai_query", { spec });
 
+async function readInsights(auth: string, day?: string): Promise<Row[]> {
+  const q = "select=day,kind,severity,title,detail,data&order=day.desc,sort.asc&limit=40" + (day ? `&day=eq.${day}` : "");
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/biz_insights?${q}`, { headers: { apikey: SUPABASE_ANON, Authorization: auth } });
+  if (!res.ok) throw new Error(`Could not read insights (${res.status})`);
+  return await res.json();
+}
+
+// Today's insights; worked out on the spot if the nightly job hasn't run yet today
+async function getInsights(auth: string, a: Row) {
+  const t = todayLocal();
+  let rows = await readInsights(auth, t);
+  if (!rows.length) {
+    await rpc(auth, "ai_refresh_insights", {}).catch(() => null);
+    rows = await readInsights(auth, t);
+  }
+  if (!rows.length) rows = (await readInsights(auth)).filter((r, _i, all) => r.day === all[0]?.day);
+  if (a.kind) rows = rows.filter((r) => r.kind === a.kind);
+  for (const r of rows) {   // keep long lists short
+    for (const k of Object.keys(r.data || {})) if (Array.isArray(r.data[k]) && r.data[k].length > 15) {
+      r.data[k + "_total"] = r.data[k].length; r.data[k] = r.data[k].slice(0, 15);
+    }
+  }
+  return { day: rows[0]?.day || t, count: rows.length, insights: rows };
+}
+
 // ── Tools ────────────────────────────────────────────────────────────────────
 const VIEWS = ["sales", "sale_items", "payments", "customers", "products", "stock_movements", "expenses", "allocations",
   "suppliers", "supplier_bills", "purchase_orders", "grns", "grn_items", "quotations", "quotation_items", "employees",
@@ -180,6 +206,16 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     input_schema: {
       type: "object",
       properties: { period: periodProp, date_from: { type: "string" }, date_to: { type: "string" } },
+    },
+  },
+  {
+    name: "get_insights",
+    description: "Today's insights, worked out from all the records: sales trend (7 days and month vs last month), unusual days, best weekday, out-of-stock and low stock, products to reorder, dead stock, products priced below cost, customer debt by age, regular customers who stopped buying, top customers, expense spikes, supplier bills due, quotations expiring, gaps in the records. Severity: alert > warn > good > info. Use for 'how is my business doing', 'any problems', 'what should I do / focus on', advice and summaries.",
+    input_schema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", description: "Optional: only one kind, e.g. lapsed_regulars, customer_debt, low_stock, out_of_stock, below_cost, sales_week_trend, month_pace" },
+      },
     },
   },
   {
@@ -265,6 +301,8 @@ async function runTool(name: string, a: Row, auth: string): Promise<unknown> {
     }
     case "profit_and_loss":
       return await profitAndLoss(auth, a);
+    case "get_insights":
+      return await getInsights(auth, a);
     case "app_help":
       return APP_GUIDE;
   }
@@ -281,6 +319,7 @@ How to work:
 - Use as few tool calls as needed. Independent lookups can be made in the same turn.
 - If a tool returns an error, fix the request (it names the valid views and columns) and try again.
 - Product-level questions (best-selling product, units sold, profit per product) need sale item lines. If data_notes show sales_without_items, say that the sales were saved without item details, so this can't be answered from sales, and offer what can be (e.g. stock levels, product margins from cost and price).
+- For overall questions (how is the business doing, problems, what to focus on, advice), start with get_insights, then check details with query_data if needed. Turn insights into a few concrete actions.
 - For profit, always use profit_and_loss and follow its warning: never present sales minus expenses as profit when cost of goods is missing.
 - You can only read data. If asked to add, change or delete something, say you can't do that and tell them where in the app to do it (app_help).
 - Customer and staff details are the business's own records; share them with the user who asks.
