@@ -1,6 +1,8 @@
-// SmartStock Pro — AI agent (Supabase Edge Function, Deno)
+// SmartStock Pro — AI agent (Supabase Edge Function, Deno) — the ORIGINAL assistant.
 //
-// Answers questions about the business by letting a free / low-cost AI model call
+// When the ANTHROPIC_API_KEY secret is set, every request is handed to ai-agent-v2 (Claude), so
+// older app versions that still call this function get the new assistant. Otherwise it
+// answers questions about the business by letting a free / low-cost AI model call
 // read-only "tools" that look up the real numbers. Works with any OpenAI-compatible
 // chat API (Groq, Google Gemini, OpenRouter, ...), chosen with Supabase secrets:
 //   AI_API_KEY   (required)  the provider's API key
@@ -421,8 +423,31 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!userClaims(req)) return json({ error: "Please sign in to use the AI assistant.", type: "not_signed_in" }, 401);
+
+  // The Claude agent (ai-agent-v2) is the main assistant now. Whenever its key is set, hand the
+  // question over to it, so app versions that still call this function get the new assistant too.
+  if (clean(Deno.env.get("ANTHROPIC_API_KEY"))) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent-v2`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON,
+          Authorization: req.headers.get("authorization") || "",
+        },
+        body: await req.text(),
+      });
+      return new Response(await res.text(), { status: res.status, headers: { ...cors, "Content-Type": "application/json" } });
+    } catch (e) {
+      console.log(JSON.stringify({ event: "ai_agent_forward_failed", message: String((e as Error).message).slice(0, 200) }));
+      return json({ error: "The AI service could not be reached. Please try again.", type: "network" }, 502);
+    }
+  }
   if (!AI_KEY) {
-    return json({ error: "The AI is not set up yet: add the AI_API_KEY secret in Supabase (Edge Functions → Secrets).", type: "not_configured" }, 500);
+    return json({
+      error: "The AI assistant is not set up yet. In Supabase, open Edge Functions → Secrets and add ANTHROPIC_API_KEY (your Claude API key from console.anthropic.com, it starts with sk-ant-api).",
+      type: "not_configured",
+    }, 500);
   }
 
   const body = (await req.json().catch(() => ({}))) as Row;

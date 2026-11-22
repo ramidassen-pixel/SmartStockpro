@@ -6,11 +6,12 @@
 //   query_data         filter / group / total any ai.* view              (rpc ai_query)
 //   profit_and_loss    sales, cost of goods, expenses, payroll for a period
 //   get_insights       today's computed insights (trends, stock, debts, lapsed customers...)  (table biz_insights)
+//   propose_action     a WhatsApp message or a Draft purchase order, shown to the user to CONFIRM (never done here)
 //   app_help           how to use the app
 //
 // Date words ("last week", "this month") are turned into exact dates HERE, in code, not by the model.
 // Every lookup uses the caller's own sign-in token, so row-level security limits it to their business.
-// Nothing is ever written.
+// Nothing is ever written: actions are only proposed, and the app carries them out after the user confirms.
 //
 // Secrets: ANTHROPIC_API_KEY (required) · AI_MODEL (optional, default claude-opus-5-5)
 //          AI_EFFORT (optional: low | medium | high, default medium) · BUSINESS_TZ (default Africa/Monrovia)
@@ -138,6 +139,83 @@ async function getInsights(auth: string, a: Row) {
   return { day: rows[0]?.day || t, count: rows.length, insights: rows };
 }
 
+// ── Actions (Phase 4): the AI only PROPOSES; the app shows a card and does it after the user confirms ──
+// Nothing is written here. The proposal is checked against the real records (supplier, products, phone)
+// and returned to the app in the response's `actions` list.
+let actionSeq = 0;
+
+function waPhone(raw: unknown): string {
+  let d = String(raw || "").replace(/[^0-9]/g, "");
+  if (!d) return "";
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("0")) d = "231" + d.slice(1);          // Liberian local number → international
+  if (d.length <= 9 && !d.startsWith("231")) d = "231" + d;
+  return d.length >= 10 ? d : "";
+}
+
+// One record by id, exact name, or a unique partial name
+async function findOne(auth: string, view: string, key: unknown, columns: string[]): Promise<Row> {
+  const k = String(key || "").trim();
+  if (!k) throw new Error(`Say which ${view === "suppliers" ? "supplier" : view === "customers" ? "customer" : "product"}.`);
+  for (const f of [{ column: "id", op: "eq", value: k }, { column: "name", op: "eq", value: k }, { column: "name", op: "contains", value: k }]) {
+    const r = await query(auth, { view, filters: [f], columns, limit: 6 });
+    if (r.rows.length === 1) return r.rows[0];
+    if (r.rows.length > 1 && f.op === "contains") {
+      throw new Error(`"${k}" matches several ${view}: ${r.rows.map((x: Row) => x.name).join(", ")}. Ask the user which one.`);
+    }
+    if (r.rows.length > 1) return r.rows[0];
+  }
+  throw new Error(`No ${view.replace(/s$/, "")} called "${k}" was found.`);
+}
+
+async function proposeAction(auth: string, a: Row, proposed: Row[]) {
+  if (proposed.length >= 5) throw new Error("At most 5 actions per answer.");
+  const id = `act-${Date.now().toString(36)}-${++actionSeq}`;
+
+  if (a.type === "whatsapp_message") {
+    const message = String(a.message || "").trim();
+    if (!message) throw new Error("Write the message text.");
+    if (message.length > 1500) throw new Error("Keep the message under 1500 characters.");
+    let name = String(a.to_name || "").trim();
+    let phone = waPhone(a.phone);
+    if (!phone && name) {
+      const kind = a.recipient === "supplier" ? "suppliers" : "customers";
+      const rec = await findOne(auth, kind, name, kind === "suppliers" ? ["id", "name", "phone", "whatsapp"] : ["id", "name", "phone"]).catch(() => null);
+      if (rec) { name = rec.name; phone = waPhone(rec.whatsapp || rec.phone); }
+    }
+    const action = { id, type: "whatsapp_message", title: `WhatsApp to ${name || "a contact"}`, to_name: name || null, phone: phone || null, message };
+    proposed.push(action);
+    return { proposed: true, action_id: id, phone_found: !!phone,
+      note: (phone ? "" : "No phone number on file: WhatsApp will open and the user picks the contact. ")
+        + "The user now sees this message with a Confirm button. It is NOT sent until they tap it and press send in WhatsApp." };
+  }
+
+  if (a.type === "purchase_order") {
+    const sup = await findOne(auth, "suppliers", a.supplier, ["id", "name", "phone"]);
+    const items = Array.isArray(a.items) ? a.items : [];
+    if (!items.length) throw new Error("Add at least one product with a quantity.");
+    if (items.length > 30) throw new Error("At most 30 products in one order.");
+    const lines: Row[] = [];
+    for (const it of items) {
+      const p = await findOne(auth, "products", it.product, ["id", "name", "qty", "cost", "unit"]);
+      const qty = Math.round(Number(it.qty));
+      if (!(qty > 0)) throw new Error(`Give a quantity above 0 for ${p.name}.`);
+      const cost = it.cost_price !== undefined && it.cost_price !== null ? Number(it.cost_price) : Number(p.cost) || 0;
+      if (!(cost >= 0)) throw new Error(`Invalid cost for ${p.name}.`);
+      lines.push({ id: p.id, name: p.name, qty, costPrice: Math.round(cost * 100) / 100, in_stock: Number(p.qty) || 0, unit: p.unit || null });
+    }
+    const total = Math.round(lines.reduce((x, l) => x + l.qty * l.costPrice, 0) * 100) / 100;
+    const expected = /^\d{4}-\d{2}-\d{2}$/.test(String(a.expected_date || "")) ? a.expected_date : null;
+    const action = { id, type: "purchase_order", title: `Purchase order to ${sup.name}`, supplier: sup.name, supplierId: sup.id,
+      items: lines, total, expectedDate: expected, notes: String(a.notes || "").slice(0, 500) || null };
+    proposed.push(action);
+    return { proposed: true, action_id: id, supplier: sup.name, items: lines.map((l) => `${l.qty} × ${l.name} @ ${l.costPrice}`), total,
+      note: "The user now sees this order with a Confirm button. It is saved as a Draft purchase order only if they confirm; nothing is sent to the supplier." };
+  }
+
+  throw new Error('type must be "whatsapp_message" or "purchase_order".');
+}
+
 // ── Tools ────────────────────────────────────────────────────────────────────
 const VIEWS = ["sales", "sale_items", "payments", "customers", "products", "stock_movements", "expenses", "allocations",
   "suppliers", "supplier_bills", "purchase_orders", "grns", "grn_items", "quotations", "quotation_items", "employees",
@@ -219,6 +297,32 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: "propose_action",
+    description: "Prepare an action for the user to confirm with one tap. Nothing happens until they press Confirm in the app. Types: 'whatsapp_message' (a debt reminder, a message to win back a customer, a quotation follow-up, an order to a supplier: give to_name and/or phone, recipient 'customer' or 'supplier', and the full message text) and 'purchase_order' (a Draft purchase order: supplier name, items [{product, qty, cost_price?}], optional expected_date and notes; cost defaults to the product's cost price). Only propose when the user asks for it or clearly wants it (e.g. 'remind Otis', 'order more tiles'), never for figures they only asked about.",
+    input_schema: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["whatsapp_message", "purchase_order"] },
+        to_name: { type: "string", description: "whatsapp_message: customer or supplier name" },
+        phone: { type: "string", description: "whatsapp_message: phone, if known (otherwise looked up from the name)" },
+        recipient: { type: "string", enum: ["customer", "supplier"] },
+        message: { type: "string", description: "whatsapp_message: the full text to send, polite, in the user's language, with the business name" },
+        supplier: { type: "string", description: "purchase_order: supplier name or id" },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { product: { type: "string", description: "Product name or id" }, qty: { type: "number" }, cost_price: { type: "number" } },
+            required: ["product", "qty"],
+          },
+        },
+        expected_date: { type: "string", description: "purchase_order: YYYY-MM-DD" },
+        notes: { type: "string" },
+      },
+      required: ["type"],
+    },
+  },
+  {
     name: "app_help",
     description: "How to use SmartStock Pro: where things are and how to do tasks (make a sale, add products, record a debt payment, print invoices, quotations, backups, users, privacy lock...).",
     input_schema: { type: "object", properties: { topic: { type: "string" } } },
@@ -285,7 +389,7 @@ async function profitAndLoss(auth: string, a: Row) {
   return out;
 }
 
-async function runTool(name: string, a: Row, auth: string): Promise<unknown> {
+async function runTool(name: string, a: Row, auth: string, proposed: Row[] = []): Promise<unknown> {
   switch (name) {
     case "business_snapshot":
       return await rpc(auth, "ai_snapshot", {});
@@ -303,6 +407,8 @@ async function runTool(name: string, a: Row, auth: string): Promise<unknown> {
       return await profitAndLoss(auth, a);
     case "get_insights":
       return await getInsights(auth, a);
+    case "propose_action":
+      return await proposeAction(auth, a, proposed);
     case "app_help":
       return APP_GUIDE;
   }
@@ -321,7 +427,8 @@ How to work:
 - Product-level questions (best-selling product, units sold, profit per product) need sale item lines. If data_notes show sales_without_items, say that the sales were saved without item details, so this can't be answered from sales, and offer what can be (e.g. stock levels, product margins from cost and price).
 - For overall questions (how is the business doing, problems, what to focus on, advice), start with get_insights, then check details with query_data if needed. Turn insights into a few concrete actions.
 - For profit, always use profit_and_loss and follow its warning: never present sales minus expenses as profit when cost of goods is missing.
-- You can only read data. If asked to add, change or delete something, say you can't do that and tell them where in the app to do it (app_help).
+- You can read data and PROPOSE two actions with propose_action: a WhatsApp message, or a Draft purchase order. The user confirms with one tap; until then nothing is done, so never say it was sent or saved: say it is ready to confirm below. Look up what you need first (phone, amount owed, stock, cost).
+- Anything else (record a sale or payment, change stock or prices, delete): say you can't do it and tell them where in the app to do it (app_help).
 - Customer and staff details are the business's own records; share them with the user who asks.
 
 How to answer:
@@ -383,6 +490,7 @@ Deno.serve(async (req: Request) => {
   const messages: Anthropic.Beta.BetaMessageParam[] = [...history];
   const used: string[] = [];
   const trace: Row[] = [];
+  const proposed: Row[] = [];
   const usage = { input: 0, output: 0, cache_read: 0, cache_write: 0 };
 
   try {
@@ -417,6 +525,7 @@ Deno.serve(async (req: Request) => {
           content: [{ type: "text", text }],
           truncated: response.stop_reason === "max_tokens",
           tools_used: used, model: response.model, steps: step + 1,
+          ...(proposed.length ? { actions: proposed } : {}),
           ...(body.debug ? { trace, usage } : {}),
         });
       }
@@ -427,7 +536,7 @@ Deno.serve(async (req: Request) => {
         used.push(c.name);
         const input = (c.input && typeof c.input === "object" ? c.input : {}) as Row;
         try {
-          const result = await runTool(c.name, input, auth);
+          const result = await runTool(c.name, input, auth, proposed);
           let out = typeof result === "string" ? result : JSON.stringify(result);
           if (out.length > MAX_TOOL_CHARS) out = out.slice(0, MAX_TOOL_CHARS) + "…(cut short — ask with a smaller limit, filters or grouping)";
           trace.push({ tool: c.name, input, chars: out.length });
