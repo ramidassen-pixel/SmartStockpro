@@ -1416,6 +1416,7 @@ var Sales = {
 
     // Close button
     var closeBtn = document.createElement('button');
+    closeBtn.id = frameId + '-close';
     closeBtn.innerHTML = '✕ Close';
     closeBtn.style.cssText = 'position:fixed;top:12px;right:12px;z-index:100000;background:#111;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.3)';
     closeBtn.onclick = function() { overlay.remove(); closeBtn.remove(); };
