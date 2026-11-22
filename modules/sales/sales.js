@@ -47,7 +47,11 @@ var Sales = {
     var partPaid    = all.filter(function(s){ return s.status==='Partial'; }).reduce(function(a,s){ return a+(parseFloat(s.amountPaid)||0); }, 0);
     var outstanding = all.filter(function(s){ return s.status!=='Paid'; }).reduce(function(a,s){ return a+(parseFloat(s.balance)||0); }, 0);
 
-    var rows = filtered.map(function(s) {
+    // Draw only the first rows (drawing all ~2,800 invoices took ~10s on a phone).
+    // "Show more" adds more; totals, chips and Select still use the whole list.
+    var limit = this._limit || this.PAGE;
+    var more  = filtered.length - limit;
+    var rows = filtered.slice(0, limit).map(function(s) {
       var progress = s.status==='Partial'
         ? '<div style="margin-top:5px"><div class="progress"><div class="progress-fill" style="width:'+Math.min(100,Math.round(((parseFloat(s.amountPaid)||0)/(parseFloat(s.total)||1))*100))+'%;background:var(--wa)"></div></div>'
           + '<div style="font-size:10px;color:var(--wa);margin-top:3px;font-family:var(--fm)">Paid '+Utils.cur(s.amountPaid||0,cur)+' · Bal '+Utils.cur(s.balance||0,cur)+'</div></div>'
@@ -112,10 +116,20 @@ var Sales = {
       + this._fBar()
       + '<div class="chips">'+chips+'</div>'
       + (this._selMode ? this._selBar(filtered) : '')
-      + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>' : emptyState)+'</div>';
+      + '<div class="sec">'+(filtered.length ? '<div class="card">'+rows+'</div>'
+          + (more > 0
+              ? '<button class="btn-ghost btn-full" style="margin-top:12px" onclick="Sales.showMore()">Show more ('
+                + more + ' more invoice' + (more === 1 ? '' : 's') + ')</button>'
+                + '<div style="text-align:center;font-size:11px;color:var(--t3);margin-top:8px">Looking for one invoice? Use Filters → Invoice to find it fast.</div>'
+              : '')
+        : emptyState)+'</div>';
   },
 
-  setFilter: function(f) { this.filter=f; this._sel={}; this.render(); },
+  PAGE: 50,
+  _limit: 0,
+  showMore: function() { this._limit = (this._limit || this.PAGE) + 100; this.render(); },
+
+  setFilter: function(f) { this.filter=f; this._sel={}; this._limit=0; this.render(); },
 
   // ── FILTERS (date, payment mode, customer, staff, invoice) ─────────────────
   f: { date: 'all', day: '', from: '', to: '', payment: [], customer: [], staff: [], invoice: '' },
@@ -184,7 +198,7 @@ var Sales = {
     else if (key === 'date') { this.f.date = 'all'; this.f.day = ''; this.f.from = ''; this.f.to = ''; }
     else if (key === 'invoice') this.f.invoice = '';
     else this.f[key] = [];
-    this._sel = {};
+    this._sel = {}; this._limit = 0;
     this.render();
   },
 
@@ -202,7 +216,7 @@ var Sales = {
   },
   _fClearDraft: function() { this._fd = this._blankF(); this._fCustQ = ''; this._fPaint(); },
   applyFilters: function() {
-    this.f = this._fd; this._fd = null; this._sel = {};
+    this.f = this._fd; this._fd = null; this._sel = {}; this._limit = 0;
     Modal.close();
     this.render();
     var n = this._applyF(DB.getSales()).length;

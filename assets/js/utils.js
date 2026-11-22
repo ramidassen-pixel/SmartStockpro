@@ -51,7 +51,14 @@ var Utils = {
       return sym + result + '.' + parts[1];
     } catch(e) { return (sym||'$') + '0.00'; }
   },
-  date(d) { return d ? new Date(d).toLocaleDateString('en-US', {year:'numeric',month:'short',day:'2-digit'}) : '—'; },
+  // One shared date formatter: making a new one for every row was slow on phones (Sales list)
+  _dateFmt: null,
+  date(d) {
+    if (!d) return '—';
+    if (!this._dateFmt) this._dateFmt = new Intl.DateTimeFormat('en-US', {year:'numeric',month:'short',day:'2-digit'});
+    var t = new Date(d);
+    return isNaN(t) ? 'Invalid Date' : this._dateFmt.format(t);
+  },
   today() { return new Date().toISOString().slice(0,10); },
   uid(p) { return (p||'ID') + '-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2,5).toUpperCase(); },
   esc(s) { var d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML; },
