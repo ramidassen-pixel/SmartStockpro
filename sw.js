@@ -1,4 +1,4 @@
-﻿const CACHE = 'ssp-v6.24';
+﻿const CACHE = 'ssp-v6.25';
 const ASSETS = [
   './',
   'index.html',
@@ -37,6 +37,7 @@ const ASSETS = [
   'modules/finance/finance.js',
   'modules/reports/reports.js',
   'modules/quotations/quotations.js',
+  'modules/billing/billing.js',
   'modules/ai/ai.js',
   'modules/settings/settings.js',
   'assets/js/globalsearch.js',

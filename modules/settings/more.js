@@ -14,6 +14,7 @@ var MorePage = {
       {
         label: 'Business',
         items: [
+          { icon:'credit-card', label:'Plan & Billing',   desc:'Your plan · upgrade with Mobile Money', bg:'var(--gb)', action:"Router.go('billing')", badge:'' },
           { icon:'file-text', label:'Quotations',         desc:'Create & manage client quotations', bg:'var(--inb)', action:"Router.go('quotations')", badge:'NEW' },
           { icon:'history', label:'Stock History',   desc:'Stock in/out & adjustments',         bg:'var(--inb)', action:"Router.go('stock')",          badge:'' },
           { icon:'alert-triangle', label:'Debt Report',    desc:'Customer outstanding balances',       bg:'var(--erb)', action:'Customers.debtReport()',      badge:'' },
