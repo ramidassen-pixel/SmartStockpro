@@ -456,133 +456,17 @@ var Dashboard = {
       return;
     }
 
-    // AI insights (worked out nightly on the server): money roles only
-    var insightsHtml = canSeeMoney ? '<div id="dash-insights">' + Dashboard._insightsInner() + '</div>' : '';
-
     // ── ASSEMBLE ──────────────────────────────────────────────────────────
     // Phone: one column. Desktop (≥1024px, desktop.css): main column + side column.
     pg.innerHTML = '<div style="padding-top:6px">'
       + '<div class="dash-greet-row">' + greetHtml + heroHtml + '</div>'
       + '<div class="dash-grid">'
-      +   '<div class="dash-main">' + statCards + insightsHtml + trendHtml + detailHtml + recentHtml + qaHtml + '</div>'
+      +   '<div class="dash-main">' + statCards + trendHtml + detailHtml + recentHtml + qaHtml + '</div>'
       +   '<div class="dash-side">' + alertsHtml + topProdsHtml + suppHtml + weekChart() + stripHtml + '</div>'
       + '</div>'
       + '</div>';
 
     Dashboard.animateCountUp();
-    if (canSeeMoney) Dashboard.loadInsights();
-  },
-
-  // ── AI insights card ────────────────────────────────────────────────────
-  // Rows come from the biz_insights table (read-only, own business only). If tonight's job
-  // hasn't run yet today, ask the server to work them out once, then read again.
-  _ins: null,          // { day, rows, at }
-  _insLoading: false,
-  _insAll: false,
-
-  loadInsights: function(force) {
-    var today = Utils.today(), c = Dashboard._ins;
-    if (Dashboard._insLoading) return;
-    if (!force && c && c.day === today && Date.now() - c.at < 30 * 60 * 1000) return;
-    var token = typeof Auth !== 'undefined' && Auth._session && Auth._session.access_token;
-    if (!token || typeof SUPABASE_URL === 'undefined') return;   // offline / demo: no card
-    Dashboard._insLoading = true;
-    var ready = (typeof DB !== 'undefined' && DB._ensureToken) ? DB._ensureToken().catch(function(){}) : Promise.resolve();
-    var headers = function() {
-      var t = (Auth._session && Auth._session.access_token) || token;
-      return { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' };
-    };
-    var read = function() {
-      return fetch(SUPABASE_URL + '/rest/v1/biz_insights?select=kind,severity,title,detail&day=eq.' + today + '&order=sort.asc', { headers: headers() })
-        .then(function(r) { if (!r.ok) throw new Error('insights ' + r.status); return r.json(); });
-    };
-    ready.then(read).then(function(rows) {
-      if (rows.length) return rows;
-      return fetch(SUPABASE_URL + '/rest/v1/rpc/ai_refresh_insights', { method: 'POST', headers: headers(), body: '{}' })
-        .then(function() { return read(); });
-    }).then(function(rows) {
-      Dashboard._ins = { day: today, rows: rows || [], at: Date.now() };
-      Dashboard._paintInsights();
-    }).catch(function(e) {
-      console.warn('Insights not loaded:', e && e.message);
-      Dashboard._ins = { day: today, rows: [], at: Date.now() - 25 * 60 * 1000 };   // hide; retry in ~5 min
-      Dashboard._paintInsights();
-    }).then(function() { Dashboard._insLoading = false; });
-  },
-
-  _paintInsights: function() {
-    var box = document.getElementById('dash-insights');
-    if (box) box.innerHTML = Dashboard._insightsInner();
-  },
-
-  toggleInsights: function() {
-    Dashboard._insAll = !Dashboard._insAll;
-    Dashboard._paintInsights();
-  },
-
-  askAIInsights: function() {
-    Router.go('ai');
-    setTimeout(function() {
-      if (typeof AI !== 'undefined' && AI.ask) AI.ask("Look at today's insights and tell me the 3 most important things I should do, in order.");
-    }, 350);
-  },
-
-  // Hide money amounts (e.g. "$1,234.50") while the privacy lock is on
-  _maskMoney: function(t, cur) {
-    if (!t) return t;
-    var esc = cur.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return t.replace(new RegExp('-?' + esc + '[\\d,]+(\\.\\d+)?', 'g'), cur + '••••');
-  },
-
-  _insightsInner: function() {
-    var c = Dashboard._ins;
-    if (!c || c.day !== Utils.today()) {
-      // First load: a quiet placeholder while the server answers (nothing when offline)
-      var signedIn = typeof Auth !== 'undefined' && Auth._session && Auth._session.access_token;
-      return signedIn ? '<div class="sec"><div class="skel" style="height:96px;border-radius:14px"></div></div>' : '';
-    }
-    if (!c.rows.length) return '';
-    var locked = typeof Privacy !== 'undefined' && Privacy.masked();
-    var cur = DB.getSettings().currency || '$';
-    var txt = function(t) { return Utils.esc(locked ? Dashboard._maskMoney(t, cur) : t); };
-    var look = {
-      alert: { c: 'var(--er)', b: 'var(--erb)', i: 'alert-triangle' },
-      warn:  { c: 'var(--wa)', b: 'var(--wab)', i: 'alert-triangle' },
-      good:  { c: 'var(--ok)', b: 'var(--okb)', i: 'trending-up' },
-      info:  { c: 'var(--in)', b: 'var(--inb)', i: 'chart-line' }
-    };
-    var icons = {
-      out_of_stock: 'box', low_stock: 'package', reorder_soon: 'package', dead_stock: 'box', below_cost: 'tag', missing_cost: 'tag',
-      customer_debt: 'wallet', lapsed_regulars: 'users', top_customers_month: 'trophy', best_weekday: 'calendar-stats',
-      yesterday_vs_usual: 'calendar', expense_spike: 'cash', supplier_bills: 'truck', quotes_expiring: 'file-invoice',
-      sales_without_items: 'receipt'
-    };
-    var rank = { alert: 0, warn: 1, good: 2, info: 3 };
-    var rk = function(r) { return r.severity in rank ? rank[r.severity] : 3; };
-    var rows = c.rows.slice().sort(function(a, b) { return rk(a) - rk(b); });
-    var shown = Dashboard._insAll ? rows : rows.slice(0, 4);
-    var attention = rows.filter(function(r) { return r.severity === 'alert' || r.severity === 'warn'; }).length;
-    var items = shown.map(function(r) {
-      var L = look[r.severity] || look.info;
-      var ic = icons[r.kind] || (r.severity === 'warn' ? 'trending-down' : L.i);
-      return '<div class="list-item" style="align-items:flex-start">'
-        + '<div class="list-icon" style="background:' + L.b + ';color:' + L.c + ';flex-shrink:0">' + Icons.svg(ic, 18) + '</div>'
-        + '<div class="list-info" style="min-width:0">'
-        +   '<div class="list-name" style="white-space:normal;line-height:1.35">' + txt(r.title) + '</div>'
-        +   (r.detail ? '<div class="list-meta" style="white-space:normal;line-height:1.45;margin-top:2px">' + txt(r.detail) + '</div>' : '')
-        + '</div></div>';
-    }).join('');
-    var more = rows.length > 4
-      ? '<button class="btn-ghost" style="flex:1;font-size:12px" onclick="Dashboard.toggleInsights()">' + (Dashboard._insAll ? 'Show less' : 'Show all ' + rows.length) + '</button>'
-      : '';
-    return '<div class="sec">'
-      + '<div class="sec-title"><span class="sec-ico" style="color:var(--g)">' + Icons.svg('robot', 17) + '</span>Today\'s Insights'
-      + (attention ? '<span style="background:var(--wa);color:#111;font-size:9px;font-weight:800;padding:1px 7px;border-radius:99px;margin-left:6px">' + attention + ' to check</span>' : '')
-      + '</div>'
-      + '<div class="card">' + items + '</div>'
-      + '<div style="display:flex;gap:8px;padding:10px 14px 0">' + more
-      + '<button class="btn-ghost" style="flex:1;font-size:12px" onclick="Dashboard.askAIInsights()"><span style="display:inline-flex;vertical-align:-3px;margin-right:6px">' + Icons.svg('robot', 16) + '</span>Ask the AI what to do</button>'
-      + '</div></div>';
   },
 
   // Re-draw when the window crosses the phone/desktop width (chart size + layout)

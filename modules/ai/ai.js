@@ -18,9 +18,8 @@ var AI = {
       + '<div class="ai-title">SmartStock AI</div>'
       + '<div class="ai-status">'
       + '<span class="ai-status-dot"></span>'
-      + '<span id="ai-status-txt">' + (this._v2() ? 'New assistant · can draft messages and orders for you to confirm' : 'Ready — Ask me anything') + '</span>'
+      + '<span id="ai-status-txt">Ready — Ask me anything</span>'
       + '</div></div>'
-      + '<button class="btn-ghost btn-sm" onclick="AI.toggleV2()" title="' + (this._v2() ? 'Switch to the original AI assistant (this device only)' : 'Switch back to the new AI assistant') + '" style="margin-right:6px' + (this._v2() ? ';color:var(--g);border-color:var(--g)' : '') + '">' + (this._v2() ? '✨ New AI' : 'Original AI') + '</button>'
       + '<button class="btn-ghost btn-sm" onclick="AI.clear()">Clear</button>'
       + '</div>'
       // Quick chips
@@ -238,7 +237,7 @@ var AI = {
 
     var self = this;
     self._authHeaders().then(function(headers) {
-      return fetch(SUPABASE_URL + '/functions/v1/' + self._endpoint(), {
+      return fetch(SUPABASE_URL + '/functions/v1/ai-agent', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -425,7 +424,7 @@ var AI = {
     this._addTyping(tid);
     var self = this;
     try {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/' + this._endpoint(), {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ai-agent', {
         method: 'POST',
         headers: await this._authHeaders(),
         body: JSON.stringify({
@@ -443,10 +442,9 @@ var AI = {
         var ans = data.content[0].text;
         this._addBot(ans);
         this.history.push({role:'assistant', content:ans});
-        if (data.actions) this._addActions(data.actions);
         if (this.history.length > 20) this.history = this.history.slice(-20);
       } else {
-        var errMsg2 = data.error ? (data.error + (data.type && data.type !== 'not_configured' ? ' [type:'+data.type+']' : '')) : 'No response.';
+        var errMsg2 = data.error ? (data.error + (data.type?' [type:'+data.type+']':'')) : 'No response.';
         console.error('AI Chat Error:', JSON.stringify(data));
         this._addBot('⚠️ ' + errMsg2);
       }
@@ -518,102 +516,4 @@ var AI = {
   },
 
   _rmTyping: function(id) { var e = Utils.get(id); if(e) e.remove(); },
-
-  // ── Which AI answers: the new agent (Claude, with insights and actions) or the original one ──
-  // Per device, so the owner can try the new one before everyone switches.
-  // The new assistant is the default; '0' on this device means the user chose the original one
-  _v2: function() { try { return localStorage.getItem('ssp_ai_v2') !== '0'; } catch (e) { return true; } },
-  _endpoint: function() { return this._v2() ? 'ai-agent-v2' : 'ai-agent'; },
-  toggleV2: function() {
-    try { localStorage.setItem('ssp_ai_v2', this._v2() ? '0' : '1'); } catch (e) {}
-    Toast.show(this._v2() ? 'New AI assistant on' : 'Original AI assistant on (this device)', 'ok');
-    this.clear();
-  },
-
-  // ── Actions the AI prepared: shown as cards, carried out only when the user taps Confirm ──
-  _actions: {},
-
-  _addActions: function(actions) {
-    var msgs = Utils.get('ai-msgs'); if (!msgs || !actions || !actions.length) return;
-    var self = this, cur = (DB.getSettings().currency || '$');
-    actions.forEach(function(a) {
-      if (!a || !a.id || self._actions[a.id]) return;
-      self._actions[a.id] = a;
-      var body = '';
-      if (a.type === 'whatsapp_message') {
-        body = '<div style="font-size:11px;color:var(--t3);margin-bottom:6px">To: <strong style="color:var(--t1)">' + Utils.esc(a.to_name || 'choose in WhatsApp') + '</strong>'
-          + (a.phone ? ' · +' + Utils.esc(a.phone) : ' · no phone on file') + '</div>'
-          + '<textarea class="fi" id="aa-msg-' + a.id + '" rows="6" style="font-size:12px;line-height:1.5;resize:vertical">' + Utils.esc(a.message || '') + '</textarea>'
-          + '<div style="font-size:10px;color:var(--t3);margin-top:4px">You can edit the message. WhatsApp opens; you press send.</div>';
-      } else if (a.type === 'purchase_order') {
-        body = '<div style="font-size:11px;color:var(--t3);margin-bottom:6px">Supplier: <strong style="color:var(--t1)">' + Utils.esc(a.supplier) + '</strong>'
-          + (a.expectedDate ? ' · expected ' + Utils.esc(a.expectedDate) : '') + '</div>'
-          + (a.items || []).map(function(i) {
-              return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid var(--bd)">'
-                + '<span>' + Utils.esc(i.qty + ' × ' + i.name) + (i.in_stock !== undefined ? ' <span style="color:var(--t3)">(in stock ' + Utils.esc(String(i.in_stock)) + ')</span>' : '') + '</span>'
-                + '<span style="white-space:nowrap">' + Utils.cur(i.qty * i.costPrice, cur) + '</span></div>';
-            }).join('')
-          + '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding-top:6px"><span>Total</span><span>' + Utils.cur(a.total, cur) + '</span></div>'
-          + (a.notes ? '<div style="font-size:11px;color:var(--t3);margin-top:4px">' + Utils.esc(a.notes) + '</div>' : '')
-          + '<div style="font-size:10px;color:var(--t3);margin-top:4px">Saved as a Draft purchase order. Nothing is sent to the supplier.</div>';
-      } else {
-        return;
-      }
-      var d = document.createElement('div');
-      d.className = 'ai-bot'; d.id = 'aa-' + a.id;
-      d.style.cssText = 'border:1px solid var(--gb2,var(--bd2));max-width:100%';
-      d.innerHTML = '<div style="font-size:12px;font-weight:800;color:var(--g);margin-bottom:8px">'
-        + (a.type === 'whatsapp_message' ? '💬 ' : '📝 ') + Utils.esc(a.title || 'Action') + '</div>'
-        + body
-        + '<div class="aa-btns" style="display:flex;gap:8px;margin-top:10px">'
-        + '<button class="btn-ghost btn-sm" style="flex:1" onclick="AI.dismissAction(\'' + a.id + '\')">Dismiss</button>'
-        + '<button class="btn-primary btn-sm" style="flex:2' + (a.type === 'whatsapp_message' ? ';background:#25D366' : '') + '" onclick="AI.runAction(\'' + a.id + '\')">'
-        + (a.type === 'whatsapp_message' ? 'Confirm · open WhatsApp' : 'Confirm · save draft order') + '</button>'
-        + '</div>';
-      msgs.appendChild(d);
-    });
-    msgs.scrollTop = msgs.scrollHeight;
-  },
-
-  _actionDone: function(id, html) {
-    var card = Utils.get('aa-' + id); if (!card) return;
-    var btns = card.querySelector('.aa-btns'); if (btns) btns.innerHTML = '<div style="font-size:12px;font-weight:700;width:100%">' + html + '</div>';
-    var ta = card.querySelector('textarea'); if (ta) ta.readOnly = true;
-    delete this._actions[id];
-  },
-
-  dismissAction: function(id) { this._actionDone(id, '<span style="color:var(--t3)">Dismissed</span>'); },
-
-  runAction: function(id) {
-    var a = this._actions[id]; if (!a) return;
-    if (a.type === 'whatsapp_message') {
-      var ta = Utils.get('aa-msg-' + id);
-      var msg = (ta ? ta.value : a.message || '').trim();
-      if (!msg) { Toast.show('The message is empty', 'err'); return; }
-      var url = 'https://wa.me/' + (a.phone ? a.phone : '') + '?text=' + encodeURIComponent(msg);
-      var link = document.createElement('a');   // works in the installed app, where window.open can be blocked
-      link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      document.body.appendChild(link); link.click(); link.remove();
-      this._actionDone(id, '<span style="color:var(--ok)">✓ Opened in WhatsApp</span>');
-      return;
-    }
-    if (a.type === 'purchase_order') {
-      if (typeof Perms !== 'undefined' && !Perms.can('manage_purchases')) {
-        Toast.show('Your role cannot create purchase orders. Ask the owner or a manager.', 'err'); return;
-      }
-      var supp = DB.getSuppliers().find(function(x) { return x.id === a.supplierId; });
-      if (!supp) { Toast.show('That supplier is no longer in your list', 'err'); return; }
-      var items = (a.items || []).map(function(i) { return { id: i.id, name: i.name, qty: i.qty, costPrice: i.costPrice, orderedQty: i.qty }; });
-      var po = DB.addPurchaseOrder({
-        supplier: supp.name, supplierId: supp.id, items: items,
-        total: items.reduce(function(t, i) { return t + i.qty * i.costPrice; }, 0),
-        date: Utils.today(), expectedDate: a.expectedDate || '',
-        notes: (a.notes ? a.notes + ' · ' : '') + 'Drafted by SmartStock AI',
-        status: 'Draft', aiDrafted: true,
-      });
-      Toast.show('Draft purchase order saved ✓', 'ok');
-      this._actionDone(id, '<span style="color:var(--ok)">✓ Saved as Draft</span> · <a href="#" onclick="event.preventDefault();Router.go(\'supply\')" style="color:var(--g)">Open Supply</a>');
-      this.history.push({ role: 'assistant', content: '(The user confirmed: draft purchase order ' + po.id + ' to ' + supp.name + ' was saved.)' });
-    }
-  },
 };
