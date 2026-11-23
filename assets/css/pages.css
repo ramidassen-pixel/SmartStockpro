@@ -142,3 +142,39 @@
 .sal-name   { font-size:14px; font-weight:600; color:var(--t1); }
 .sal-role   { font-size:11px; color:var(--t2); margin-top:3px; font-family:var(--fm); }
 .sal-amount { font-size:18px; font-weight:800; color:var(--g); font-family:var(--fm); letter-spacing:-.015em; }
+
+/* ── Dashboard: header + today's profit panel (modules/dashboard) ───────── */
+.dh { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:6px 16px 16px; }
+.dh-hi { margin:0; font-size:24px; font-weight:800; line-height:1.15; letter-spacing:-.025em; color:var(--t1); }
+.dh-sub { margin-top:5px; font-size:13px; line-height:1.45; color:var(--t2); }
+.dh-ico { width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--g); background:var(--gb); flex-shrink:0; }
+
+.dp { margin:0 14px 14px; padding:18px 16px 6px; border-radius:20px; background:var(--bg2); border:1px solid var(--bd2); }
+.dp-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.dp-title { margin:0; display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; color:var(--t2); }
+.dp-fig { margin-top:6px; font-size:44px; font-weight:800; line-height:1; letter-spacing:-.035em; font-variant-numeric:tabular-nums; color:var(--ok); }
+.dp.loss .dp-fig { color:var(--er); }
+.dp-cmp { margin-top:8px; font-size:13px; font-weight:600; }
+
+.dp-bar { display:flex; gap:2px; height:12px; margin:18px 0 4px; border-radius:99px; overflow:hidden; background:var(--bg4); }
+.dp-seg { flex:0 0 var(--w); min-width:3px; animation:dpGrow .7s cubic-bezier(.2,.7,.2,1) both; transform-origin:left; }
+.dp-seg:nth-child(2) { animation-delay:.08s; } .dp-seg:nth-child(3) { animation-delay:.16s; } .dp-seg:nth-child(4) { animation-delay:.24s; }
+@keyframes dpGrow { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+
+.dp-rows { margin-top:6px; }
+.dp-row { display:grid; grid-template-columns:10px minmax(0,1fr) auto auto; align-items:center; gap:10px; min-height:46px; padding:6px 0; border-top:1px solid var(--bd); }
+.dp-row:first-child { border-top:0; }
+.dp-row.off .dp-key { opacity:.3; } .dp-row.off .dp-amt { color:var(--t3); }
+.dp-key { width:10px; height:10px; border-radius:3px; }
+.dp-lbl { font-size:14px; font-weight:600; color:var(--t1); min-width:0; }
+.dp-lbl small { display:block; margin-top:1px; font-size:12px; font-weight:500; color:var(--t3); }
+.dp-amt { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--t1); text-align:right; white-space:nowrap; min-width:84px; }
+
+.dp-sw { position:relative; width:40px; height:24px; border-radius:99px; background:var(--bg5); border:1px solid var(--bd2); transition:background .2s; }
+.dp-sw span { position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--t2); transition:transform .2s, background .2s; }
+.dp-sw.on { background:var(--ok); border-color:transparent; }
+.dp-sw.on span { transform:translateX(16px); background:#fff; }
+.dp-sw:focus-visible { outline:2px solid var(--g); outline-offset:2px; }
+
+@media (prefers-reduced-motion: reduce) { .dp-seg { animation:none; } .dp-sw, .dp-sw span { transition:none; } }
+@media (min-width:1024px) { .dh { padding:4px 0 20px; } .dh-hi { font-size:28px; } .dp-fig { font-size:52px; } }

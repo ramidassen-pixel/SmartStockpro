@@ -101,9 +101,9 @@ var Dashboard = {
 
     var compHtml = '';
     if (canSeeMoney) {
-      if      (Math.abs(netDiff) < 0.01) compHtml = '<span style="color:var(--t3);font-size:12px;font-weight:600">→ Same as yesterday</span>';
-      else if (netDiff > 0)              compHtml = '<span style="color:var(--ok);font-size:12px;font-weight:700">↑ '+privMoney(netDiff)+' more than yesterday</span>';
-      else                               compHtml = '<span style="color:var(--er);font-size:12px;font-weight:700">↓ '+privMoney(Math.abs(netDiff))+' less than yesterday</span>';
+      if      (Math.abs(netDiff) < 0.01) compHtml = '<span style="color:var(--t2)">Same as yesterday</span>';
+      else if (netDiff > 0)              compHtml = '<span style="color:var(--ok)">↑ '+privMoney(netDiff)+' more than yesterday</span>';
+      else                               compHtml = '<span style="color:var(--er)">↓ '+privMoney(Math.abs(netDiff))+' less than yesterday</span>';
     }
 
     // ── Outstanding debt ──────────────────────────────────────────────────
@@ -117,91 +117,84 @@ var Dashboard = {
       : '';
 
     // ════════════════════════════════════════════════════════════════════
-    // AREA 1 — GREETING
+    // AREA 1 — GREETING (a light header, no card)
     // ════════════════════════════════════════════════════════════════════
-    var greet       = hour<12?'Good Morning':hour<17?'Good Afternoon':'Good Evening';
-    var displayName = user.name ? user.name.split(' ')[0] : (user.username||'Ramie');
-    var fullDate    = now.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    var greet       = hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
+    var displayName = user.name ? user.name.split(' ')[0] : (user.username||'');
+    var fullDate    = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
 
-    var greetHtml = '<div style="background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(201,168,76,.02));border:1px solid rgba(201,168,76,.15);border-radius:var(--r16);padding:18px 16px;margin:0 14px 14px">'
-      + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">'
-      + '<div>'
-      + '<div style="font-size:20px;font-weight:800;color:var(--t1);letter-spacing:-.02em">'+greet+', '+Utils.esc(displayName)+'</div>'
-      + '<div style="font-size:12px;color:var(--t2);margin-top:4px">'+fullDate+'</div>'
-      + '<div style="font-size:11px;color:var(--t3);margin-top:2px">SmartStock Store · Monrovia, Liberia</div>'
+    var greetHtml = '<header class="dh">'
+      + '<div style="min-width:0">'
+      +   '<h1 class="dh-hi">'+greet+(displayName?', '+Utils.esc(displayName):'')+'</h1>'
+      +   '<div class="dh-sub">'+fullDate+'</div>'
       + '</div>'
-      + '<div style="width:46px;height:46px;border-radius:14px;background:var(--gb);color:var(--g);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+Icons.svg(hour<12?'sunrise':hour<17?'sun-high':'moon',24)+'</div>'
-      + '</div></div>';
+      + '<div class="dh-ico" aria-hidden="true">'+Icons.svg(hour<12?'sunrise':hour<17?'sun-high':'moon',22)+'</div>'
+      + '</header>';
 
     // ════════════════════════════════════════════════════════════════════
-    // AREA 2 — HERO: TODAY'S NET PROFIT
-    // ════════════════════════════════════════════════════════════════════
-    var heroColor = todayNet>=0?'var(--ok)':'var(--er)';
-    var heroBg    = todayNet>=0?'rgba(16,185,129,.06)':'rgba(239,68,68,.06)';
-    var heroBd    = todayNet>=0?'rgba(16,185,129,.2)':'rgba(239,68,68,.2)';
-
-    var heroHtml = '<div style="background:'+heroBg+';border:1px solid '+heroBd+';border-radius:var(--r16);padding:18px 16px;margin:0 14px 10px">'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">'
-      + '<div style="font-size:11px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.14em;font-family:var(--fm)">Today\'s Net Profit</div>'
-      + eyeBtn + '</div>'
-      + '<div style="font-size:36px;font-weight:900;color:'+heroColor+';letter-spacing:-.03em;line-height:1;margin-bottom:10px">'+(canSeeMoney?privMoney(todayNet):mask)+'</div>'
-      + (compHtml?'<div style="margin-bottom:8px">'+compHtml+'</div>':'')
-      + '</div>';
-
-    // ════════════════════════════════════════════════════════════════════
-    // AREA 3 — 4 STAT CARDS  (with toggles on COGS and Allocated)
+    // AREA 2 — TODAY'S PROFIT: the sum itself
+    //   Sales − Cost of goods − Expenses − Allocated = Profit
+    //   The bar shows where today's sales money went.
     // ════════════════════════════════════════════════════════════════════
 
-    // Helper: small inline toggle switch
-    function miniToggle(fnName, isOn) {
-      var bg  = isOn ? 'var(--ok)' : 'var(--bd2)';
-      var lft = isOn ? '14px'      : '2px';
-      return '<div onclick="Dashboard.'+fnName+'()" style="display:flex;align-items:center;cursor:pointer;padding:2px">'
-        + '<div style="width:28px;height:16px;border-radius:8px;background:'+bg+';position:relative;transition:background .2s;flex-shrink:0">'
-        + '<div style="width:12px;height:12px;border-radius:50%;background:#fff;position:absolute;top:2px;left:'+lft+';transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.3)"></div>'
-        + '</div></div>';
+    // On/off switch for COGS and Allocated (a real button: keyboard + screen reader)
+    function sw(fnName, isOn, what) {
+      return '<button type="button" class="dp-sw'+(isOn?' on':'')+'" role="switch" aria-checked="'+isOn+'"'
+        + ' aria-label="Count '+what+' in profit" title="'+(isOn?'Counted in profit. Tap to stop counting':'Not counted. Tap to count it')+'"'
+        + ' onclick="Dashboard.'+fnName+'()"><span></span></button>';
+    }
+    function row(sw_, color, label, sub, amount, off) {
+      return '<div class="dp-row'+(off?' off':'')+'">'
+        + '<span class="dp-key" style="background:'+color+'"></span>'
+        + '<div class="dp-lbl">'+label+(sub?'<small>'+sub+'</small>':'')+'</div>'
+        + (sw_||'<span></span>')
+        + '<span class="dp-amt">'+amount+'</span>'
+        + '</div>';
     }
 
-    var todayNetC  = todayNet>=0?'var(--ok)':'var(--er)';
-    var todayNetBg = todayNet>=0?'var(--okb)':'var(--erb)';
+    var heroHtml;
+    if (canSeeMoney) {
+      var outTotal = todayCOGS + todayManExp + todayAlloc;
+      var base     = Math.max(todayRev, outTotal);
+      function seg(v, c, name) {
+        if (base <= 0 || v <= 0) return '';
+        return '<span class="dp-seg" style="--w:'+(v/base*100).toFixed(2)+'%;background:'+c+'" title="'+name+'"></span>';
+      }
+      var bar = locked || base <= 0
+        ? '<div class="dp-bar" aria-hidden="true"></div>'
+        : '<div class="dp-bar" role="img" aria-label="Of today\'s sales: '
+            + (cogsEnabled?'cost of goods '+Utils.cur(todayCOGS,cur)+', ':'')
+            + 'expenses '+Utils.cur(todayManExp,cur)+', '
+            + (allocEnabled?'allocated '+Utils.cur(todayAlloc,cur)+', ':'')
+            + (todayNet>=0?'profit '+Utils.cur(todayNet,cur):'a loss of '+Utils.cur(-todayNet,cur))+'">'
+            + seg(todayCOGS,'var(--wa)','Cost of goods') + seg(todayManExp,'var(--er)','Expenses')
+            + seg(todayAlloc,'var(--in)','Allocated') + seg(todayNet,'var(--ok)','Profit')
+          + '</div>';
 
-    var statCards = '<div class="kpi-grid" style="grid-template-columns:1fr 1fr;gap:10px;padding:0 14px;margin-bottom:10px">'
+      var allocSub = !allocEnabled ? 'Not counted' : (dow===0 ? 'Not charged on Sundays' : privMoney(rawAllocDay)+' a day, Mon–Sat');
+      var minus = function(v) { return v > 0 ? '−'+privMoney(v) : privMoney(0); };
 
-      // Card 1 — Today Sales (gold)
-      + '<div class="kpi" style="--kc:var(--g);--kibg:var(--gb)">'
-      + '<div class="kpi-icon">'+Icons.svg('cash',20)+'</div>'
-      + '<div class="kpi-label">Today Sales</div>'
-      + '<div class="kpi-value">'+privMoney(todayRev)+'</div>'
-      + '<div class="kpi-sub">'+todaySales.length+' transaction'+(todaySales.length!==1?'s':'')+'</div></div>'
-
-      // Card 2 — Today Manual Expenses (red)
-      + '<div class="kpi" style="--kc:var(--er);--kibg:var(--erb)">'
-      + '<div class="kpi-icon">'+Icons.svg('wallet',20)+'</div>'
-      + '<div class="kpi-label">Today Expenses</div>'
-      + '<div class="kpi-value">'+privMoney(todayManExp)+'</div>'
-      + '<div class="kpi-sub">Manual expenses</div></div>'
-
-      // Card 3 — COGS with toggle (amber)
-      + '<div class="kpi" style="--kc:var(--wa);--kibg:'+(cogsEnabled?'var(--wab)':'var(--bg3)')+';opacity:'+(cogsEnabled?'1':'.65')+'">'
-      + '<div class="kpi-icon">'+Icons.svg('tag',20)+'</div>'
-      + '<div class="kpi-label" style="display:flex;align-items:center;justify-content:space-between">'
-      + 'COGS'
-      + miniToggle('toggleCOGS', cogsEnabled)
-      + '</div>'
-      + '<div class="kpi-value" style="color:'+(cogsEnabled?'var(--wa)':'var(--t3)')+'">'+privMoney(todayCOGS)+'</div>'
-      + '<div class="kpi-sub">'+(cogsEnabled?'Cost of goods · ON':'Paused · OFF')+'</div></div>'
-
-      // Card 4 — Allocated with toggle (amber/grey)
-      + '<div class="kpi" style="--kc:var(--wa);--kibg:'+(allocEnabled?'var(--wab)':'var(--bg3)')+';opacity:'+(allocEnabled?'1':'.65')+'">'
-      + '<div class="kpi-icon">'+Icons.svg('calendar-stats',20)+'</div>'
-      + '<div class="kpi-label" style="display:flex;align-items:center;justify-content:space-between">'
-      + 'Allocated'
-      + miniToggle('toggleAlloc', allocEnabled)
-      + '</div>'
-      + '<div class="kpi-value" style="color:'+(allocEnabled?'var(--wa)':'var(--t3)')+'">'+privMoney(todayAlloc)+'</div>'
-      + '<div class="kpi-sub">'+(allocEnabled?(dow===0?'Sunday — $0':privMoney(rawAllocDay)+'/day · ON'):'Paused · OFF')+'</div></div>'
-
-      + '</div>';
+      heroHtml = '<section class="dp'+(todayNet<0?' loss':'')+'" aria-label="Today\'s profit">'
+        + '<div class="dp-top"><h2 class="dp-title"><span class="dp-key" style="background:'+(todayNet<0?'var(--er)':'var(--ok)')+'"></span>Today\'s profit</h2>' + eyeBtn + '</div>'
+        + '<div class="dp-fig">'+privMoney(todayNet)+'</div>'
+        + (compHtml?'<div class="dp-cmp">'+compHtml+'</div>':'')
+        + bar
+        + '<div class="dp-rows">'
+        +   row('', 'transparent', 'Sales', todaySales.length+' sale'+(todaySales.length!==1?'s':''), privMoney(todayRev))
+        +   row(sw('toggleCOGS',cogsEnabled,'cost of goods'), 'var(--wa)', 'Cost of goods', cogsEnabled?'':'Not counted', cogsEnabled?minus(todayCOGS):'—', !cogsEnabled)
+        +   row('', 'var(--er)', 'Expenses', '', minus(todayManExp))
+        +   row(sw('toggleAlloc',allocEnabled,'allocated expenses'), 'var(--in)', 'Allocated', allocSub, allocEnabled?minus(todayAlloc):'—', !allocEnabled)
+        + '</div>'
+        + '</section>';
+    } else {
+      // Staff without money access: what they did today, no amounts
+      var unitsToday = todaySales.reduce(function(a,s){ return a+(s.items||[]).reduce(function(b,i){ return b+(parseInt(i.qty)||1); },0); },0);
+      heroHtml = '<section class="dp" aria-label="Today">'
+        + '<div class="dp-top"><h2 class="dp-title">Today</h2></div>'
+        + '<div class="dp-fig" style="color:var(--t1)">'+todaySales.length+' sale'+(todaySales.length!==1?'s':'')+'</div>'
+        + '<div class="dp-cmp" style="color:var(--t2)">'+unitsToday+' item'+(unitsToday!==1?'s':'')+' sold</div>'
+        + '</section>';
+    }
 
     // ════════════════════════════════════════════════════════════════════
     // AREA 4 — DETAIL BREAKDOWN CARD (always visible)
@@ -224,12 +217,12 @@ var Dashboard = {
     }
 
     var allocSubLabel = !allocEnabled
-      ? 'Toggle is OFF — not counted'
+      ? 'Switched off, not counted'
       : (dow===0
           ? 'Sunday — not charged today'
           : 'Mon–Sat · '+Utils.cur(rawAllocDay,cur)+'/day ×'+workDays+' days');
 
-    var cogsSubLabel = !cogsEnabled ? 'Toggle is OFF — not counted' : '';
+    var cogsSubLabel = !cogsEnabled ? 'Switched off, not counted' : '';
 
     var tGrossC  = todayGross>=0?'var(--ok)':'var(--er)';
     var mGrossC  = monthGross>=0?'var(--ok)':'var(--er)';
@@ -241,10 +234,10 @@ var Dashboard = {
 
       // Header: title + column labels
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--bd)">'
-      + '<div style="font-size:11px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Breakdown</div>'
+      + '<div style="font-size:14px;font-weight:700;color:var(--t1)">Today and this month</div>'
       + '<div style="display:flex;gap:0">'
-      + '<div style="font-size:9px;font-weight:800;color:var(--g);text-transform:uppercase;letter-spacing:.08em;text-align:right;min-width:72px">TODAY</div>'
-      + '<div style="font-size:9px;font-weight:800;color:var(--in);text-transform:uppercase;letter-spacing:.08em;text-align:right;min-width:82px">THIS MONTH</div>'
+      + '<div style="font-size:11px;font-weight:700;color:var(--t2);text-align:right;min-width:72px">Today</div>'
+      + '<div style="font-size:11px;font-weight:700;color:var(--t2);text-align:right;min-width:82px">This month</div>'
       + '</div>'
       + '</div>'
 
@@ -261,7 +254,7 @@ var Dashboard = {
         )
 
       // Gross Profit bold row
-      + dBigRow('GROSS PROFIT', showMoney(todayGross), showMoney(monthGross), tGrossC, mGrossC)
+      + dBigRow('Gross profit', showMoney(todayGross), showMoney(monthGross), tGrossC, mGrossC)
 
       // Manual Expenses
       + dRow('Manual Expenses', showMoney(todayManExp), showMoney(monthManExp), 'var(--er)', 'var(--er)')
@@ -276,16 +269,16 @@ var Dashboard = {
         )
 
       // NET PROFIT bold row
-      + dBigRow('NET PROFIT', showMoney(todayNet), showMoney(monthNet), tNetC, mNetC)
+      + dBigRow('Net profit', showMoney(todayNet), showMoney(monthNet), tNetC, mNetC)
 
       // Margin row
       + '<div style="display:flex;justify-content:flex-end;gap:18px;margin-top:8px;padding-top:6px;border-top:1px solid var(--bd)">'
       + '<div style="text-align:right">'
-      + '<div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px">Today Margin</div>'
+      + '<div style="font-size:11px;color:var(--t2);margin-bottom:2px">Margin today</div>'
       + '<div style="font-size:12px;font-weight:800;color:'+tNetC+'">'+todayNetMargin+'%</div>'
       + '</div>'
       + '<div style="text-align:right">'
-      + '<div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px">Month Margin</div>'
+      + '<div style="font-size:11px;color:var(--t2);margin-bottom:2px">Margin this month</div>'
       + '<div style="font-size:12px;font-weight:800;color:'+mNetC+'">'+monthNetMargin+'%</div>'
       + '</div>'
       + '</div>'
@@ -403,7 +396,7 @@ var Dashboard = {
           else if (due&&due<=sevenStr){st='DUE SOON';sc='var(--wa)';sb='var(--wab)';}
           else                        {st='PENDING'; sc='var(--in)';sb='var(--inb)';}
           return '<div class="list-item">'
-            +'<div class="list-icon" style="background:var(--wab)">🏭</div>'
+            +'<div class="list-icon" style="background:var(--wab);color:var(--wa)">'+Icons.svg('building-warehouse',19)+'</div>'
             +'<div class="list-info"><div class="list-name">'+Utils.esc(sup.name)+'</div>'
             +'<div class="list-meta">'+(due?'Due: '+Utils.date(due):'No due date')+'</div></div>'
             +'<div class="list-right"><div class="list-val" style="color:var(--wa)">'+Utils.cur(bal,cur)+'</div>'
@@ -434,16 +427,9 @@ var Dashboard = {
     // ════════════════════════════════════════════════════════════════════
     // AREA 10 — DAILY SUMMARY STRIP
     // ════════════════════════════════════════════════════════════════════
-    var stripHtml = '<div style="margin:0 14px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r12);padding:13px 14px">'
-      + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px;font-family:var(--fm)">Daily Summary</div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px">'
-      + '<div style="text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:3px">Gross Sales</div><div style="font-size:13px;font-weight:800;color:var(--g)">'+showMoney(todayRev)+'</div></div>'
-      + '<div style="text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:3px">Expenses</div><div style="font-size:13px;font-weight:800;color:var(--er)">'+showMoney(todayManExp+todayAlloc)+'</div></div>'
-      + '<div style="text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:3px">Net Profit</div><div style="font-size:13px;font-weight:800;color:'+(todayNet>=0?'var(--g)':'var(--er)')+'">'+showMoney(todayNet)+'</div></div>'
-      + '<div style="text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:3px">Transactions</div><div style="font-size:13px;font-weight:800;color:var(--in)">'+todaySales.length+'</div></div>'
-      + '</div>'
-      + (canSeeMoney?'<button class="btn-ghost" style="width:100%;font-size:12px" onclick="Dashboard.printDailyReport()"><span style="display:inline-flex;vertical-align:-3px;margin-right:6px">'+Icons.svg('printer',16)+'</span>Print Daily Report</button>':'')
-      + '</div>';
+    var stripHtml = canSeeMoney
+      ? '<div class="sec"><button class="btn-ghost" style="width:100%;font-size:13px" onclick="Dashboard.printDailyReport()"><span style="display:inline-flex;vertical-align:-3px;margin-right:6px">'+Icons.svg('printer',16)+'</span>Print today\'s report</button></div>'
+      : '';
 
     // ════════════════════════════════════════════════════════════════════
     // AREA 11 — 7-DAY SALES TREND CHART
@@ -459,9 +445,9 @@ var Dashboard = {
     // ── ASSEMBLE ──────────────────────────────────────────────────────────
     // Phone: one column. Desktop (≥1024px, desktop.css): main column + side column.
     pg.innerHTML = '<div style="padding-top:6px">'
-      + '<div class="dash-greet-row">' + greetHtml + heroHtml + '</div>'
+      + greetHtml
       + '<div class="dash-grid">'
-      +   '<div class="dash-main">' + statCards + trendHtml + detailHtml + recentHtml + qaHtml + '</div>'
+      +   '<div class="dash-main">' + heroHtml + trendHtml + detailHtml + recentHtml + qaHtml + '</div>'
       +   '<div class="dash-side">' + alertsHtml + topProdsHtml + suppHtml + weekChart() + stripHtml + '</div>'
       + '</div>'
       + '</div>';
@@ -512,7 +498,7 @@ var Dashboard = {
 
   // ── COUNT-UP ANIMATION ────────────────────────────────────────────────────
   animateCountUp: function() {
-    var els = document.querySelectorAll('.kpi-value');
+    var els = document.querySelectorAll('#pg-dashboard .dp-fig');
     els.forEach(function(el) {
       var text = el.textContent.trim();
       var match = text.match(/[\d,\.]+/);
