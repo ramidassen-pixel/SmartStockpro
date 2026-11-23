@@ -277,6 +277,7 @@ var Billing = {
       Modal.close();
       DB.rpc('review_plan_payment', { p_id: id, p_approve: approve, p_note: note }).then(function(r) {
         Toast.show(approve ? 'Approved ✓ ' + (p.business_name || '') + ' is on ' + BILLING.plans[p.plan].name + ' until ' + Utils.date(r && r.paid_until) : 'Payment rejected', approve ? 'ok' : 'warn', 5000);
+        if (typeof Router !== 'undefined' && Router.current === 'superadmin') { SuperAdmin._tab = 'payments'; SuperAdmin._loadAndRender(); return; }
         return self.load().then(function() { self._paint(); });
       }).catch(function(e) { Toast.show(e.network ? 'No connection. Try again.' : e.message, 'err', 6000); });
     };

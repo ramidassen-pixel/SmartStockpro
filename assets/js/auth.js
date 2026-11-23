@@ -577,6 +577,7 @@ var Auth = {
   logout: function() {
     try { if (typeof Activity !== 'undefined') Activity.endSession(); } catch(e) {}
     try { if (typeof AuditLog !== 'undefined') AuditLog.record('LOGOUT', 'User logged out'); } catch(e) {}
+    if (typeof SuperAdmin !== 'undefined') { SuperAdmin._isAdmin = null; SuperAdmin._data = null; }
     var token = Auth._session && Auth._session.access_token;
     if (token) {
       fetch(SUPABASE_AUTH_URL + '/logout', {

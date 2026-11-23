@@ -39,7 +39,11 @@ var MorePage = {
       },
       {
         label: 'System',
-        items: installItem.concat([
+        items: installItem.concat(
+          (typeof SuperAdmin !== 'undefined' && SuperAdmin._isAdmin === true)
+            ? [{ icon:'shield-lock', label:'Platform Admin', desc:'All shops, users, plans & payments', bg:'var(--gb)', action:"Router.go('superadmin')", badge:'OWNER' }]
+            : []
+        ).concat([
           { icon:'settings', label:'Settings',           desc:'App configuration & profile',      bg:'var(--gb)',  action:"Router.go('settings')" },
           { icon:'bell', label:'Notifications',      desc:'Stock & salary alerts',            bg:'var(--erb)', action:"Notifs.check();UI.toggleNotifPanel()" },
           { icon:'download', label:'Export Data',        desc:'Download backup as JSON',          bg:'var(--okb)', action:"Settings.exportData()" },

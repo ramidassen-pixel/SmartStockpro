@@ -10,7 +10,7 @@ var Support = {
     var pg = Utils.get('pg-support');
     if (!pg) return;
     var user    = Auth.currentUser || {};
-    var isAdmin = (user.role === 'primary_admin' || user.role === 'admin');
+    var isAdmin = typeof SuperAdmin !== 'undefined' && SuperAdmin._isAdmin === true;   // platform owner only
 
     var tabs = isAdmin
       ? [['all','📋 All Tickets'],['my','📩 My Tickets'],['feedback','⭐ Feedback']]
@@ -36,7 +36,7 @@ var Support = {
   _renderTab: function() {
     var el   = Utils.get('support-body'); if (!el) return;
     var user = Auth.currentUser || {};
-    var isAdmin = user.role === 'primary_admin' || user.role === 'admin';
+    var isAdmin = typeof SuperAdmin !== 'undefined' && SuperAdmin._isAdmin === true;   // platform owner only
     var t = Support.activeTab;
     if      (t === 'new')      Support._renderNewTicket(el);
     else if (t === 'feedback') Support._renderFeedbackForm(el);
@@ -184,12 +184,7 @@ var Support = {
   _renderAllTickets: function(el) {
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading tickets...</div>';
 
-    fetch(SUPABASE_URL + '/functions/v1/admin-data', {
-      method:  'POST',
-      headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
-      body:    JSON.stringify({ action:'select', table:'support_tickets', filter:'order=created_at.desc' }),
-    })
-      .then(function(r){ return r.json(); })
+    SuperAdmin.fnCall({ action:'select', table:'support_tickets', filter:'order=created_at.desc' })
       .then(function(tickets) {
         if (!tickets || !Array.isArray(tickets) || !tickets.length) {
           el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-title">No tickets yet</div></div>';
@@ -352,16 +347,12 @@ var Support = {
       });
       Utils.storage.set('support_tickets', tickets);
 
-      // Sync update to Supabase via the PIN-gated admin function
-      fetch(SUPABASE_URL + '/functions/v1/admin-data', {
-        method:  'POST',
-        headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
-        body:    JSON.stringify({
+      // Sync update to Supabase via the admin-only server function
+      SuperAdmin.fnCall({
           action: 'update', table: 'support_tickets',
           filter: 'id=eq.'+encodeURIComponent(ticketId),
           data:   { status: newStatus, priority: newPriority, updated_at: new Date().toISOString() },
-        }),
-      }).catch(function(){});
+        }).catch(function(){});
     }
 
     Toast.show('Message sent ✓','ok');
@@ -372,7 +363,7 @@ var Support = {
   /* ── FEEDBACK FORM ────────────────────────────────────────────*/
   _renderFeedbackForm: function(el) {
     var user = Auth.currentUser || {};
-    var isAdmin = user.role === 'primary_admin' || user.role === 'admin';
+    var isAdmin = typeof SuperAdmin !== 'undefined' && SuperAdmin._isAdmin === true;   // platform owner only
 
     if (isAdmin) {
       // Admin sees all feedback ratings
@@ -471,12 +462,7 @@ var Support = {
 
   _renderFeedbackAdmin: function(el) {
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading feedback...</div>';
-    fetch(SUPABASE_URL + '/functions/v1/admin-data', {
-      method:  'POST',
-      headers: { 'Content-Type':'application/json', 'x-owner-pin': SuperAdmin._pin },
-      body:    JSON.stringify({ action:'select', table:'support_tickets', filter:'category=eq.⭐ General Feedback&order=created_at.desc' }),
-    })
-      .then(function(r){ return r.json(); })
+    SuperAdmin.fnCall({ action:'select', table:'support_tickets', filter:'category=eq.⭐ General Feedback&order=created_at.desc' })
       .then(function(feedbacks) {
         if (!feedbacks || !Array.isArray(feedbacks) || !feedbacks.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-title">No feedback yet</div></div>'; return; }
         var avg = feedbacks.filter(function(f){ return f.rating; }).reduce(function(a,f){ return a+f.rating; },0) / feedbacks.filter(function(f){ return f.rating; }).length;
