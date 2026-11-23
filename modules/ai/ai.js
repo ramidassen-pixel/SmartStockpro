@@ -3,9 +3,11 @@ var AI = {
   history: [],
   busy: false,
   inited: false,
-  // Questions go to the ai-agent Supabase Edge Function. It looks up the real
-  // numbers with read-only tools and asks the AI provider configured in the
-  // Supabase secrets (AI_API_KEY) — no key is ever present in the browser.
+  // Questions go to the ai-agent-v2 Supabase Edge Function. It looks up the real
+  // numbers with read-only tools (exact dates, profit with cost of goods, daily
+  // insights) and asks the AI provider configured in the Supabase secrets
+  // (AI_API_KEY for a free provider, or ANTHROPIC_API_KEY) — no key is ever in the browser.
+  ENDPOINT: 'ai-agent-v2',
 
   render: function() {
     var pg = Utils.get('pg-ai');
@@ -237,7 +239,7 @@ var AI = {
 
     var self = this;
     self._authHeaders().then(function(headers) {
-      return fetch(SUPABASE_URL + '/functions/v1/ai-agent', {
+      return fetch(SUPABASE_URL + '/functions/v1/' + AI.ENDPOINT, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -424,7 +426,7 @@ var AI = {
     this._addTyping(tid);
     var self = this;
     try {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ai-agent', {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/' + AI.ENDPOINT, {
         method: 'POST',
         headers: await this._authHeaders(),
         body: JSON.stringify({

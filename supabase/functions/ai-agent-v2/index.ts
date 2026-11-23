@@ -465,7 +465,7 @@ How to work:
 - Product-level questions (best-selling product, units sold, profit per product) need sale item lines. If data_notes show sales_without_items, say that the sales were saved without item details, so this can't be answered from sales, and offer what can be (e.g. stock levels, product margins from cost and price).
 - For overall questions (how is the business doing, problems, what to focus on, advice), start with get_insights, then check details with query_data if needed. Turn insights into a few concrete actions.
 - For profit, always use profit_and_loss and follow its warning: never present sales minus expenses as profit when cost of goods is missing.
-- You can read data and PROPOSE two actions with propose_action: a WhatsApp message, or a Draft purchase order. The user confirms with one tap; until then nothing is done, so never say it was sent or saved: say it is ready to confirm below. Look up what you need first (phone, amount owed, stock, cost).
+- Only when the propose_action tool is available can you PROPOSE two actions: a WhatsApp message, or a Draft purchase order. The user confirms with one tap; until then nothing is done, so never say it was sent or saved: say it is ready to confirm below. Look up what you need first (phone, amount owed, stock, cost). Without that tool you can only read data; you may still write out a message for the user to copy.
 - Anything else (record a sale or payment, change stock or prices, delete): say you can't do it and tell them where in the app to do it (app_help).
 - Customer and staff details are the business's own records; share them with the user who asks.
 
@@ -520,11 +520,11 @@ const FREE_TOOLS = TOOLS.map((t) => ({
 
 class FreeError extends Error { status: number; constructor(status: number, msg: string) { super(msg); this.status = status; } }
 
-async function freeChat(messages: Row[], maxTokens: number): Promise<Row> {
+async function freeChat(messages: Row[], maxTokens: number, tools: Row[]): Promise<Row> {
   const res = await fetch(`${FREE_BASE}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${FREE_KEY}` },
-    body: JSON.stringify({ model: FREE_MODEL, messages, tools: FREE_TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: maxTokens }),
+    body: JSON.stringify({ model: FREE_MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, max_tokens: maxTokens }),
   });
   const text = await res.text();
   let data: Row = {};
@@ -534,12 +534,13 @@ async function freeChat(messages: Row[], maxTokens: number): Promise<Row> {
   return data;
 }
 
-async function answerWithFreeAI(history: Row[], systemText: string, auth: string, isReport: boolean, debug: boolean) {
+async function answerWithFreeAI(history: Row[], systemText: string, auth: string, isReport: boolean, debug: boolean, allowActions: boolean) {
   const messages: Row[] = [{ role: "system", content: systemText }, ...history];
   const used: string[] = [], trace: Row[] = [], proposed: Row[] = [];
+  const tools = allowActions ? FREE_TOOLS : FREE_TOOLS.filter((t) => t.function.name !== "propose_action");
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const data = await freeChat(messages, isReport ? 6000 : 2500);
+      const data = await freeChat(messages, isReport ? 6000 : 2500, tools);
       const msg = data.choices?.[0]?.message || {};
       const calls: Row[] = msg.tool_calls || [];
       if (!calls.length) {
@@ -559,6 +560,7 @@ async function answerWithFreeAI(history: Row[], systemText: string, auth: string
         try { input = JSON.parse(c.function?.arguments || "{}") || {}; } catch { /* use defaults */ }
         let out: string;
         try {
+          if (name === "propose_action" && !allowActions) throw new Error("Actions are not available in this app version.");
           const result = await runTool(name, input, auth, proposed);
           out = typeof result === "string" ? result : JSON.stringify(result);
           if (out.length > MAX_TOOL_CHARS) out = out.slice(0, MAX_TOOL_CHARS) + "…(cut short — ask with a smaller limit, filters or grouping)";
@@ -601,6 +603,9 @@ Deno.serve(async (req: Request) => {
 
   const body = (await req.json().catch(() => ({}))) as Row;
   const isReport = body.mode === "report";
+  // Confirmable actions only for app versions that can show the confirm cards (they send actions: true)
+  const allowActions = body.actions === true && !isReport;
+  const tools = allowActions ? TOOLS : TOOLS.filter((t) => t.name !== "propose_action");
   const history: Anthropic.Beta.BetaMessageParam[] = (Array.isArray(body.messages) ? body.messages
       : body.prompt ? [{ role: "user", content: String(body.prompt) }] : [])
     .filter((m: Row) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
@@ -619,7 +624,7 @@ Deno.serve(async (req: Request) => {
   if (isReport && typeof body.system === "string" && body.system) system.push({ type: "text", text: body.system.slice(0, 40000) });
 
   if (PROVIDER === "free") {
-    return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug);
+    return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug, allowActions);
   }
 
   const client = new Anthropic({ apiKey: API_KEY, maxRetries: 2 });
@@ -636,7 +641,7 @@ Deno.serve(async (req: Request) => {
         max_tokens: isReport ? 16000 : 8000,
         output_config: { effort: isReport ? "high" : EFFORT },
         system,
-        tools: TOOLS,
+        tools,
         messages,
         // If a safety classifier declines, the API retries on a suitable fallback model
         betas: ["server-side-fallback-2026-07-01"],
@@ -672,6 +677,7 @@ Deno.serve(async (req: Request) => {
         used.push(c.name);
         const input = (c.input && typeof c.input === "object" ? c.input : {}) as Row;
         try {
+          if (c.name === "propose_action" && !allowActions) throw new Error("Actions are not available in this app version.");
           const result = await runTool(c.name, input, auth, proposed);
           let out = typeof result === "string" ? result : JSON.stringify(result);
           if (out.length > MAX_TOOL_CHARS) out = out.slice(0, MAX_TOOL_CHARS) + "…(cut short — ask with a smaller limit, filters or grouping)";
@@ -695,7 +701,7 @@ Deno.serve(async (req: Request) => {
         .map((x) => x.toString(16).padStart(2, "0")).join("");
       console.log(JSON.stringify({ event: "anthropic_key_rejected", ...KEY_INFO, sha256_start: digest.slice(0, 10), free_key: FREE_KEY_NAME || "none" }));
       if (FREE_KEY) {
-        return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug);
+        return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug, allowActions);
       }
       const hint = KEY_INFO.kind === "admin"
         ? " The saved value is an Admin key (starts with sk-ant-admin), which can't be used for chat."
