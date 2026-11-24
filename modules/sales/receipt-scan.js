@@ -104,6 +104,8 @@ var ReceiptScan = {
   // ── Fill the New Sale form from what was read ──────────────────────────────
   apply: function(r) {
     var products = DB.getProducts();
+    // "No. 3134", "#3134", "Receipt No: 3134" → "3134" (the same number the app uses as Invoice No.)
+    if (r.receipt_no) r.receipt_no = String(r.receipt_no).replace(/^[\s#:.\-]*((receipt|invoice|inv|rcpt|n[º°]|no|nr|number)[\s#:.\-]*)*/i, '').trim();
     // Customer: an existing record (same phone, or same name) or the name/phone as written
     var digits = function(s) { return String(s || '').replace(/\D/g, '').slice(-7); };
     var cust = null;
