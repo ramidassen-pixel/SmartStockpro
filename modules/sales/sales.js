@@ -407,6 +407,7 @@ var Sales = {
   // ── NEW SALE FORM ──────────────────────────────────────────────────────────
   openNewSale: function() {
     this.cart=[]; this.discount=0;
+    ReceiptScan.reset();
     var settings = DB.getSettings();
     var cur      = settings.currency || '$';
     var lrdRate  = settings.lrdRate  || 198; // LRD per 1 USD
@@ -414,8 +415,10 @@ var Sales = {
     Modal.open({
       title:'New Sale', sub:'Create invoice', barColor:'var(--ok)',
       body:
+        // ── Scan a paper receipt (fills the form below) ──────────
+        ReceiptScan.bar()
         // ── Customer ─────────────────────────────────────────────
-        '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
+        + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12);padding:14px;margin-bottom:14px">'
         + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">👤 Customer</div>'
         + '<div class="form-row" style="margin-bottom:0">'
 
@@ -659,6 +662,7 @@ var Sales = {
   },
 
   addToCartById: function(id) {
+    if (ReceiptScan.takePending(id)) return;   // picked for a scanned line that had no match
     var p = DB.getProducts().find(function(x){ return x.id===id; });
     if (!p) return;
     var existing = this.cart.find(function(i){ return i.id===id; });
@@ -693,9 +697,17 @@ var Sales = {
       this.updateTotals(); return;
     }
     el.innerHTML=this.cart.map(function(item,i){
-      return '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px 13px;margin-bottom:8px">'
+      // Lines from a scanned receipt show what was written; ones the AI wasn't sure of are highlighted to check
+      var sc = item._scan, check = sc && (!sc.sure || (sc.warnings && sc.warnings.length));
+      var scanHtml = sc
+        ? '<div style="font-size:11px;color:'+(check?'var(--wa)':'var(--t3)')+';margin-top:3px;font-weight:600">'
+          + (check?'⚠️ Check: ':'📷 ')+'on receipt "'+Utils.esc(sc.written)+'"'
+          + (sc.warnings && sc.warnings.length ? ' — '+sc.warnings.map(Utils.esc).join('; ') : '')
+          + '</div>'
+        : '';
+      return '<div style="background:'+(check?'var(--wab)':'var(--bg2)')+';border:'+(check?'1.5px solid var(--wa)':'1px solid var(--bd2)')+';border-radius:var(--r10);padding:12px 13px;margin-bottom:8px">'
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
-        + '<div style="font-size:13px;font-weight:700;color:var(--t1);flex:1;padding-right:8px">'+Utils.esc(item.name)+'</div>'
+        + '<div style="font-size:13px;font-weight:700;color:var(--t1);flex:1;padding-right:8px">'+Utils.esc(item.name)+scanHtml+'</div>'
         + '<button onclick="Sales.removeItem('+i+')" style="width:22px;height:22px;border-radius:50%;background:var(--erb);border:1px solid var(--erbd);color:var(--er);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>'
         + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end">'
@@ -760,6 +772,7 @@ var Sales = {
 
   //─────────────────────────────────────────────────────────────────────────
   updateTotals: function(){
+    ReceiptScan.refresh();
     var totEl=Utils.get('s-totals');
     var cur=DB.getSettings().currency||'$';
     if(!this.cart.length){ if(totEl) totEl.innerHTML=''; return; }
@@ -800,10 +813,22 @@ var Sales = {
   },
 
   // ── SAVE SALE ──────────────────────────────────────────────────────────────
-  saveSale: function(action){
+  saveSale: function(action, scanMeta){
     action=action||'close';
     if (this._saving) return;
     if(!this.cart.length){ Toast.show('Add at least one product','err'); return; }
+    // A scanned receipt must be confirmed by the staff member; its photo is stored first
+    if (ReceiptScan.active() && scanMeta === undefined) {
+      var invNo0 = (Utils.val('s-inv-no')||'').trim();
+      if (invNo0 && DB.getSales().some(function(x){ return (x.invoiceNo||'') === invNo0; })) {
+        Toast.show('Invoice No. '+invNo0+' is already used — change it to save', 'err'); return;
+      }
+      if (!ReceiptScan.canSave()) return;
+      var self0 = this;
+      this._setSaving(true);
+      ReceiptScan.beforeSave(function(meta) { self0._setSaving(false); self0.saveSale(action, meta || null); });
+      return;
+    }
     var custName = Utils.val('s-cust-name').trim()||'Walk-in Customer';
     var custId   = Utils.val('s-cust-id')||null;
     var method   = (Utils.get('s-method')||{value:'Cash'}).value||'Cash';
@@ -835,6 +860,7 @@ var Sales = {
       method: method, sub: sub, disc: disc, total: total, amtStr: _amtStr,
       date: Utils.val('s-date')||Utils.today(), notes: Utils.val('s-notes'),
       items: this.cart.map(function(i){ return {id:i.id,name:i.name,price:i.price,cost:i.cost,qty:parseInt(i.qty)||1}; }),
+      scan: scanMeta || null,
     };
 
     // Online: the server checks stock, reduces it and fixes the invoice number in one step
@@ -846,6 +872,7 @@ var Sales = {
         customer_phone: custPhone, items: form.items, discount_type: disc.type, discount_value: disc.value,
         payment_method: method, amount_paid: _amtStr === '' ? null : (parseFloat(_amtStr)||0), notes: form.notes,
         created_by_name: (Auth.currentUser && Auth.currentUser.name) || 'Unknown',
+        scan: form.scan || undefined,
       }}).then(function(res) {
         self._setSaving(false);
         DB.applyServerSale(res);
@@ -893,6 +920,7 @@ var Sales = {
       date:form.date, notes:form.notes,
       createdBy: (Auth.currentUser && Auth.currentUser.id) || null,
       createdByName: (Auth.currentUser && Auth.currentUser.name) || 'Unknown',
+      scan: form.scan ? Object.assign({ source: 'receipt_photo' }, form.scan) : undefined,
     });
     if (paid>0 || status==='Paid') {
       DB.addPayment({ saleId:sale.id, customerId:form.custId||null,
@@ -916,6 +944,7 @@ var Sales = {
     if (used) { var nxt = Sales.nextInvoiceNo(used); if (nxt) DB.saveSettings({ invoiceNextNo: nxt }); }
     Toast.show('Invoice '+Sales.no(sale)+' saved ✓','ok');
     Notifs.check();
+    ReceiptScan.reset();
 
     if(action==='new'){
       this.cart=[]; this.discount=0;
@@ -980,7 +1009,9 @@ var Sales = {
       body: '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:14px;margin-bottom:12px">'
           + '<div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:3px">'+Utils.esc(s.customer||'Walk-in')+'</div>'
           + '<div style="font-size:11px;color:var(--t2);font-family:var(--fm)">'+Utils.esc(Sales.no(s))+' · '+Utils.date(s.date)+' · '+(s.payment||'Cash')+(s.customerPhone?' · '+Utils.esc(s.customerPhone):'')+'</div>'
+          + (s.createdByName ? '<div style="font-size:11px;color:var(--t3);margin-top:3px">By '+Utils.esc(s.createdByName)+'</div>' : '')
           + '</div>'
+          + Sales._scanInfo(s, cur)
           + '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:12px;margin-bottom:12px">'
           + '<div style="font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px">Items</div>'
           + itemsHtml + '</div>'
@@ -995,6 +1026,18 @@ var Sales = {
             + '<button class="btn-ghost" onclick="Sales._printById(this)" data-id="'+id+'" style="padding:10px 14px">🖨 Print</button>'
             + footerPayBtn,
     });
+  },
+
+  // A sale entered from a scanned paper receipt: its number, written total and stored photo
+  _scanInfo: function(s, cur) {
+    var sc = s && s.scan; if (!sc) return '';
+    var wt = parseFloat(sc.writtenTotal), diff = isFinite(wt) && wt > 0 ? Math.abs(wt - (parseFloat(s.total)||0)) : 0;
+    return '<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r10);padding:11px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">'
+      + '<div style="flex:1;font-size:12px;color:var(--t2)"><b style="color:var(--t1)">📷 From a scanned paper receipt'+(sc.receiptNo?' #'+Utils.esc(sc.receiptNo):'')+'</b>'
+      + (isFinite(wt) && wt > 0 ? '<div style="margin-top:2px;color:'+(diff>0.05?'var(--er)':'var(--ok)')+'">Total written on paper: '+Utils.cur(wt,cur)+(diff>0.05?' — differs by '+Utils.cur(diff,cur):' ✓')+'</div>' : '')
+      + '</div>'
+      + (/^[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-]+\.(jpg|png|webp)$/.test(sc.photo||'') ? '<button class="btn-ghost btn-sm" onclick="ReceiptScan.openSaved(\''+Utils.esc(sc.photo)+'\')">View photo</button>' : '')
+      + '</div>';
   },
 
   // ── PAY BALANCE ────────────────────────────────────────────────────────────

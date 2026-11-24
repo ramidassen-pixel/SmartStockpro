@@ -1,4 +1,4 @@
-﻿const CACHE = 'ssp-v6.27';
+﻿const CACHE = 'ssp-v6.28';
 const ASSETS = [
   './',
   'index.html',
@@ -28,6 +28,7 @@ const ASSETS = [
   'modules/dashboard/dashboard.js',
   'modules/products/products.js',
   'modules/sales/sales.js',
+  'modules/sales/receipt-scan.js',
   'modules/customers/customers.js',
   'modules/suppliers/suppliers.js',
   'modules/suppliers/supply.js',

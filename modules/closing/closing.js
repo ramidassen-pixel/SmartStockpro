@@ -82,6 +82,9 @@ var ClosingReport = {
       + ClosingReport._row('Total Transactions', sales.length+' sales','var(--t1)',true)
       + '</div></div>'
 
+      // ── 2b. BY STAFF + SCANNED RECEIPTS ───────────────────────
+      + ClosingReport._staffScreen(sales, cur)
+
       // ── 3. EXPENSE SUMMARY ────────────────────────────────────
       + '<div class="sec"><div class="sec-title">3. Expense Summary</div>'
       + '<div class="card card-body">'
@@ -471,6 +474,9 @@ var ClosingReport = {
       + '<tr style="background:#111;color:#fff"><td style="font-weight:700">Total Transactions</td><td style="text-align:right;font-weight:700">'+sales.length+' sales</td></tr>'
       + '</tbody></table>'
 
+      // S2b Staff + scanned receipts
+      + ClosingReport._staffPrint(sales, cur)
+
       // S3 Expenses
       + '<h2>3. Expense Summary</h2>'
       + '<table><thead><tr><th>Category</th><th style="text-align:right">Amount</th></tr></thead><tbody>'
@@ -578,6 +584,98 @@ var ClosingReport = {
       lines.push('No outstanding customer debts — excellent collections performance.');
     }
     return lines.join(' ');
+  },
+
+  /* ══════════════════════════════════════════════════════════════
+     SALES BY STAFF + SCANNED PAPER RECEIPTS
+     Who made today's sales, what they collected, and which sales came
+     from scanned receipts — with any whose paper total doesn't match.
+  ══════════════════════════════════════════════════════════════ */
+  _staff: function(sales) {
+    var by = {};
+    sales.forEach(function(s) {
+      var k = (s.createdByName || '').trim() || 'Unknown';
+      var r = by[k] || (by[k] = { name: k, count: 0, scanned: 0, total: 0, collected: 0, cash: 0, credit: 0 });
+      var paid = parseFloat(s.amountPaid); if (!isFinite(paid)) paid = s.status === 'Paid' ? (parseFloat(s.total) || 0) : 0;
+      r.count++; if (s.scan) r.scanned++;
+      r.total += parseFloat(s.total) || 0;
+      r.collected += paid;
+      if ((s.payment || 'Cash') === 'Cash') r.cash += paid;
+      r.credit += parseFloat(s.balance) || 0;
+    });
+    var rows = Object.keys(by).map(function(k) { return by[k]; }).sort(function(a, b) { return b.total - a.total; });
+    var scanned = sales.filter(function(s) { return s.scan; });
+    var mismatch = scanned.filter(function(s) {
+      var wt = parseFloat(s.scan.writtenTotal);
+      return isFinite(wt) && wt > 0 && Math.abs(wt - (parseFloat(s.total) || 0)) > 0.05;
+    });
+    var noPhoto = scanned.filter(function(s) { return !s.scan.photo; });
+    return { rows: rows, scanned: scanned.length, manual: sales.length - scanned.length, mismatch: mismatch, noPhoto: noPhoto.length };
+  },
+
+  _staffScreen: function(sales, cur) {
+    if (!sales.length) return '';
+    var d = ClosingReport._staff(sales);
+    var th = 'style="text-align:right;padding:6px 4px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;font-weight:800"';
+    var td = 'style="text-align:right;padding:7px 4px;font-family:var(--fm);font-size:12.5px"';
+    var html = '<div class="sec"><div class="sec-title">Sales by Staff</div><div class="card card-body" style="overflow-x:auto">'
+      + '<table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid var(--bd2)">'
+      + '<th style="text-align:left;padding:6px 4px;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;font-weight:800">Staff</th>'
+      + '<th '+th+'>Sales</th><th '+th+'>Total</th><th '+th+'>Cash in</th><th '+th+'>Credit</th></tr></thead><tbody>'
+      + d.rows.map(function(r) {
+          return '<tr style="border-bottom:1px solid var(--bd)"><td style="padding:7px 4px;font-weight:700;color:var(--t1);font-size:13px">' + Utils.esc(r.name)
+            + (r.scanned ? '<div style="font-size:10.5px;color:var(--t3);font-weight:500">📷 ' + r.scanned + ' scanned</div>' : '') + '</td>'
+            + '<td ' + td + '>' + r.count + '</td><td ' + td + '><b style="color:var(--g)">' + Utils.cur(r.total, cur) + '</b></td>'
+            + '<td ' + td + '>' + Utils.cur(r.cash, cur) + '</td><td ' + td + ' ' + '>' + (r.credit > 0 ? '<span style="color:var(--wa)">' + Utils.cur(r.credit, cur) + '</span>' : '—') + '</td></tr>';
+        }).join('')
+      + '</tbody></table>'
+      + '<div style="font-size:11px;color:var(--t3);margin-top:8px">"Cash in" is cash collected at the sale — compare it with what each person hands over.</div>'
+      + '</div></div>';
+
+    if (d.scanned) {
+      html += '<div class="sec"><div class="sec-title">Scanned Paper Receipts</div><div class="card card-body">'
+        + ClosingReport._row('Scanned from paper', d.scanned + ' sale' + (d.scanned === 1 ? '' : 's'))
+        + ClosingReport._row('Entered by hand', d.manual + ' sale' + (d.manual === 1 ? '' : 's'))
+        + (d.noPhoto ? ClosingReport._row('Saved without photo', String(d.noPhoto), 'var(--wa)') : '')
+        + (d.mismatch.length
+          ? '<div style="margin-top:10px;padding:10px 12px;background:var(--erb);border:1px solid var(--erbd);border-radius:var(--r8)">'
+            + '<div style="font-size:12px;font-weight:800;color:var(--er);margin-bottom:6px">⚠️ Saved total differs from the paper receipt</div>'
+            + d.mismatch.map(function(s) {
+                return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;cursor:pointer" onclick="Sales.viewInvoice(\'' + Utils.esc(s.id) + '\')">'
+                  + '<span>' + Utils.esc(Sales.no(s)) + ' · ' + Utils.esc(s.createdByName || 'Unknown') + '</span>'
+                  + '<span style="font-family:var(--fm)">paper ' + Utils.cur(parseFloat(s.scan.writtenTotal), cur) + ' → saved ' + Utils.cur(parseFloat(s.total) || 0, cur) + '</span></div>';
+              }).join('')
+            + '</div>'
+          : '<div style="margin-top:8px;font-size:12px;color:var(--ok);font-weight:600">✓ Every scanned sale matches the total written on its receipt</div>')
+        + '</div></div>';
+    }
+    return html;
+  },
+
+  _staffPrint: function(sales, cur) {
+    if (!sales.length) return '';
+    var d = ClosingReport._staff(sales);
+    var html = '<h2>Sales by Staff</h2>'
+      + '<table><thead><tr><th>Staff</th><th style="text-align:right">Sales</th><th style="text-align:right">Scanned</th><th style="text-align:right">Total</th><th style="text-align:right">Cash in</th><th style="text-align:right">Credit</th></tr></thead><tbody>'
+      + d.rows.map(function(r, i) {
+          return '<tr' + (i % 2 ? ' class="tr"' : '') + '><td>' + Utils.esc(r.name) + '</td><td style="text-align:right">' + r.count + '</td>'
+            + '<td style="text-align:right">' + (r.scanned || '—') + '</td><td style="text-align:right;font-weight:700">' + Utils.cur(r.total, cur) + '</td>'
+            + '<td style="text-align:right">' + Utils.cur(r.cash, cur) + '</td><td style="text-align:right">' + (r.credit > 0 ? Utils.cur(r.credit, cur) : '—') + '</td></tr>';
+        }).join('')
+      + '</tbody></table>';
+    if (d.scanned) {
+      html += '<div style="font-size:11px;color:#555;margin:-4px 0 10px">Scanned from paper: ' + d.scanned + ' · Entered by hand: ' + d.manual
+        + (d.noPhoto ? ' · Saved without photo: ' + d.noPhoto : '') + '</div>';
+      if (d.mismatch.length) {
+        html += '<table><thead><tr><th>Invoice (total differs from paper)</th><th>Staff</th><th style="text-align:right">Paper</th><th style="text-align:right">Saved</th></tr></thead><tbody>'
+          + d.mismatch.map(function(s) {
+              return '<tr><td>' + Utils.esc(Sales.no(s)) + (s.scan.receiptNo ? ' (receipt #' + Utils.esc(s.scan.receiptNo) + ')' : '') + '</td><td>' + Utils.esc(s.createdByName || 'Unknown') + '</td>'
+                + '<td style="text-align:right">' + Utils.cur(parseFloat(s.scan.writtenTotal), cur) + '</td><td style="text-align:right;color:#dc2626;font-weight:700">' + Utils.cur(parseFloat(s.total) || 0, cur) + '</td></tr>';
+            }).join('')
+          + '</tbody></table>';
+      }
+    }
+    return html;
   },
 
   _row: function(label, value, color, bold, fontSize) {
