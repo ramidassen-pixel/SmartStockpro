@@ -440,7 +440,7 @@ var Sales = {
         + '<div class="form-row" style="margin:12px 0 0">'
         + '<div class="fg" style="margin:0"><label class="fl">Invoice No.</label>'
         + '<input class="fi" id="s-inv-no" placeholder="e.g. 001" autocomplete="off" value="' + Utils.esc(settings.invoiceNextNo || '') + '" style="font-family:var(--fm);font-weight:700">'
-        + '<div style="font-size:10.5px;color:var(--t3);margin-top:4px">' + (settings.invoiceNextNo ? 'Next number filled in automatically' : 'Enter your first number — the next ones fill in automatically') + '</div></div>'
+        + '<div id="s-inv-hint" style="font-size:10.5px;color:var(--t3);margin-top:4px">' + (settings.invoiceNextNo ? 'Next number filled in automatically' : 'Enter your first number — the next ones fill in automatically') + '</div></div>'
         + '<div class="fg" style="margin:0"><label class="fl">Date</label>'
         + '<input class="fi" id="s-date" type="date" value="' + Utils.today() + '"></div>'
         + '</div>'
@@ -940,8 +940,10 @@ var Sales = {
     if(cust) DB.updateCustomer(form.custId,{totalSpent:(cust.totalSpent||0)+(parseFloat(sale.total)||0),purchases:(cust.purchases||0)+1});
 
     // Remember the next invoice number (synced to every device through settings)
+    // A number copied from a scanned paper receipt only moves the counter on if it is the number the counter offered
     var used = sale.invoiceNo || form.invNo;
-    if (used) { var nxt = Sales.nextInvoiceNo(used); if (nxt) DB.saveSettings({ invoiceNextNo: nxt }); }
+    var fromPaper = form.scan && String(used) !== String(DB.getSettings().invoiceNextNo || '');
+    if (used && !fromPaper) { var nxt = Sales.nextInvoiceNo(used); if (nxt) DB.saveSettings({ invoiceNextNo: nxt }); }
     Toast.show('Invoice '+Sales.no(sale)+' saved ✓','ok');
     Notifs.check();
     ReceiptScan.reset();
@@ -955,6 +957,7 @@ var Sales = {
       var dt=Utils.get('s-disc-type'); if(dt) dt.value='percent';
       var ph=Utils.get('s-cust-phone'); if(ph) ph.value='';
       var inv=Utils.get('s-inv-no'); if(inv) inv.value=DB.getSettings().invoiceNextNo||'';
+      var ih=Utils.get('s-inv-hint'); if(ih){ ih.textContent='Next number filled in automatically'; ih.style.color=''; }
       var p2=Utils.get('s-amt-paid'); if(p2) p2.value='';
       var nt=Utils.get('s-notes'); if(nt) nt.value='';
       this.renderCart();

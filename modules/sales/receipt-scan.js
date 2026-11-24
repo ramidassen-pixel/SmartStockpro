@@ -127,7 +127,11 @@ var ReceiptScan = {
       var dt = Utils.get('s-disc-type'); if (dt) dt.value = 'amount';
     }
     var ap = Utils.get('s-amt-paid'); if (ap) ap.value = (r.amount_paid != null && r.total_written && r.amount_paid < r.total_written) ? r.amount_paid : '';
-    if (r.receipt_no) { var nt = Utils.get('s-notes'); if (nt && !nt.value) nt.value = 'Paper receipt #' + r.receipt_no; }
+    // The number written on the paper becomes the invoice number
+    if (r.receipt_no) {
+      var inv = Utils.get('s-inv-no'); if (inv) inv.value = r.receipt_no;
+      var hint = Utils.get('s-inv-hint'); if (hint) { hint.textContent = 'From the paper receipt — check it matches'; hint.style.color = 'var(--wa)'; }
+    }
 
     // Lines that match a product go into the cart; the rest wait for the staff member to pick a product
     Sales.cart = [];
@@ -243,6 +247,8 @@ var ReceiptScan = {
   _duplicate: function(r) {
     var sales = DB.getSales();
     if (r.receipt_no) {
+      var used = sales.find(function(x) { return String(x.invoiceNo || '') === String(r.receipt_no); });
+      if (used) return 'Invoice No. ' + r.receipt_no + ' is already saved (' + (used.customer || 'Walk-in') + ', ' + (used.date || '') + '). If this is the same receipt, discard this scan; if not, change the Invoice No.';
       var s = sales.find(function(x) { return x.scan && x.scan.receiptNo && String(x.scan.receiptNo) === String(r.receipt_no); });
       if (s) return 'Paper receipt #' + r.receipt_no + ' was already scanned as invoice ' + Sales.no(s) + ' on ' + (s.date || '') + '.';
     }
@@ -258,6 +264,11 @@ var ReceiptScan = {
   },
 
   discard: function() {
+    var r = this.current && this.current.result, inv = Utils.get('s-inv-no');
+    if (r && r.receipt_no && inv && inv.value === r.receipt_no) {
+      inv.value = DB.getSettings().invoiceNextNo || '';
+      var hint = Utils.get('s-inv-hint'); if (hint) { hint.textContent = 'Next number filled in automatically'; hint.style.color = ''; }
+    }
     this.reset();
     Sales.cart.forEach(function(i) { delete i._scan; });
     Sales.renderCart();
