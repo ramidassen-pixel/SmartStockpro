@@ -319,7 +319,7 @@ var Auth = {
   /* ═══════════════════════════════════════════════════════
      REGISTRATION — CREATE NEW BUSINESS (real Supabase Auth account)
   ═══════════════════════════════════════════════════════ */
-  signup: function() {
+  signup: function(checkedPw) {
     var bizName  = Utils.val('s-biz').trim();
     var name     = Utils.val('s-name').trim();
     var email    = Utils.val('s-email').trim().toLowerCase();
@@ -337,6 +337,19 @@ var Auth = {
 
     var btn = Utils.get('signup-submit-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
+
+    // Breach check first; re-enter with the checked password once it passes
+    if (checkedPw !== pw) {
+      Auth._pwnedPw(pw).then(function(pwned) {
+        if (pwned) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
+          Auth._err('signup-err', '⚠️ ' + Auth.PWNED_MSG);
+          return;
+        }
+        Auth.signup(pw);
+      });
+      return;
+    }
 
     var bizId  = Utils.uid('BIZ');
     var userMeta = { name: name, business_id: bizId, role: 'primary_admin', business_name: bizName, phone: phone };
@@ -419,7 +432,7 @@ var Auth = {
   /* ═══════════════════════════════════════════════════════
      JOIN EXISTING BUSINESS (real Supabase Auth account, status=pending)
   ═══════════════════════════════════════════════════════ */
-  joinBusiness: function() {
+  joinBusiness: function(checkedPw) {
     var bizName = Utils.val('j-biz').trim();
     var name    = Utils.val('j-name').trim();
     var email   = Utils.val('j-email').trim().toLowerCase();
@@ -432,6 +445,16 @@ var Auth = {
     if (!email || !email.includes('@')) { Auth._err('join-err', '⚠️ Enter a valid email'); return; }
     if (pw.length < 8) { Auth._err('join-err', '⚠️ Password must be at least 8 characters'); return; }
     if (pw !== pwConf)  { Auth._err('join-err', '⚠️ Passwords do not match'); return; }
+
+    // Breach check first; re-enter with the checked password once it passes
+    if (checkedPw !== pw) {
+      Auth._err('join-err', '🔍 Checking password…');
+      Auth._pwnedPw(pw).then(function(pwned) {
+        if (pwned) { Auth._err('join-err', '⚠️ ' + Auth.PWNED_MSG); return; }
+        Auth.joinBusiness(pw);
+      });
+      return;
+    }
 
     Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
     fetch(SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status', {
@@ -696,6 +719,35 @@ var Auth = {
 
   _strongPw: function(pw) {
     return /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw);
+  },
+
+  /* Leaked-password check (Have I Been Pwned). Supabase's built-in version needs
+     a paid plan, so the app checks new passwords itself. k-anonymity: only the
+     first 5 hex chars of the SHA-1 hash leave the device. Resolves true if the
+     password is known to be breached; fails open (false) if the check can't run. */
+  PWNED_MSG: 'This password has appeared in a known data breach, so it isn\'t safe to use. Please choose a different one.',
+
+  _pwnedPw: function(pw) {
+    try {
+      return crypto.subtle.digest('SHA-1', new TextEncoder().encode(pw))
+        .then(function(buf) {
+          var hash = Array.prototype.map.call(new Uint8Array(buf), function(b) {
+            return ('0' + b.toString(16)).slice(-2);
+          }).join('').toUpperCase();
+          var suffix = hash.slice(5);
+          return fetch('https://api.pwnedpasswords.com/range/' + hash.slice(0, 5), { headers: { 'Add-Padding': 'true' } })
+            .then(function(r) { return r.ok ? r.text() : ''; })
+            .then(function(body) {
+              return body.split('\n').some(function(line) {
+                var parts = line.trim().split(':');
+                return parts[0] === suffix && Number(parts[1]) > 0; // padding rows have count 0
+              });
+            });
+        })
+        .catch(function() { return false; });
+    } catch (e) {
+      return Promise.resolve(false);
+    }
   },
 
   /* ═══════════════════════════════════════════════════════
