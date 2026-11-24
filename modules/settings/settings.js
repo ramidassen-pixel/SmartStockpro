@@ -612,12 +612,21 @@ var Settings = {
     });
   },
 
-  changePassword: function() {
+  changePassword: function(checkedPw) {
     var oldPw=Utils.val('pw-old'), newPw=Utils.val('pw-new'), conf=Utils.val('pw-conf');
     if(!oldPw||!newPw){ Toast.show('All fields required','err'); return; }
     if(newPw.length<8){ Toast.show('Min 8 characters','err'); return; }
     if(newPw!==conf){ Toast.show('Passwords do not match','err'); return; }
     if(!Auth._strongPw(newPw)){ Toast.show('Password needs uppercase, lowercase and a number','err'); return; }
+
+    // Breach check first; re-enter with the checked password once it passes
+    if (checkedPw !== newPw) {
+      Auth._pwnedPw(newPw).then(function(pwned) {
+        if (pwned) { Toast.show(Auth.PWNED_MSG, 'err'); return; }
+        Settings.changePassword(newPw);
+      });
+      return;
+    }
 
     var session = Auth._session;
     if (!session || !session.access_token) { Toast.show('Session expired — please sign in again','err'); return; }

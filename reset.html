@@ -166,6 +166,43 @@
     var btn = document.getElementById('save-btn');
     btn.disabled = true; btn.textContent = 'Saving…';
 
+    pwnedPw(pw1).then(function (pwned) {
+      if (pwned) {
+        btn.disabled = false; btn.textContent = 'Save New Password';
+        msg.className = 'msg err';
+        msg.textContent = 'This password has appeared in a known data breach, so it isn\'t safe to use. Please choose a different one.';
+        return;
+      }
+      updatePassword(pw1, btn);
+    });
+  };
+
+  // Leaked-password check (Have I Been Pwned, k-anonymity: only 5 hash chars are sent).
+  // Same logic as Auth._pwnedPw in assets/js/auth.js — this page doesn't load that file.
+  function pwnedPw(pw) {
+    try {
+      return crypto.subtle.digest('SHA-1', new TextEncoder().encode(pw))
+        .then(function (buf) {
+          var hash = Array.prototype.map.call(new Uint8Array(buf), function (b) {
+            return ('0' + b.toString(16)).slice(-2);
+          }).join('').toUpperCase();
+          var suffix = hash.slice(5);
+          return fetch('https://api.pwnedpasswords.com/range/' + hash.slice(0, 5), { headers: { 'Add-Padding': 'true' } })
+            .then(function (r) { return r.ok ? r.text() : ''; })
+            .then(function (body) {
+              return body.split('\n').some(function (line) {
+                var parts = line.trim().split(':');
+                return parts[0] === suffix && Number(parts[1]) > 0;
+              });
+            });
+        })
+        .catch(function () { return false; });
+    } catch (e) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function updatePassword(pw1, btn) {
     fetch(SUPABASE_AUTH_URL + '/user', {
       method: 'PUT',
       headers: {
@@ -191,7 +228,7 @@
       msg.className = 'msg err';
       msg.textContent = 'Network error — check your connection and try again.';
     });
-  };
+  }
 })();
 </script>
 </body>
