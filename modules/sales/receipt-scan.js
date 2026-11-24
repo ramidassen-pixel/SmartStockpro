@@ -5,6 +5,14 @@
    3. The New Sale form is filled in; anything the AI was unsure of is highlighted.
    4. Staff tick "I checked every line against the paper" and tap Save — only then is the sale recorded.
    The photo is kept (private, per business) so the paper behind any sale can be seen later. */
+// Opened from the computer's QR code: remember the one-time code (it survives signing in) and tidy the address bar
+(function() {
+  var m = /[#&]ps=([a-z0-9]{12,40})~([A-Za-z0-9_\-]{1,80})/.exec(location.hash || '');
+  if (!m) return;
+  try { sessionStorage.setItem('ssp_phone_scan', m[1] + '~' + m[2]); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+})();
+
 var ReceiptScan = {
   ENDPOINT: 'scan-receipt',
   BUCKET: 'receipts',
@@ -13,7 +21,7 @@ var ReceiptScan = {
 
   reset: function() {
     if (this.current && this.current.url) { try { URL.revokeObjectURL(this.current.url); } catch (e) {} }
-    this.current = null; this._busy = false;
+    this.current = null; this._busy = false; this._phone = null;
     var p = Utils.get('s-scan-panel'); if (p) p.innerHTML = this._idleHtml();
   },
   active: function() { return !!(this.current && this.current.result); },
@@ -24,11 +32,131 @@ var ReceiptScan = {
       + '<input type="file" id="s-scan-file" accept="image/*" capture="environment" style="display:none" onchange="ReceiptScan.onFile(this)">';
   },
   _idleHtml: function() {
-    return '<button type="button" class="btn-ghost" onclick="ReceiptScan.pick()" '
-      + 'style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:13px;border:1.5px dashed var(--g);color:var(--g);font-weight:700;font-size:14px;border-radius:var(--r12)">'
+    var btn = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:13px;border:1.5px dashed var(--g);color:var(--g);font-weight:700;font-size:14px;border-radius:var(--r12)';
+    if (this._isComputer()) {
+      // On a computer: take the photo with the phone (QR code), or upload a photo file
+      return '<div style="display:flex;gap:8px">'
+        + '<button type="button" class="btn-ghost" onclick="ReceiptScan.phoneStart()" style="flex:1.4;' + btn + '"><span style="font-size:20px">📱</span> Scan receipt with phone</button>'
+        + '<button type="button" class="btn-ghost" onclick="ReceiptScan.pick()" style="flex:1;' + btn + ';border-color:var(--bd2);color:var(--t2)"><span style="font-size:18px">📁</span> Upload photo</button>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--t3);text-align:center;margin-top:5px">Photograph a receipt you wrote — the form fills in for you to check</div>';
+    }
+    return '<button type="button" class="btn-ghost" onclick="ReceiptScan.pick()" style="width:100%;' + btn + '">'
       + '<span style="font-size:20px">📷</span> Scan paper receipt</button>'
       + '<div style="font-size:11px;color:var(--t3);text-align:center;margin-top:5px">Take a photo of a receipt you wrote — the form fills in for you to check</div>';
   },
+  _isComputer: function() {
+    var mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent || ''));
+    return !mobile && !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+  },
+
+  // ── Use the phone's camera from a computer ─────────────────────────────────
+  // The computer shows a QR code holding a one-time link. The phone (signed in to the same business) opens it,
+  // takes the photo and stores it at receipts/<business>/PH-<code>.jpg. The computer watches for that file,
+  // then reads it like any other scan; the same file is kept as the sale's receipt photo.
+  _phone: null,
+  phoneStart: function() {
+    if (this._busy) return;
+    if (navigator.onLine === false) { Toast.show('Scanning needs internet. You can still type the sale in.', 'err'); return; }
+    var biz = DB._bizId;
+    if (!biz || !/^[A-Za-z0-9_\-]+$/.test(biz)) { Toast.show('Please sign in again', 'err'); return; }
+    var rnd = new Uint8Array(12); crypto.getRandomValues(rnd);
+    var code = Array.prototype.map.call(rnd, function(b) { return (b % 36).toString(36); }).join('');
+    var link = location.origin + location.pathname + '#ps=' + code + '~' + biz;
+    var ph = this._phone = { code: code, path: biz + '/PH-' + code + '.jpg', started: Date.now() };
+    var qr = '';
+    try { qr = QR.svg(link, 200); } catch (e) { qr = ''; }
+    this._panel('<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px;background:var(--bg3);border:1.5px solid var(--g);border-radius:var(--r12)">'
+      + '<div style="background:#fff;padding:6px;border-radius:10px;line-height:0;flex-shrink:0">' + qr + '</div>'
+      + '<div style="flex:1;min-width:200px">'
+      + '<div style="font-weight:800;color:var(--t1);font-size:15px">📱 Point your phone camera at this code</div>'
+      + '<ol style="margin:8px 0 0 18px;padding:0;font-size:12.5px;color:var(--t2);line-height:1.7">'
+      + '<li>Open the link that appears on your phone</li>'
+      + '<li>Sign in with the same account if it asks</li>'
+      + '<li>Tap <b>Take photo</b> and photograph the receipt</li></ol>'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--g);font-weight:700">'
+      + '<div style="width:14px;height:14px;border:2px solid var(--bd2);border-top-color:var(--g);border-radius:50%;animation:spin 1s linear infinite"></div>Waiting for the photo…</div>'
+      + '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">'
+      + '<button type="button" class="btn-ghost btn-sm" onclick="ReceiptScan.phoneCopy()">Copy link</button>'
+      + '<button type="button" class="btn-ghost btn-sm" onclick="ReceiptScan.reset()" style="color:var(--er)">Cancel</button></div>'
+      + '</div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>');
+    ph.link = link;
+    var self = this;
+    setTimeout(function() { self._phonePoll(ph); }, 3000);
+  },
+  phoneCopy: function() {
+    var ph = this._phone; if (!ph) return;
+    (navigator.clipboard ? navigator.clipboard.writeText(ph.link) : Promise.reject()).then(
+      function() { Toast.show('Link copied — send it to your phone', 'ok'); },
+      function() { prompt('Open this link on your phone:', ph.link); });
+  },
+  _phonePoll: function(ph) {
+    var self = this;
+    if (this._phone !== ph) return;                          // cancelled, or a new code was made
+    if (!Utils.get('s-scan-panel')) { this._phone = null; return; }   // the New Sale form was closed
+    if (Date.now() - ph.started > 15 * 60 * 1000) {
+      this._phone = null; this._panel(this._errorHtml('The phone link expired. Tap "Scan receipt with phone" again.')); return;
+    }
+    AI._authHeaders().then(function(h) {
+      return fetch(SUPABASE_URL + '/storage/v1/object/authenticated/' + self.BUCKET + '/' + ph.path, {
+        headers: { apikey: h.apikey, Authorization: h.Authorization }, cache: 'no-store',
+      });
+    }).then(function(res) {
+      if (self._phone !== ph) return;
+      if (!res.ok) { setTimeout(function() { self._phonePoll(ph); }, 2500); return; }
+      return res.blob().then(function(blob) {
+        if (self._phone !== ph) return;
+        self._phone = null;
+        Toast.show('Photo received from your phone ✓', 'ok');
+        self._scan(blob, ph.path);
+      });
+    }).catch(function() { if (self._phone === ph) setTimeout(function() { self._phonePoll(ph); }, 5000); });
+  },
+
+  // On the phone: the link from the QR code was opened (the code is kept until the photo is sent)
+  phoneCheck: function() {
+    var v = ''; try { v = sessionStorage.getItem('ssp_phone_scan') || ''; } catch (e) {}
+    var m = /^([a-z0-9]{12,40})~([A-Za-z0-9_\-]{1,80})$/.exec(v); if (!m) return;
+    if (Utils.get('ps-status')) return;                       // already showing
+    if (DB._bizId !== m[2]) {
+      try { sessionStorage.removeItem('ssp_phone_scan'); } catch (e) {}
+      Modal.open({ title: '📱 Receipt photo', barColor: 'var(--er)',
+        body: '<p style="font-size:14px;color:var(--t2);line-height:1.6">This phone is signed in to a different business than the computer. Sign in with the same account on both, then scan the code again.</p>',
+        footer: '<button class="btn-ghost btn-full" onclick="Modal.close()">Close</button>' });
+      return;
+    }
+    this._phoneCode = m[1];
+    Modal.open({ title: '📱 Send a receipt photo', sub: 'It goes to the New Sale form on your computer',
+      body: '<input type="file" id="ps-file" accept="image/*" capture="environment" style="display:none" onchange="ReceiptScan.phoneFile(this)">'
+        + '<button type="button" class="btn-primary btn-full" onclick="Utils.get(\'ps-file\').click()" style="padding:18px;font-size:17px;font-weight:800">📷 Take photo</button>'
+        + '<div id="ps-status" style="margin-top:14px;font-size:13px;color:var(--t2);line-height:1.6;text-align:center">Lay the receipt flat in good light and fit the whole page in the picture.</div>',
+      footer: '<button class="btn-ghost btn-full" onclick="ReceiptScan.phoneDone()">Close</button>' });
+  },
+  phoneFile: function(input) {
+    var file = input && input.files && input.files[0]; if (!file) return;
+    var st = Utils.get('ps-status'), biz = DB._bizId, code = this._phoneCode, self = this;
+    if (!code || !biz) return;
+    if (st) st.innerHTML = '<b style="color:var(--g)">Sending the photo…</b>';
+    this._shrink(file).then(function(blob) {
+      return AI._authHeaders().then(function(h) {
+        return fetch(SUPABASE_URL + '/storage/v1/object/' + self.BUCKET + '/' + biz + '/PH-' + code + '.jpg', {
+          method: 'POST', headers: { apikey: h.apikey, Authorization: h.Authorization, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' }, body: blob,
+        });
+      });
+    }).then(function(res) {
+      if (res.status === 409 || res.status === 400) {
+        // Already sent once with this code
+        if (st) st.innerHTML = '<b style="color:var(--wa)">A photo was already sent with this code.</b><br>To send another, tap "Scan receipt with phone" on the computer again and scan the new code.';
+        return;
+      }
+      if (!res.ok) throw new Error(res.status);
+      try { sessionStorage.removeItem('ssp_phone_scan'); } catch (e) {}
+      if (st) st.innerHTML = '<div style="font-size:40px">✅</div><b style="color:var(--ok);font-size:15px">Sent! Look at your computer.</b><br>The New Sale form is filling in there.';
+    }).catch(function() {
+      if (st) st.innerHTML = '<b style="color:var(--er)">The photo could not be sent.</b> Check the internet connection and tap Take photo again.';
+    });
+  },
+  phoneDone: function() { try { sessionStorage.removeItem('ssp_phone_scan'); } catch (e) {} this._phoneCode = null; Modal.close(); },
   pick: function() {
     if (this._busy) return;
     if (navigator.onLine === false) { Toast.show('Scanning needs internet. You can still type the sale in.', 'err'); return; }
@@ -39,6 +167,12 @@ var ReceiptScan = {
     var file = input && input.files && input.files[0];
     if (!file) return;
     if (!/^image\//.test(file.type || 'image/')) { Toast.show('Please choose a photo', 'err'); return; }
+    this._phone = null;
+    this._scan(file, '');
+  },
+
+  // Read a photo (from this device, or sent from the phone already stored at `stored`)
+  _scan: function(file, stored) {
     var self = this;
     this._busy = true;
     this._panel('<div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--r12)">'
@@ -60,7 +194,7 @@ var ReceiptScan = {
         }).then(function(result) {
           self._busy = false;
           if (self.current && self.current.url) { try { URL.revokeObjectURL(self.current.url); } catch (e) {} }
-          self.current = { photo: blob, url: URL.createObjectURL(blob), result: result, uploaded: '' };
+          self.current = { photo: blob, url: URL.createObjectURL(blob), result: result, uploaded: stored || '' };
           if (result.is_receipt === false) {
             self._panel(self._errorHtml('This photo doesn\'t look like a sales receipt. Try again with the whole receipt in the picture.'));
             self.current = null; return;

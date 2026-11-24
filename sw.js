@@ -1,4 +1,4 @@
-﻿const CACHE = 'ssp-v6.31';
+﻿const CACHE = 'ssp-v6.32';
 const ASSETS = [
   './',
   'index.html',
@@ -16,6 +16,7 @@ const ASSETS = [
   'assets/js/sidebar.js',
   'assets/js/privacy.js',
   'assets/js/utils.js',
+  'assets/js/qr.js',
   'assets/js/database.js',
   'assets/js/auth.js',
   'assets/js/quickcreate.js',

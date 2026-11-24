@@ -55,6 +55,8 @@ var App = {
       if (typeof SuperAdmin !== 'undefined') { SuperAdmin._isAdmin = null; SuperAdmin.check(); }   // shows Platform Admin in More for the platform owner
       Router.go('dashboard');
     } catch(e) { console.error('showShell:', e); Router.go('dashboard'); }
+    // Opened from a computer's "Scan receipt with phone" QR code
+    if (typeof ReceiptScan !== 'undefined') setTimeout(function() { try { ReceiptScan.phoneCheck(); } catch(e) {} }, 600);
   },
 
   boot: function() {
