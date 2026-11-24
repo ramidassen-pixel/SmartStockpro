@@ -68,18 +68,24 @@ async function loadProducts(auth: string): Promise<Product[]> {
       id: String(r.id), name: String(r.data?.name || "").trim(), sku: String(r.data?.sku || ""),
       price: Number(r.data?.price) || 0, qty: Number(r.data?.qty) || 0,
     }))
-    .filter((p) => p.name);
+    // Placeholder entries like "Paid balance" ($0.01) are not things a customer buys
+    .filter((p) => p.name && p.price >= 0.1);
 }
 
+// Lines that are about money, not goods ("Paid", "Balance", "Total", "Change", "Deposit")
+const MONEY_LINE = /^\s*(sub\s*-?\s*total|total|grand\s*total|paid|amount\s*paid|balance|bal\.?|change|deposit|discount|cash|amount|amt)\b/i;
+
 // ── Matching a written item to a product, in code (used to check and fill in the model's choice) ────────
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+// Sizes are written many ways ("24 x 24", "24*24", "24X24"): make them one word "24x24"
+const sizes = (s: string) => s.toLowerCase().replace(/(\d)\s*[x×*]\s*(?=\d)/g, "$1x");
+const norm = (s: string) => sizes(s).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 function words(s: string) { return norm(s).split(" ").filter((w) => w.length > 1 || /\d/.test(w)); }
 function similarity(a: string, b: string): number {
   const A = words(a), B = words(b);
   if (!A.length || !B.length) return 0;
   let hit = 0;
   for (const w of A) {
-    if (B.some((x) => x === w || (w.length >= 4 && (x.startsWith(w) || w.startsWith(x))))) hit++;
+    if (B.some((x) => x === w || (w.length >= 4 && (x.startsWith(w) || w.startsWith(x))) || (/^\d+x\d+$/.test(w) && x.startsWith(w + "x")))) hit++;
   }
   return hit / Math.max(A.length, B.length) * 0.7 + hit / A.length * 0.3;
 }
@@ -134,6 +140,7 @@ function prompt(products: Product[], today: string): string {
   const list = products.slice(0, 1500).map((p) => `${p.id} | ${p.name}${p.sku ? " | " + p.sku : ""} | ${p.price}`).join("\n");
   return `You read a photo of a paper sales receipt from a shop in Liberia (handwritten or printed). Today is ${today}.
 Copy what is written. Do not invent anything: if a value is not on the receipt, leave it empty (or 0 / -1 as described).
+Only goods sold are items: lines like "Paid", "Balance", "Total", "Change" or "Deposit" are not items (use amount_paid / total_written for them).
 For each item line give the text exactly as written, the quantity, the unit price and the line amount.
 Then pick the product from PRODUCTS that the line refers to (shop staff abbreviate: "coca 35" = "Coca-Cola 35cl"). Leave product_id empty if no product clearly matches; never guess between two similar products.
 Set "sure" to false for any line where a number or word is hard to read, or the product match is not clear.
@@ -193,7 +200,8 @@ async function readWithFree(image: string, mediaType: string, text: string): Pro
   const body: Row = {
     model,
     temperature: 0,
-    max_tokens: 4000,
+    // Groq's free tier allows about 1000 output tokens a minute; a receipt's JSON needs far less
+    max_tokens: FREE_IS_GROQ ? 900 : 4000,
     messages: [
       { role: "system", content: "You return only a JSON object that follows this JSON schema:\n" + JSON.stringify(SCHEMA) },
       { role: "user", content: [
@@ -240,7 +248,9 @@ const money = (n: number) => Math.round(n * 100) / 100;
 
 function tidy(raw: Row, products: Product[]): Row {
   const byId = new Map(products.map((p) => [p.id, p]));
-  const items = (Array.isArray(raw.items) ? raw.items : []).slice(0, 60).map((it: Row) => {
+  const items = (Array.isArray(raw.items) ? raw.items : []).slice(0, 60)
+    .filter((it: Row) => !MONEY_LINE.test(str(it?.written, 120)))
+    .map((it: Row) => {
     const written = str(it.written, 120);
     let qty = num(it.qty, 1); if (!(qty > 0)) qty = 1;
     let unit = Math.max(0, num(it.unit_price));

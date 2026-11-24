@@ -158,7 +158,13 @@ var ReceiptScan = {
     if (!this.current || !this.current.unmatched) return;
     var u = this.current.unmatched[i]; if (!u) return;
     var s = Utils.get('s-prod-search');
-    if (s) { s.value = u.written.split(' ').slice(0, 3).join(' '); s.focus(); Sales.onProdSearch(s.value); }
+    if (s) {
+      // A size like "24 x 24" finds tiles best; otherwise the first words as written
+      var w = String(u.written || '').replace(/(\d)\s*[x×*]\s*(?=\d)/gi, '$1x');
+      var size = w.match(/\d+x\d+(x\d+)?/i);
+      s.value = size ? size[0] : w.split(' ').slice(0, 2).join(' ');
+      s.focus(); Sales.onProdSearch(s.value);
+    }
     this.current._pending = i;
   },
   // Sales.addToCartById asks first: when a "Find product" is waiting, the picked product gets the
@@ -237,10 +243,16 @@ var ReceiptScan = {
       return;
     }
     var ok = Math.abs(total - r.total_written) <= 0.05;
+    // Lines still waiting for a product are not in the form yet: say how much of the gap they cover
+    var waiting = (c.unmatched || []).reduce(function(a, u) { return a + (parseFloat(u.price) || 0) * (parseFloat(u.qty) || 0); }, 0);
+    var covered = !ok && waiting > 0 && Math.abs(total + waiting - r.total_written) <= 0.05;
     el.innerHTML = '<div style="margin-top:10px;padding:9px 11px;border-radius:var(--r8);font-size:13px;font-weight:700;'
       + (ok ? 'background:var(--okb);border:1px solid var(--okbd);color:var(--ok)">✓ Total matches the receipt: ' + Utils.cur(total, cur)
-            : 'background:var(--erb);border:1px solid var(--erbd);color:var(--er)">✗ Receipt total ' + Utils.cur(r.total_written, cur) + ' — form total ' + Utils.cur(total, cur)
-              + ' (difference ' + Utils.cur(Math.abs(total - r.total_written), cur) + ')')
+        : covered ? 'background:var(--wab);border:1px solid var(--wa);color:var(--wa)">Receipt total ' + Utils.cur(r.total_written, cur) + ' — form ' + Utils.cur(total, cur)
+            + ' so far. Pick products for the lines below (' + Utils.cur(waiting, cur) + ') and it will match.'
+        : 'background:var(--erb);border:1px solid var(--erbd);color:var(--er)">✗ Receipt total ' + Utils.cur(r.total_written, cur) + ' — form total ' + Utils.cur(total, cur)
+            + ' (difference ' + Utils.cur(Math.abs(total - r.total_written), cur) + ')'
+            + (waiting > 0 ? '<div style="font-weight:600;font-size:12px;margin-top:3px">' + Utils.cur(waiting, cur) + ' of it is in the lines below that still need a product.</div>' : ''))
       + '</div>';
   },
 
