@@ -1,9 +1,7 @@
 // SmartStock Pro — AI agent (Supabase Edge Function, Deno) — the ORIGINAL assistant.
 //
 // When the ANTHROPIC_API_KEY secret is set, every request is handed to ai-agent-v2 (Claude), so
-// older app versions that still call this function get the new assistant. If Claude then fails
-// (out of credit, key rejected, busy, down), ai-agent-v2 sends the question back here with the
-// x-smartstock-fallback header and the free providers below answer it. Otherwise it
+// older app versions that still call this function get the new assistant. Otherwise it
 // answers questions about the business by letting free AI models call read-only "tools"
 // that look up the real numbers. Any number of free OpenAI-compatible providers can be set
 // up at once, as Supabase secrets; they are tried in this order, and when one is out of its
@@ -485,8 +483,7 @@ Deno.serve(async (req: Request) => {
 
   // The Claude agent (ai-agent-v2) is the main assistant now. Whenever its key is set, hand the
   // question over to it, so app versions that still call this function get the new assistant too.
-  // ai-agent-v2 sets x-smartstock-fallback when Claude failed and it wants the free providers to answer.
-  if (clean(Deno.env.get("ANTHROPIC_API_KEY")) && req.headers.get("x-smartstock-fallback") !== "1") {
+  if (clean(Deno.env.get("ANTHROPIC_API_KEY"))) {
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent-v2`, {
         method: "POST",

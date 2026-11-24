@@ -1,6 +1,6 @@
 // SmartStock Pro — AI agent v2 (Supabase Edge Function, Deno)
 //
-// Answers questions about the business with Claude, which looks up real figures through
+// Answers questions about the business with an AI model (a free provider, or Claude), which looks up real figures through
 // read-only tools:
 //   business_snapshot  headline figures + what the data can't answer   (rpc ai_snapshot)
 //   query_data         filter / group / total any ai.* view              (rpc ai_query)
@@ -13,11 +13,15 @@
 // Every lookup uses the caller's own sign-in token, so row-level security limits it to their business.
 // Nothing is ever written: actions are only proposed, and the app carries them out after the user confirms.
 //
-// If Claude fails (key rejected, out of credit, busy, down) and a free AI key is saved
-// (GROQ_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY or AI_API_KEY),
-// the question is answered by ai-agent on the free providers instead.
-// Secrets: ANTHROPIC_API_KEY (required) · AI_MODEL (optional, default claude-opus-5-5)
-//          AI_EFFORT (optional: low | medium | high, default medium) · BUSINESS_TZ (default Africa/Monrovia)
+// Which AI answers (Supabase secrets):
+//   AI_API_KEY         a FREE provider key (GEMINI_API_KEY / GOOGLE_API_KEY / GROQ_API_KEY also work). When set, it is used:
+//                        Google Gemini key (free at aistudio.google.com)               → gemini-2.5-flash
+//                        Groq key (starts "gsk_", free at console.groq.com)             → openai/gpt-oss-120b
+//                        any other OpenAI-compatible provider: also set AI_BASE_URL and AI_MODEL
+//   ANTHROPIC_API_KEY  Claude (paid). Used when no free key is set. If Claude fails (key rejected, out of credit,
+//                        busy, down, unreachable), a free key answers instead when one is set.
+//   AI_PROVIDER        optional: "free" or "claude" to choose explicitly when both keys are set
+//   AI_MODEL, AI_BASE_URL, AI_EFFORT (Claude: low | medium | high), BUSINESS_TZ (default Africa/Monrovia)
 // Deploy with JWT verification ON.
 import Anthropic from "npm:@anthropic-ai/sdk@1.6.0";
 
@@ -32,8 +36,38 @@ const json = (body: unknown, status = 200) =>
 const clean = (v: string | undefined) => (v || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const API_KEY = clean(Deno.env.get("ANTHROPIC_API_KEY"));
-const MODEL = clean(Deno.env.get("AI_MODEL")) || "claude-opus-5-5";
+const RAW_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
+const API_KEY = clean(RAW_KEY);
+// What kind of value is saved (never the value itself), for clear error messages and logs
+const KEY_INFO = {
+  kind: API_KEY.startsWith("sk-ant-api") ? "api" : API_KEY.startsWith("sk-ant-admin") ? "admin"
+    : API_KEY.startsWith("sk-ant-oat") ? "subscription_token" : API_KEY.startsWith("sk-ant-") ? "other_sk_ant"
+    : /^ANTHROPIC/i.test(API_KEY) ? "includes_variable_name" : "other",
+  length: API_KEY.length,
+  cleaned_paste: RAW_KEY !== API_KEY,
+  inner_spaces: /\s/.test(API_KEY),
+};
+// Free provider (OpenAI-compatible chat API), chosen from the key's prefix unless AI_BASE_URL is set
+// Accept the usual names people give this secret
+const ENV = Deno.env.toObject();
+const FREE_KEY_NAME = ["AI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY", "GROQ_API_KEY"].find((n) => clean(ENV[n]))
+  // …or any secret whose name looks like a free AI key (any capitals), e.g. "Gemini_Key", "ai_api_key"
+  || Object.keys(ENV).find((n) => /(gemini|google|groq|ai[_ ]?api)/i.test(n) && /key/i.test(n) && !/anthropic|supabase/i.test(n) && clean(ENV[n]))
+  || "";
+// Names (never values) of the secrets this function can see, to explain a missing key
+const SECRET_NAMES = Object.keys(ENV).filter((n) => /key|token|secret|api/i.test(n) && !/^SUPABASE|^SB_/i.test(n)).sort();
+const FREE_KEY = FREE_KEY_NAME ? clean(ENV[FREE_KEY_NAME]) : "";
+// Groq keys start with "gsk_"; any other key is treated as a Google Gemini key (AI Studio issues "AIza…" and newer formats)
+const FREE_IS_GEMINI = !!FREE_KEY && !FREE_KEY.startsWith("gsk_") && !clean(Deno.env.get("AI_BASE_URL"));
+const FREE_IS_GROQ = FREE_KEY.startsWith("gsk_");
+const FREE_BASE = (clean(Deno.env.get("AI_BASE_URL"))
+  || (FREE_IS_GEMINI ? "https://generativelanguage.googleapis.com/v1beta/openai" : "https://api.groq.com/openai/v1")).replace(/\/+$/, "");
+const FREE_MODEL = clean(Deno.env.get("AI_MODEL")) || (FREE_IS_GEMINI ? "gemini-2.5-flash" : "openai/gpt-oss-120b");
+const FREE_NAME = FREE_IS_GEMINI ? "Google Gemini" : FREE_IS_GROQ ? "Groq" : "the free AI provider";
+const CHOICE = clean(Deno.env.get("AI_PROVIDER")).toLowerCase();
+const PROVIDER: "free" | "claude" | "" = CHOICE === "claude" && API_KEY ? "claude" : CHOICE === "free" && FREE_KEY ? "free"
+  : FREE_KEY ? "free" : API_KEY ? "claude" : "";
+const MODEL = PROVIDER === "claude" ? (clean(Deno.env.get("AI_MODEL")) || "claude-opus-5-5") : "claude-opus-5-5";
 const EFFORT = (["low", "medium", "high"].includes(clean(Deno.env.get("AI_EFFORT"))) ? clean(Deno.env.get("AI_EFFORT")) : "medium") as
   "low" | "medium" | "high";
 const TZ = clean(Deno.env.get("BUSINESS_TZ")) || "Africa/Monrovia";
@@ -398,7 +432,9 @@ async function runTool(name: string, a: Row, auth: string, proposed: Row[] = [])
       return await rpc(auth, "ai_snapshot", {});
     case "query_data": {
       const r = rangeFrom(a);
-      const spec: Row = { view: a.view, filters: a.filters, group_by: a.group_by, metrics: a.metrics, columns: a.columns, order_by: a.order_by, limit: a.limit };
+      const filters = Array.isArray(a.filters) ? a.filters.map((f: Row) =>
+        f && f.op === "in" && typeof f.value === "string" ? { ...f, value: f.value.split(",").map((x: string) => x.trim()).filter(Boolean) } : f) : a.filters;
+      const spec: Row = { view: a.view, filters, group_by: a.group_by, metrics: a.metrics, columns: a.columns, order_by: a.order_by, limit: a.limit };
       if (r?.from) spec.date_from = r.from;
       if (r?.to) spec.date_to = r.to;
       for (const k of Object.keys(spec)) if (spec[k] === undefined || spec[k] === null) delete spec[k];
@@ -430,7 +466,7 @@ How to work:
 - Product-level questions (best-selling product, units sold, profit per product) need sale item lines. If data_notes show sales_without_items, say that the sales were saved without item details, so this can't be answered from sales, and offer what can be (e.g. stock levels, product margins from cost and price).
 - For overall questions (how is the business doing, problems, what to focus on, advice), start with get_insights, then check details with query_data if needed. Turn insights into a few concrete actions.
 - For profit, always use profit_and_loss and follow its warning: never present sales minus expenses as profit when cost of goods is missing.
-- You can read data and PROPOSE two actions with propose_action: a WhatsApp message, or a Draft purchase order. The user confirms with one tap; until then nothing is done, so never say it was sent or saved: say it is ready to confirm below. Look up what you need first (phone, amount owed, stock, cost).
+- Only when the propose_action tool is available can you PROPOSE two actions: a WhatsApp message, or a Draft purchase order. The user confirms with one tap; until then nothing is done, so never say it was sent or saved: say it is ready to confirm below. Look up what you need first (phone, amount owed, stock, cost). Without that tool you can only read data; you may still write out a message for the user to copy.
 - Anything else (record a sale or payment, change stock or prices, delete): say you can't do it and tell them where in the app to do it (app_help).
 - Customer and staff details are the business's own records; share them with the user who asks.
 
@@ -463,38 +499,92 @@ Data views for query_data (all limited to the user's business; deleted records e
 - business: business_name, currency, address, phone, default_low_stock, tax_pct, lrd_rate (Liberian dollars per US dollar), cogs_enabled
 - data_quality: sales, sales_without_items, sales_without_invoice_no, walk_in_sales, first_sale_date, last_sale_date, products, products_without_cost, customers, customers_without_phone`;
 
-// ── Free-provider fallback (handled by ai-agent) ─────────────────────────────
-const FREE_KEYS = ["AI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY"];
-const HAS_FREE = FREE_KEYS.some((k) => clean(Deno.env.get(k)));
+// ── Free provider (OpenAI-compatible): same tools, same answers format ─────────
+// Tool schemas: every property gets a type (Gemini requires it); "in" values are sent as "a, b" text.
+function freeSchema(x: any): any {
+  if (Array.isArray(x)) return x.map(freeSchema);
+  if (!x || typeof x !== "object") return x;
+  const out: Row = {};
+  for (const [k, v] of Object.entries(x)) out[k] = k === "properties"
+    ? Object.fromEntries(Object.entries(v as Row).map(([pk, pv]) => [pk, (pv as Row).type || (pv as Row).enum || (pv as Row).anyOf
+        ? freeSchema(pv) : { type: "string", description: String((pv as Row).description || "") + " For op 'in', separate values with commas." }]))
+    : freeSchema(v);
+  return out;
+}
+// A tool without inputs is sent without "parameters" (Gemini rejects an object with no properties)
+const FREE_TOOLS = TOOLS.map((t) => ({
+  type: "function",
+  function: Object.keys((t.input_schema as Row).properties || {}).length
+    ? { name: t.name, description: t.description, parameters: freeSchema(t.input_schema) }
+    : { name: t.name, description: t.description },
+}));
 
-// Errors a different provider can get past: bad key, no access/credit, rate limit, overload, outage, network.
-function shouldFallBack(error: unknown): boolean {
-  if (!HAS_FREE) return false;
-  if (error instanceof Anthropic.BadRequestError) return /credit|billing|balance/i.test(error.message);
-  if (error instanceof Anthropic.APIError) {
-    const s = error.status;
-    return s === undefined || s === 401 || s === 403 || s === 404 || s === 429 || s >= 500;
-  }
-  return true; // network / timeout
+class FreeError extends Error { status: number; constructor(status: number, msg: string) { super(msg); this.status = status; } }
+
+async function freeChat(messages: Row[], maxTokens: number, tools: Row[]): Promise<Row> {
+  const res = await fetch(`${FREE_BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${FREE_KEY}` },
+    body: JSON.stringify({ model: FREE_MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, max_tokens: maxTokens }),
+  });
+  const text = await res.text();
+  let data: Row = {};
+  try { data = JSON.parse(text); } catch { /* keep text for the error */ }
+  if (Array.isArray(data)) data = data[0] || {};   // some providers wrap errors in a list
+  if (!res.ok) throw new FreeError(res.status, String((data.error && (data.error.message || data.error)) || text).slice(0, 300));
+  return data;
 }
 
-async function answerWithFreeAI(body: Row, auth: string, reason: string): Promise<Response | null> {
+async function answerWithFreeAI(history: Row[], systemText: string, auth: string, isReport: boolean, debug: boolean, allowActions: boolean) {
+  const messages: Row[] = [{ role: "system", content: systemText }, ...history];
+  const used: string[] = [], trace: Row[] = [], proposed: Row[] = [];
+  const tools = allowActions ? FREE_TOOLS : FREE_TOOLS.filter((t) => t.function.name !== "propose_action");
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON, Authorization: auth, "x-smartstock-fallback": "1" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => null) as Row | null;
-    if (!data || !res.ok || !data.content) {
-      console.log(JSON.stringify({ event: "ai_agent_v2_fallback_failed", status: res.status, type: data?.type }));
-      return null;
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const data = await freeChat(messages, isReport ? 6000 : 2500, tools);
+      const msg = data.choices?.[0]?.message || {};
+      const calls: Row[] = msg.tool_calls || [];
+      if (!calls.length) {
+        const text = String(msg.content || "").trim();
+        console.log(JSON.stringify({ event: "ai_agent_v2_free", provider: FREE_NAME, model: FREE_MODEL, steps: step + 1, tools: used, usage: data.usage }));
+        if (!text) return json({ error: "The AI returned an empty answer. Please try again.", type: "empty" }, 502);
+        return json({
+          content: [{ type: "text", text }], tools_used: used, model: data.model || FREE_MODEL, steps: step + 1,
+          ...(proposed.length ? { actions: proposed } : {}), ...(debug ? { trace, usage: data.usage } : {}),
+        });
+      }
+      messages.push({ role: "assistant", content: msg.content || "", tool_calls: calls });
+      const results = await Promise.all(calls.map(async (c) => {
+        const name = c.function?.name || "";
+        used.push(name);
+        let input: Row = {};
+        try { input = JSON.parse(c.function?.arguments || "{}") || {}; } catch { /* use defaults */ }
+        let out: string;
+        try {
+          if (name === "propose_action" && !allowActions) throw new Error("Actions are not available in this app version.");
+          const result = await runTool(name, input, auth, proposed);
+          out = typeof result === "string" ? result : JSON.stringify(result);
+          if (out.length > MAX_TOOL_CHARS) out = out.slice(0, MAX_TOOL_CHARS) + "…(cut short — ask with a smaller limit, filters or grouping)";
+          trace.push({ tool: name, input, chars: out.length });
+        } catch (e) {
+          out = "ERROR: " + String((e as Error).message || e);
+          trace.push({ tool: name, input, error: out });
+        }
+        return { role: "tool", tool_call_id: c.id, content: out };
+      }));
+      messages.push(...results);
     }
-    console.log(JSON.stringify({ event: "ai_agent_v2_fallback", reason, provider: data.provider, model: data.model }));
-    return json({ ...data, fallback_from: "claude" });
+    return json({ error: "The question needed too many steps. Try asking it more simply.", type: "too_many_steps", tools_used: used }, 200);
   } catch (e) {
-    console.log(JSON.stringify({ event: "ai_agent_v2_fallback_failed", message: String((e as Error).message).slice(0, 200) }));
-    return null;
+    const status = (e as FreeError).status || 0;
+    console.log(JSON.stringify({ event: "ai_agent_v2_free_error", provider: FREE_NAME, model: FREE_MODEL, status, message: String((e as Error).message).slice(0, 300) }));
+    if (status === 400 && /api key/i.test(String((e as Error).message)) || status === 401 || status === 403) {
+      return json({ error: `The ${FREE_NAME} key saved in Supabase (AI_API_KEY) was rejected. Create a new free key and save it again.`, type: "invalid_api_key" }, 502);
+    }
+    if (status === 429) return json({ error: `The free AI limit (${FREE_NAME}) is used up for now. Please wait a minute, or until tomorrow if the daily limit is reached, and try again.`, type: "rate_limited" }, 429);
+    if (status === 404) return json({ error: `The AI model "${FREE_MODEL}" was not found at ${FREE_NAME}. Check the AI_MODEL secret.`, type: "bad_model" }, 502);
+    if (status) return json({ error: `${FREE_NAME} had a problem (${status}): ${String((e as Error).message).slice(0, 160)}`, type: "upstream_error" }, 502);
+    return json({ error: "The AI service could not be reached. Please try again.", type: "network" }, 502);
   }
 }
 
@@ -503,24 +593,20 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!signedIn(req)) return json({ error: "Please sign in to use the AI assistant.", type: "not_signed_in" }, 401);
-  // No Claude key: hand the question to the original assistant, which runs on free AI providers
-  // (GROQ_API_KEY, GEMINI_API_KEY, ... — see ai-agent). It never forwards back while this key is unset.
-  if (!API_KEY) {
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON, Authorization: req.headers.get("authorization") || "" },
-        body: await req.text(),
-      });
-      return new Response(await res.text(), { status: res.status, headers: { ...cors, "Content-Type": "application/json" } });
-    } catch (e) {
-      console.log(JSON.stringify({ event: "ai_agent_v2_forward_failed", message: String((e as Error).message).slice(0, 200) }));
-      return json({ error: "The AI service could not be reached. Please try again.", type: "network" }, 502);
-    }
+  if (!PROVIDER) {
+    console.log(JSON.stringify({ event: "ai_not_configured", secret_names_seen: SECRET_NAMES }));
+    return json({
+      error: "The AI is not set up yet: no AI key was found. In Supabase → Edge Functions → Secrets, add a secret named AI_API_KEY with your free Gemini key (from aistudio.google.com/apikey) as the value, and press Save."
+        + " Secrets the AI can see right now: " + (SECRET_NAMES.length ? SECRET_NAMES.join(", ") : "none") + ".",
+      type: "not_configured",
+    }, 500);
   }
 
   const body = (await req.json().catch(() => ({}))) as Row;
   const isReport = body.mode === "report";
+  // Confirmable actions only for app versions that can show the confirm cards (they send actions: true)
+  const allowActions = body.actions === true && !isReport;
+  const tools = allowActions ? TOOLS : TOOLS.filter((t) => t.name !== "propose_action");
   const history: Anthropic.Beta.BetaMessageParam[] = (Array.isArray(body.messages) ? body.messages
       : body.prompt ? [{ role: "user", content: String(body.prompt) }] : [])
     .filter((m: Row) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
@@ -538,6 +624,10 @@ Deno.serve(async (req: Request) => {
   // The report button sends a ready-made data summary as extra context
   if (isReport && typeof body.system === "string" && body.system) system.push({ type: "text", text: body.system.slice(0, 40000) });
 
+  if (PROVIDER === "free") {
+    return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug, allowActions);
+  }
+
   const client = new Anthropic({ apiKey: API_KEY, maxRetries: 2 });
   const messages: Anthropic.Beta.BetaMessageParam[] = [...history];
   const used: string[] = [];
@@ -552,7 +642,7 @@ Deno.serve(async (req: Request) => {
         max_tokens: isReport ? 16000 : 8000,
         output_config: { effort: isReport ? "high" : EFFORT },
         system,
-        tools: TOOLS,
+        tools,
         messages,
         // If a safety classifier declines, the API retries on a suitable fallback model
         betas: ["server-side-fallback-2026-07-01"],
@@ -588,6 +678,7 @@ Deno.serve(async (req: Request) => {
         used.push(c.name);
         const input = (c.input && typeof c.input === "object" ? c.input : {}) as Row;
         try {
+          if (c.name === "propose_action" && !allowActions) throw new Error("Actions are not available in this app version.");
           const result = await runTool(c.name, input, auth, proposed);
           let out = typeof result === "string" ? result : JSON.stringify(result);
           if (out.length > MAX_TOOL_CHARS) out = out.slice(0, MAX_TOOL_CHARS) + "…(cut short — ask with a smaller limit, filters or grouping)";
@@ -604,14 +695,44 @@ Deno.serve(async (req: Request) => {
     return json({ error: "The question needed too many steps. Try asking it more simply.", type: "too_many_steps", tools_used: used }, 200);
   } catch (error) {
     console.log(JSON.stringify({ event: "ai_agent_v2_error", model: MODEL, status: (error as { status?: number }).status, message: String((error as Error).message).slice(0, 300) }));
-    // Claude couldn't answer: let a free provider try before showing an error
-    if (shouldFallBack(error)) {
-      const reason = error instanceof Anthropic.APIError ? "status_" + error.status : "network";
-      const fallback = await answerWithFreeAI(body, auth, reason);
-      if (fallback) return fallback;
-    }
     if (error instanceof Anthropic.AuthenticationError) {
-      return json({ error: "The Anthropic API key saved in Supabase was rejected. Create a new key (it starts with sk-ant-api) and save it again.", type: "invalid_api_key" }, 502);
+      // Short SHA-256 fingerprint of the saved value (cannot be turned back into the key). Supabase shows the
+      // same hash as the secret's "digest", so the owner can check the server is using the key they saved.
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(RAW_KEY))))
+        .map((x) => x.toString(16).padStart(2, "0")).join("");
+      console.log(JSON.stringify({ event: "anthropic_key_rejected", ...KEY_INFO, sha256_start: digest.slice(0, 10), free_key: FREE_KEY_NAME || "none" }));
+      if (FREE_KEY) {
+        return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug, allowActions);
+      }
+      const hint = KEY_INFO.kind === "admin"
+        ? " The saved value is an Admin key (starts with sk-ant-admin), which can't be used for chat."
+        : KEY_INFO.kind === "subscription_token"
+        ? " The saved value is a Claude subscription token (starts with sk-ant-oat), not an API key."
+        : KEY_INFO.kind === "includes_variable_name"
+        ? " The saved value starts with the name ANTHROPIC_API_KEY: paste only the key itself, without the name or '='."
+        : KEY_INFO.inner_spaces
+        ? " The saved value contains spaces or line breaks: copy the key again in one piece."
+        : KEY_INFO.kind === "other"
+        ? " The saved value doesn't look like an Anthropic API key (it should start with sk-ant-api)."
+        : " It looks like an API key, but Anthropic says it is not valid: it was probably deleted, disabled, or copied incompletely.";
+      return json({
+        error: "No free AI key was found, and the Claude key was rejected. To use the FREE AI: get a key at aistudio.google.com/apikey, then in Supabase → Edge Functions → Secrets add a secret named exactly AI_API_KEY with that key as the value."
+          + " (Claude: the Anthropic API key saved in Supabase was rejected." + hint
+          + " Fix: at console.anthropic.com → API Keys, create a new key and copy it; in Supabase → Edge Functions → Secrets, edit ANTHROPIC_API_KEY, paste only the key, and save."
+          + " Key in use starts with digest " + digest.slice(0, 10) + ".)",
+        type: "invalid_api_key", key_kind: KEY_INFO.kind, key_fingerprint: digest.slice(0, 10),
+      }, 502);
+    }
+    // Claude out of credit, without model access, busy, down or unreachable: let the free key answer instead
+    if (FREE_KEY) {
+      const status = (error as { status?: number }).status;
+      const freeCanHelp = error instanceof Anthropic.BadRequestError ? /credit|billing|balance/i.test(error.message)
+        : error instanceof Anthropic.APIError ? (status === undefined || status === 403 || status === 404 || status === 429 || status >= 500)
+        : true; // network / timeout
+      if (freeCanHelp) {
+        console.log(JSON.stringify({ event: "ai_agent_v2_claude_to_free", status: status ?? "network", free_key: FREE_KEY_NAME }));
+        return await answerWithFreeAI(history as Row[], system.map((b) => b.text).join("\n\n"), auth, isReport, !!body.debug, allowActions);
+      }
     }
     if (error instanceof Anthropic.PermissionDeniedError) {
       return json({ error: "The Anthropic account doesn't have access to this model or has run out of credit. Check Plans & Billing at console.anthropic.com.", type: "permission_denied" }, 502);
