@@ -85,6 +85,11 @@
   }
   .btn:active { transform: translateY(1px); }
   .foot { margin-top: 28px; color: var(--t2); font-size: 12px; }
+  .check.bad { background: rgba(255,173,31,.10); border-color: #FFAD1F; font-size: 38px; }
+  .in { width: 100%; padding: 14px 14px; border-radius: 12px; border: 1px solid var(--bg5); background: #0b0f1c; color: var(--t1); font-size: 16px; margin-bottom: 12px; }
+  .note { min-height: 20px; font-size: 13px; margin-bottom: 12px; color: var(--t2); }
+  .link { display: block; margin-top: 16px; color: var(--t2); font-size: 14px; }
+  .btn[disabled] { opacity: .6; }
   @media (prefers-reduced-motion: reduce) { .check { animation: none; } }
 </style>
 </head>
@@ -93,7 +98,18 @@
   <div class="brand">SmartStock Pro</div>
   <div class="brand-sub">Business Management System</div>
 
-  <div class="card">
+  <div class="card" id="card-bad" hidden>
+    <div class="check bad" aria-hidden="true">⏳</div>
+    <h1>This link has expired</h1>
+    <p class="msg" id="bad-msg">The confirmation link has expired or was already used. Enter your email and we will send a new one.</p>
+    <label for="em" class="msg" style="display:block;margin:0 0 6px;text-align:left;font-size:13px">Your email</label>
+    <input class="in" id="em" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com">
+    <div class="note" id="note" role="status" aria-live="polite"></div>
+    <button class="btn" id="send">Send a new link</button>
+    <a class="link" href="index.html">Already confirmed? Sign in →</a>
+  </div>
+
+  <div class="card" id="card-ok">
     <div class="check" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="20 6 9 17 4 12"></polyline>
@@ -108,6 +124,52 @@
   </div>
 
   <div class="foot">SmartStock Pro · Rock Stone · Monrovia, Liberia</div>
+
+<script>
+// Supabase sends people here after the email link. When the link fails it adds
+// #error=...&error_code=otp_expired (or ?error=...). Show that honestly and offer a new link.
+(function () {
+  var AUTH = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/auth/v1';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnRxa3B2aGl2cW5ueG9qand1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTQ1NDEsImV4cCI6MjA5Njc5MDU0MX0.TZ_B5NBC3uIyqMYs442umeoi3o78CCwTZW6YgHS9efw';
+  var p = new URLSearchParams((location.hash || '').replace(/^#/, '') + '&' + (location.search || '').replace(/^\?/, ''));
+  var err = p.get('error') || p.get('error_code');
+  if (!err) return;
+
+  document.getElementById('card-ok').hidden = true;
+  document.getElementById('card-bad').hidden = false;
+  document.title = 'Link expired — SmartStock Pro';
+  var code = p.get('error_code') || '';
+  if (code && code !== 'otp_expired') {
+    document.getElementById('bad-msg').textContent = 'This confirmation link did not work. Enter your email and we will send a new one.';
+  }
+  // Keep the error out of the address bar so a refresh doesn't repeat it
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+
+  var btn = document.getElementById('send'), note = document.getElementById('note'), em = document.getElementById('em');
+  var until = 0;
+  function say(t, ok) { note.textContent = t; note.style.color = ok ? 'var(--ok)' : '#FF6B81'; }
+  btn.onclick = function () {
+    var email = (em.value || '').trim().toLowerCase();
+    if (email.indexOf('@') < 1) { say('Enter the email you signed up with.', false); em.focus(); return; }
+    var wait = Math.ceil((until - Date.now()) / 1000);
+    if (wait > 0) { say('Please wait ' + wait + 's before sending again.', false); return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    fetch(AUTH + '/resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: ANON },
+      body: JSON.stringify({ type: 'signup', email: email, options: { emailRedirectTo: location.origin + location.pathname } }),
+    }).then(function (r) {
+      btn.disabled = false; btn.textContent = 'Send a new link';
+      if (r.ok) { until = Date.now() + 60000; say('✓ New link sent to ' + email + '. Check your inbox and Spam.', true); }
+      else if (r.status === 429) { until = Date.now() + 60000; say('Too many emails. Please wait a minute and try again.', false); }
+      else say('We could not send the email right now. Please try again in a few minutes.', false);
+    }, function () {
+      btn.disabled = false; btn.textContent = 'Send a new link';
+      say('No connection. Try again when you are online.', false);
+    });
+  };
+})();
+</script>
 
 </body>
 </html>

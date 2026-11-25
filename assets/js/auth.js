@@ -33,7 +33,15 @@ var Auth = {
         if (msg.toLowerCase().includes('invalid')) {
           Auth._err('login-err', '❌ Incorrect email or password.');
         } else if (msg.toLowerCase().includes('confirm')) {
-          Auth._err('login-err', '📧 Please confirm your email first. Check your inbox.');
+          Auth._err('login-err', '📧 Please confirm your email first. Check your inbox and Spam folder.');
+          var le = Utils.get('login-err');
+          if (le) {
+            var a = document.createElement('button');
+            a.type = 'button'; a.className = 'btn-ghost btn-sm'; a.style.marginTop = '8px'; a.id = 'resend-login-btn';
+            a.textContent = 'Resend confirmation email';
+            a.onclick = function() { Auth.resendConfirm(input.toLowerCase(), 'login-err', 'resend-login-btn'); };
+            le.appendChild(document.createElement('br')); le.appendChild(a);
+          }
         } else {
           Auth._err('login-err', '❌ ' + msg);
         }
@@ -369,7 +377,7 @@ var Auth = {
         } else if (result.status === 429) {
           Auth._err('signup-err', '❌ Too many sign-up attempts. Please wait a few minutes and try again.');
         } else if (result.status >= 500) {
-          Auth._err('signup-err', '❌ Your account could not be created because the confirmation email could not be sent. Please try again later or contact support.');
+          Auth._err('signup-err', '❌ We couldn\'t send the confirmation email. Please try again in a few minutes. If it keeps happening, message us on WhatsApp: +231 88 975 6551.');
         } else {
           Auth._err('signup-err', '❌ ' + msg);
         }
@@ -422,11 +430,57 @@ var Auth = {
       + '<div style="width:100%;max-width:420px;background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.15);border-radius:20px;padding:24px 20px;box-sizing:border-box;text-align:center">'
       + '<div style="font-size:52px;margin-bottom:8px">📧</div>'
       + '<div style="font-size:20px;font-weight:800;color:var(--t1)">Check Your Email</div>'
-      + '<div style="font-size:13px;color:var(--t2);margin:12px 0 20px;line-height:1.7">We sent a confirmation link to<br><strong style="color:var(--g)">' + Utils.esc(email) + '</strong><br><br>Tap the link in that email, then come back here and sign in.<br><br><span style="font-size:12px;color:var(--t3)">Not there after a few minutes? Check your Spam or Promotions folder.</span></div>'
+      + '<div style="font-size:13px;color:var(--t2);margin:12px 0 20px;line-height:1.7">We sent a confirmation link to<br><strong style="color:var(--g)">' + Utils.esc(email) + '</strong><br><br>Open the email from <strong>SmartStock Pro</strong>, tap the link, then come back here and sign in.<br><br><span style="font-size:12px;color:var(--t3)">Not there after a few minutes? Check your Spam or Promotions folder, or send it again.</span></div>'
+      + '<div id="resend-msg" style="font-size:12px;color:var(--t2);min-height:18px;margin-bottom:10px"></div>'
+      + '<button class="btn-ghost btn-full" id="resend-btn" style="margin-bottom:10px">📨 Resend email</button>'
       + '<button class="btn-primary btn-full" onclick="location.reload()">← Back to Sign In</button>'
       + '</div></div>';
     loginScreen.style.display = 'block';
     loginScreen.classList.remove('hidden');
+    var rb = Utils.get('resend-btn');
+    if (rb) rb.onclick = function() { Auth.resendConfirm(email, 'resend-msg', 'resend-btn'); };
+  },
+
+  // Send the sign-up confirmation email again (Supabase /resend), with a 60s wait between sends
+  _resendUntil: 0,
+  resendConfirm: function(email, msgId, btnId) {
+    var msgEl = Utils.get(msgId), btn = Utils.get(btnId);
+    var say = function(t, ok) { if (msgEl) { msgEl.style.display = 'block'; msgEl.classList.remove('hidden'); msgEl.textContent = t; msgEl.style.color = ok ? 'var(--ok)' : 'var(--er)'; } };
+    if (!email || email.indexOf('@') < 0) { say('Enter your email address first.', false); return; }
+    var wait = Math.ceil((Auth._resendUntil - Date.now()) / 1000);
+    if (wait > 0) { say('Please wait ' + wait + 's before sending again.', false); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    fetch(SUPABASE_AUTH_URL + '/resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ type: 'signup', email: email, options: { emailRedirectTo: Auth._confirmRedirect() } }),
+    })
+    .then(function(r) { return r.json().catch(function() { return {}; }).then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
+    .then(function(res) {
+      if (res.ok) {
+        Auth._resendUntil = Date.now() + 60000;
+        say('✓ Sent again to ' + email + '. Check your inbox and Spam.', true);
+        Auth._resendCountdown(btnId);
+        return;
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '📨 Resend email'; }
+      if (res.status === 429) { Auth._resendUntil = Date.now() + 60000; say('Too many emails. Please wait a minute and try again.', false); }
+      else if (res.status >= 500) say('We couldn\'t send the email right now. Try again in a few minutes.', false);
+      else say((res.data && (res.data.msg || res.data.error_description)) || 'Could not resend the email.', false);
+    })
+    .catch(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '📨 Resend email'; }
+      say('No connection. Try again when you are online.', false);
+    });
+  },
+  _resendCountdown: function(btnId) {
+    var tick = function() {
+      var btn = Utils.get(btnId); if (!btn) return;
+      var left = Math.ceil((Auth._resendUntil - Date.now()) / 1000);
+      if (left > 0) { btn.disabled = true; btn.textContent = 'Resend in ' + left + 's'; setTimeout(tick, 1000); }
+      else { btn.disabled = false; btn.textContent = '📨 Resend email'; }
+    };
+    tick();
   },
 
   /* ═══════════════════════════════════════════════════════
@@ -495,7 +549,7 @@ var Auth = {
         } else if (result.status === 429) {
           Auth._err('join-err', '❌ Too many sign-up attempts. Please wait a few minutes and try again.');
         } else if (result.status >= 500) {
-          Auth._err('join-err', '❌ Your account could not be created because the confirmation email could not be sent. Please try again later or contact the business owner.');
+          Auth._err('join-err', '❌ We couldn\'t send the confirmation email. Please try again in a few minutes. If it keeps happening, ask the shop owner to message SmartStock Pro on WhatsApp.');
         } else {
           Auth._err('join-err', '❌ ' + msg);
         }
