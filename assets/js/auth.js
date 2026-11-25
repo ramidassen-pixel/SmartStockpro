@@ -150,11 +150,25 @@ var Auth = {
     }
     Auth._provisionTried = true;
 
-    var su = (Auth._session && Auth._session.user) || {};
+    // The stored session holds only tokens, so ask Supabase who this user is.
+    fetch(SUPABASE_AUTH_URL + '/user', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + Auth._session.access_token },
+    })
+    .then(function(r){ if (!r.ok) throw new Error('user ' + r.status); return r.json(); })
+    .then(function(su){ Auth._provisionFor(su); })
+    .catch(function() {
+      Utils.storage.del('ssp_session');
+      App.showLogin();
+      setTimeout(function(){ Auth._err('login-err', '❌ Unable to connect. Please check your internet connection.'); }, 100);
+    });
+  },
+
+  _provisionFor: function(su) {
+    su = su || {};
     var meta = su.user_metadata || {};
-    var email = su.email || meta.email || '';
+    var email = su.email || '';
     var name  = meta.name || (email ? email.split('@')[0] : 'Owner');
-    var role  = meta.role || 'primary_admin';
+    var role  = (meta.role || 'primary_admin') === 'primary_admin' ? 'primary_admin' : 'sales_employee';
     var bizId = meta.business_id || Utils.uid('BIZ');
     var bizName = meta.business_name || (name + "'s Business");
     var phone = meta.phone || '';
@@ -390,20 +404,8 @@ var Auth = {
         return;
       }
 
-      var authUserId = result.data.id || (result.data.user && result.data.user.id);
-
-      // Create the matching business + user rows in our own tables
-      var biz  = { id: bizId, name: bizName, owner_name: name, owner_email: email, owner_phone: phone, status: 'active' };
-      var user = { id: authUserId, business_id: bizId, name: name, email: email, phone: phone, role: 'primary_admin', status: 'active' };
-
-      fetch(SUPABASE_URL + '/rest/v1/platform_businesses', {
-        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(biz),
-      }).catch(function(){});
-      fetch(SUPABASE_URL + '/rest/v1/platform_users', {
-        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(user),
-      }).catch(function(){});
-
-      DB.saveSettings({ bizName: bizName, currency: '$', bizPhone: phone, bizEmail: email });
+      // The business, owner profile and default settings are created on the
+      // server when the email is confirmed (provision_profile_on_confirm).
       try { if (typeof AuditLog !== 'undefined') AuditLog.record('REGISTER', 'Created business: ' + bizName); } catch(e) {}
 
       // Supabase sends its own confirmation email automatically on signup.
@@ -511,12 +513,16 @@ var Auth = {
     }
 
     Auth._err('join-err', '🔍 Searching for "' + Utils.esc(bizName) + '"...');
-    fetch(SUPABASE_URL + '/rest/v1/platform_businesses?name=ilike.' + encodeURIComponent(bizName) + '&select=id,name,status', {
-      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON },
+    // Not signed in yet, so the businesses table itself is hidden; this function
+    // returns only the id + name of an active business with exactly that name.
+    fetch(SUPABASE_URL + '/rest/v1/rpc/find_business_by_name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON },
+      body: JSON.stringify({ p_name: bizName }),
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r){ if (!r.ok) throw new Error('lookup ' + r.status); return r.json(); })
     .then(function(results) {
-      if (!results || !results.length) {
+      if (!Array.isArray(results) || !results.length) {
         Auth._err('join-err',
           '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
           + '<strong>Is this your first time?</strong><br>'
@@ -561,13 +567,7 @@ var Auth = {
         return;
       }
 
-      var authUserId = result.data.id || (result.data.user && result.data.user.id);
-      var user = { id: authUserId, business_id: biz.id, name: name, email: email, phone: phone, role: 'sales_employee', status: 'pending' };
-
-      fetch(SUPABASE_URL + '/rest/v1/platform_users', {
-        method: 'POST', headers: Platform._hdr(), body: JSON.stringify(user),
-      }).catch(function(){});
-
+      // The pending profile is created on the server when the email is confirmed.
       try { if (typeof AuditLog !== 'undefined') AuditLog.record('JOIN_REQUEST', 'Requested to join: ' + biz.name); } catch(e) {}
       Auth._showCheckEmailScreen(email);
       Toast.show('Request sent — confirm your email, then wait for approval', 'ok');
