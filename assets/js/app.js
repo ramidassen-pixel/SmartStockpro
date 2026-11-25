@@ -60,6 +60,11 @@ var App = {
   },
 
   boot: function() {
+    // A password-reset link that landed on the main page: hand it to the reset page
+    if (/(^|[#&])type=recovery(&|$)/.test(location.hash || '')) {
+      location.replace('reset.html' + location.hash);
+      return;
+    }
     try { DB.load(); } catch(e) { console.error('DB:', e); }
     var attemptingRestore = false;
     try { attemptingRestore = Auth.bootSync(); } catch(e) { console.error('session:', e); }
