@@ -654,61 +654,6 @@ var Auth = {
   },
 
   /* ═══════════════════════════════════════════════════════
-     FORGOT PASSWORD — real Supabase Auth reset email
-  ═══════════════════════════════════════════════════════ */
-  // Turn the /recover response status into an honest message (it used to say "sent" even on failure)
-  _recoverMessage: function(status) {
-    if (status >= 200 && status < 300) return { ok: true, text: 'If an account exists for that email, a reset link has been sent. Check your inbox and spam folder.' };
-    if (status === 429) return { ok: false, text: 'Too many reset requests. Please wait a few minutes and try again.' };
-    if (status >= 500) return { ok: false, text: 'The reset email could not be sent because the app\'s email service is not working right now. Please try again later or contact the business owner.' };
-    return { ok: false, text: 'Could not send the reset link (error ' + status + '). Please check the email address and try again.' };
-  },
-
-  forgotPassword: function() {
-    // Fallback: if the modal system is unavailable for any reason,
-    // use a simple prompt so the feature always works.
-    if (typeof Modal === 'undefined' || !Utils.get('modal-overlay')) {
-      var email = window.prompt('Enter your registered email address:');
-      if (email && email.includes('@')) {
-        fetch(SUPABASE_AUTH_URL + '/recover?redirect_to=' + encodeURIComponent(Auth._confirmRedirect().replace('confirm.html','reset.html')), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
-          body: JSON.stringify({ email: email.trim().toLowerCase() }),
-        }).then(function(r){ alert(Auth._recoverMessage(r.status).text); })
-          .catch(function(){ alert('Network error - try again.'); });
-      }
-      return;
-    }
-    Modal.open({
-      title: 'Reset Password', barColor: 'var(--wa)',
-      sub: 'Enter your registered email address',
-      body: '<div class="fg"><label class="fl">Email Address</label>'
-          + '<input class="fi" id="fp-email" type="email" placeholder="your@email.com"></div>',
-      footer: '<button class="btn-ghost" onclick="Modal.close()">Cancel</button>'
-            + '<button class="btn-primary" style="flex:1" onclick="Auth.sendResetCode()">📧 Send Reset Link</button>',
-    });
-  },
-
-  sendResetCode: function() {
-    var email = Utils.val('fp-email').trim().toLowerCase();
-    if (!email || !email.includes('@')) { Toast.show('Enter a valid email', 'err'); return; }
-
-    fetch(SUPABASE_AUTH_URL + '/recover?redirect_to=' + encodeURIComponent(Auth._confirmRedirect().replace('confirm.html','reset.html')), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
-      body: JSON.stringify({ email: email }),
-    })
-    .then(function(r){
-      var m = Auth._recoverMessage(r.status);
-      if (m.ok) Modal.close();
-      Toast.show(m.text, m.ok ? 'ok' : 'err');
-    })
-    .catch(function() {
-      Toast.show('Network error — try again', 'err');
-    });
-  },
-
-  /* ═══════════════════════════════════════════════════════
      LOGOUT — ends the real Supabase session
   ═══════════════════════════════════════════════════════ */
   logout: function() {

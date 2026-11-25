@@ -116,31 +116,36 @@
   var SUPABASE_AUTH_URL = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/auth/v1';
   var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnRxa3B2aGl2cW5ueG9qand1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTQ1NDEsImV4cCI6MjA5Njc5MDU0MX0.TZ_B5NBC3uIyqMYs442umeoi3o78CCwTZW6YgHS9efw';
 
-  // Parse tokens Supabase puts in the URL hash: #access_token=...&type=recovery
-  var params = {};
-  location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
-    var p = kv.split('=');
-    if (p[0]) params[p[0]] = decodeURIComponent(p[1] || '');
-  });
+  // Supabase puts the result in the URL hash (#access_token=...&type=recovery,
+  // or #error=...&error_code=otp_expired); some errors come as ?error=... instead.
+  var p = new URLSearchParams((location.hash || '').replace(/^#/, '') + '&' + (location.search || '').replace(/^\?/, ''));
+  var params = { access_token: p.get('access_token'), type: p.get('type'),
+                 error: p.get('error') || p.get('error_code'), error_code: p.get('error_code') };
 
-  window._recovery = params;
+  // Keep the one-time reset token out of the address bar and browser history
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
 
   var msg = document.getElementById('msg');
   var formArea = document.getElementById('form-area');
   var subText = document.getElementById('sub-text');
+  var NEW_LINK = ' <a href="forgot.html" style="color:var(--g);font-weight:600">Send me a new link →</a>';
 
-  if (params.error_description) {
+  function linkProblem(text) {
     formArea.style.display = 'none';
     subText.textContent = '';
     msg.className = 'msg err';
-    msg.textContent = decodeURIComponent(params.error_description).replace(/\+/g, ' ')
-      + ' — request a new reset link from the sign-in screen.';
-  } else if (!params.access_token || params.type !== 'recovery') {
-    formArea.style.display = 'none';
-    subText.textContent = '';
-    msg.className = 'msg err';
-    msg.textContent = 'This page must be opened from the reset link in your email. Request a new link from the sign-in screen.';
+    msg.innerHTML = text + NEW_LINK;
   }
+
+  if (params.error) {
+    linkProblem(params.error_code === 'otp_expired'
+      ? 'This reset link has expired or was already used.'
+      : 'This reset link did not work.');
+  } else if (!params.access_token || params.type !== 'recovery') {
+    linkProblem('This page must be opened from the reset link in your email.');
+  }
+
+  var saving = false;
 
   window.toggle = function (id) {
     var el = document.getElementById(id);
@@ -148,6 +153,7 @@
   };
 
   window.savePassword = function () {
+    if (saving) return;
     var pw1 = document.getElementById('pw1').value;
     var pw2 = document.getElementById('pw2').value;
     msg.className = 'msg'; msg.textContent = '';
@@ -164,10 +170,12 @@
     }
 
     var btn = document.getElementById('save-btn');
+    saving = true;
     btn.disabled = true; btn.textContent = 'Saving…';
 
     pwnedPw(pw1).then(function (pwned) {
       if (pwned) {
+        saving = false;
         btn.disabled = false; btn.textContent = 'Save New Password';
         msg.className = 'msg err';
         msg.textContent = 'This password has appeared in a known data breach, so it isn\'t safe to use. Please choose a different one.';
@@ -208,22 +216,38 @@
       headers: {
         'Content-Type': 'application/json',
         'apikey': SUPABASE_ANON,
-        'Authorization': 'Bearer ' + window._recovery.access_token,
+        'Authorization': 'Bearer ' + params.access_token,
       },
       body: JSON.stringify({ password: pw1 }),
     })
-    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
     .then(function (res) {
+      saving = false;
       btn.disabled = false; btn.textContent = 'Save New Password';
       if (!res.ok) {
-        msg.className = 'msg err';
-        msg.textContent = (res.data && (res.data.msg || res.data.error_description)) || 'Could not update password. The link may have expired — request a new one.';
+        var code = (res.data && (res.data.error_code || res.data.code)) || '';
+        if (res.status === 401 || res.status === 403 || /expired|invalid|jwt/i.test(code + ' ' + (res.data.msg || ''))) {
+          linkProblem('This reset link has expired. Reset links work once and for a limited time.');
+        } else if (code === 'same_password') {
+          msg.className = 'msg err';
+          msg.textContent = 'That is your current password. Choose a different one.';
+        } else {
+          msg.className = 'msg err';
+          msg.textContent = (res.data && (res.data.msg || res.data.error_description)) || 'Could not update the password. Please try again.';
+        }
         return;
       }
+      // Sign out every device, including whoever may have had the old password
+      fetch(SUPABASE_AUTH_URL + '/logout?scope=global', {
+        method: 'POST', keepalive: true,
+        headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + params.access_token },
+      }).catch(function () {});
+      params.access_token = null;
       formArea.style.display = 'none';
-      subText.innerHTML = '✅ <strong style="color:var(--ok)">Password updated!</strong><br>You can now sign in with your new password.';
+      subText.innerHTML = '✅ <strong style="color:var(--ok)">Password updated!</strong><br>For your safety you have been signed out on all devices. Sign in again with your new password.';
     })
     .catch(function () {
+      saving = false;
       btn.disabled = false; btn.textContent = 'Save New Password';
       msg.className = 'msg err';
       msg.textContent = 'Network error — check your connection and try again.';

@@ -1,4 +1,4 @@
-﻿const CACHE = 'ssp-v6.37';
+﻿const CACHE = 'ssp-v6.38';
 const ASSETS = [
   './',
   'index.html',
