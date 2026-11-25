@@ -11,12 +11,15 @@ var Auth = {
      LOGIN — real Supabase Auth, works from any device
   ═══════════════════════════════════════════════════════ */
   login: function() {
+    if (Auth._loggingIn) return;   // Enter + click, or a double click, must not sign in twice
     var input = Utils.val('l-user').trim();
     var pw    = Utils.val('l-pass');
     if (!input) { Auth._err('login-err', '⚠️ Enter your email'); return; }
     if (!pw)    { Auth._err('login-err', '⚠️ Enter your password'); return; }
     if (!input.includes('@')) { Auth._err('login-err', '⚠️ Use the email address you registered with'); return; }
 
+    Auth._loggingIn = true;
+    Auth._provisionTried = false;  // each sign-in gets its own setup attempt
     var btn = Utils.get('login-submit-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
 
@@ -27,8 +30,8 @@ var Auth = {
     })
     .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
     .then(function(result) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
       if (!result.ok) {
+        Auth._loginDone();
         var msg = (result.data && result.data.error_description) || (result.data && result.data.msg) || 'Login failed';
         if (msg.toLowerCase().includes('invalid')) {
           Auth._err('login-err', '❌ Incorrect email or password.');
@@ -43,7 +46,7 @@ var Auth = {
             le.appendChild(document.createElement('br')); le.appendChild(a);
           }
         } else {
-          Auth._err('login-err', '❌ ' + msg);
+          Auth._err('login-err', '❌ ' + Utils.esc(msg));
         }
         return;
       }
@@ -53,85 +56,124 @@ var Auth = {
         expires_at:    Date.now() + (result.data.expires_in || 3600) * 1000,
       };
       Utils.storage.set('ssp_session', Auth._session);
+      // The button stays locked until the app opens or we are back on the sign-in screen
       Auth._loadProfileAndEnter();
     })
     .catch(function(err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
-      Auth._err('login-err', '❌ Network error: ' + err.message);
+      Auth._loginDone();
+      Auth._err('login-err', '❌ Network error: ' + Utils.esc(err.message));
     });
+  },
+
+  _loggingIn: false,
+  _loginDone: function() {
+    Auth._loggingIn = false;
+    var btn = Utils.get('login-submit-btn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign In →'; }
+  },
+
+  // Return to the sign-in screen, optionally with a message. Unless keepSession
+  // is set, the saved sign-in is forgotten so the next app start asks again.
+  _backToLogin: function(msg, keepSession) {
+    if (!keepSession) {
+      Utils.storage.del('ssp_session');
+      Utils.storage.del('ssp_profile');
+      Auth._session = null;
+    }
+    Auth._loginDone();
+    App.showLogin();
+    if (msg) setTimeout(function(){ Auth._err('login-err', msg); }, 100);
+  },
+
+  // No connection (or the server is down): open the app from what this device
+  // already has, if this user has opened it here before. Otherwise say so and
+  // keep the saved sign-in so it works once the connection is back.
+  _offlineEnter: function() {
+    var row = Utils.storage.get('ssp_profile');
+    if (row && row.id && row.business_id && row.status === 'active' && Auth._session) {
+      Auth._enterApp(row);
+      try { Toast.show('📴 Offline — showing data saved on this device. Changes will sync when you are back online.', 'warn'); } catch(e) {}
+      return;
+    }
+    Auth._backToLogin('❌ Unable to connect. Please check your internet connection and try again.', true);
   },
 
   // After a successful Supabase Auth login (or session restore), pull this
   // user's own platform_users + platform_businesses rows and assemble the
   // SAME-SHAPED currentUser object every other module already expects
   // (id, name, email, role, status, businessIds, currentBusinessId, ...).
-  _loadProfileAndEnter: function() {
+  _loadProfileAndEnter: function(retried) {
     var hdr = {
       'Content-Type':  'application/json',
       'apikey':         SUPABASE_ANON,
       'Authorization': 'Bearer ' + Auth._session.access_token,
     };
     fetch(SUPABASE_URL + '/rest/v1/platform_users?select=*', { headers: hdr })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        var row = (Array.isArray(rows) && rows[0]) || null;
-        if (!row) {
-          // SELF-HEALING: the profile is missing (e.g. a signup that was
-          // interrupted). Create it automatically and continue — a verified
-          // user must never be locked out by missing records.
-          Auth._provisionProfile();
-          return;
+      .then(function(r) {
+        if (r.status === 401) {
+          // Token expired or revoked: renew once, then give up and ask to sign in
+          if (retried) { Auth._backToLogin('🔒 Your session has expired. Please sign in again.'); return; }
+          var old = Auth._session.access_token;
+          Auth._session.expires_at = 0;
+          return Auth.refreshSession().then(function(s) {
+            if (s && s.access_token && s.access_token !== old) Auth._loadProfileAndEnter(true);
+            else if (navigator.onLine === false) Auth._offlineEnter();
+            else Auth._backToLogin('🔒 Your session has expired. Please sign in again.');
+          });
         }
-        if (row.status === 'pending') {
-          Auth._showPendingApproval({ businessIds: [row.business_id] });
-          return;
-        }
-        if (row.status === 'rejected') {
-          Utils.storage.del('ssp_session');
-          App.showLogin();
-          setTimeout(function(){ Auth._err('login-err', '❌ Your registration was rejected. Contact the business owner.'); }, 100);
-          return;
-        }
-        if (row.status === 'suspended' || row.status === 'disabled') {
-          Utils.storage.del('ssp_session');
-          App.showLogin();
-          setTimeout(function(){ Auth._err('login-err', '🚫 This account has been ' + row.status + '. Contact your administrator.'); }, 100);
-          return;
-        }
+        if (!r.ok) { Auth._offlineEnter(); return; }   // server trouble, not a missing profile
+        return r.json().then(function(rows) {
+          if (!Array.isArray(rows)) { Auth._offlineEnter(); return; }
+          var row = rows[0] || null;
+          if (!row) {
+            // SELF-HEALING: the profile is missing (e.g. a signup that was
+            // interrupted). Create it automatically and continue — a verified
+            // user must never be locked out by missing records.
+            Auth._provisionProfile();
+            return;
+          }
+          Utils.storage.del('ssp_profile');   // only an active, entered profile is kept for offline use
+          if (row.status === 'pending') {
+            Auth._showPendingApproval({ businessIds: [row.business_id] });
+            return;
+          }
+          if (row.status === 'rejected') {
+            Auth._backToLogin('❌ Your registration was rejected. Contact the business owner.');
+            return;
+          }
+          if (row.status === 'suspended' || row.status === 'disabled') {
+            Auth._backToLogin('🚫 This account has been ' + Utils.esc(row.status) + '. Contact your administrator.');
+            return;
+          }
 
-        // ── ACCOUNT DELETION RECOVERY GATE ────────────────────────────────
-        // If this account is inside its 30-day deletion window, offer
-        // Restore / Continue Deletion instead of entering the app.
-        if (row.status === 'pending_deletion') {
-          Auth._showDeletionRecovery(row, null);
-          return;
-        }
+          // ── ACCOUNT DELETION RECOVERY GATE ──────────────────────────────
+          // If this account is inside its 30-day deletion window, offer
+          // Restore / Continue Deletion instead of entering the app.
+          if (row.status === 'pending_deletion') {
+            Auth._showDeletionRecovery(row, null);
+            return;
+          }
 
-        // Also check whether the whole BUSINESS is scheduled for deletion
-        fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(row.business_id) + '&select=id,status,deletion_requested_at', { headers: hdr })
-          .then(function(r){ return r.json(); })
-          .then(function(bz) {
-            var biz = (Array.isArray(bz) && bz[0]) || null;
-            if (biz && biz.status === 'pending_deletion') {
-              if ((row.role || '') === 'primary_admin') {
-                Auth._showDeletionRecovery(row, biz);
-              } else {
-                Utils.storage.del('ssp_session');
-                App.showLogin();
-                setTimeout(function(){ Auth._err('login-err', '🗑 This business is scheduled for deletion by its owner.'); }, 100);
+          // Also check whether the whole BUSINESS is scheduled for deletion
+          fetch(SUPABASE_URL + '/rest/v1/platform_businesses?id=eq.' + encodeURIComponent(row.business_id) + '&select=id,status,deletion_requested_at', { headers: hdr })
+            .then(function(r){ return r.json(); })
+            .then(function(bz) {
+              var biz = (Array.isArray(bz) && bz[0]) || null;
+              if (biz && biz.status === 'pending_deletion') {
+                if ((row.role || '') === 'primary_admin') {
+                  Auth._showDeletionRecovery(row, biz);
+                } else {
+                  Auth._backToLogin('🗑 This business is scheduled for deletion by its owner.');
+                }
+                return;
               }
-              return;
-            }
-            Auth._enterApp(row);
-          })
-          .catch(function(){ Auth._enterApp(row); });
+              Auth._enterApp(row);
+            })
+            .catch(function(){ Auth._enterApp(row); });
+        });
       })
-      .catch(function(err) {
-        if (Utils.get('login-screen') && Utils.get('login-screen').style.display !== 'none') {
-          Auth._err('login-err', '❌ Unable to connect. Please check your internet connection.');
-        } else {
-          App.showLogin();
-        }
+      .catch(function() {
+        Auth._offlineEnter();
       });
   },
 
@@ -143,9 +185,7 @@ var Auth = {
 
   _provisionProfile: function() {
     if (Auth._provisionTried) {
-      Utils.storage.del('ssp_session');
-      App.showLogin();
-      setTimeout(function(){ Auth._err('login-err', '❌ We could not finish setting up your account. Please check your connection and try again.'); }, 100);
+      Auth._backToLogin('❌ We could not finish setting up your account. Please check your connection and try again.');
       return;
     }
     Auth._provisionTried = true;
@@ -157,9 +197,7 @@ var Auth = {
     .then(function(r){ if (!r.ok) throw new Error('user ' + r.status); return r.json(); })
     .then(function(su){ Auth._provisionFor(su); })
     .catch(function() {
-      Utils.storage.del('ssp_session');
-      App.showLogin();
-      setTimeout(function(){ Auth._err('login-err', '❌ Unable to connect. Please check your internet connection.'); }, 100);
+      Auth._backToLogin('❌ Unable to connect. Please check your internet connection.');
     });
   },
 
@@ -229,14 +267,15 @@ var Auth = {
       Auth._loadProfileAndEnter();
     })
     .catch(function() {
-      Utils.storage.del('ssp_session');
-      App.showLogin();
-      setTimeout(function(){ Auth._err('login-err', '❌ Unable to connect. Please check your internet connection.'); }, 100);
+      Auth._backToLogin('❌ Unable to connect. Please check your internet connection.');
     });
   },
 
   // ── Enter the app once all status gates have passed ──────────────────────
   _enterApp: function(row) {
+    Auth._loggingIn = false;
+    // Kept so the app can still open on this device without a connection
+    if (row && row.status === 'active') Utils.storage.set('ssp_profile', row);
     var user = {
           id:                row.id,
           username:          row.email,
@@ -300,8 +339,7 @@ var Auth = {
   _continueDeletion: function() {
     Auth._pendingRestore = null;
     try { Modal.close(); } catch(e) {}
-    Utils.storage.del('ssp_session');
-    App.showLogin();
+    Auth._backToLogin();
   },
 
   _restoreAccount: function() {
@@ -580,7 +618,8 @@ var Auth = {
   _showPendingApproval: function(user) {
     var loginScreen = Utils.get('login-screen');
     if (!loginScreen) return;
-    loginScreen.innerHTML = '<div class="login-card">'
+    loginScreen.innerHTML = '<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">'
+      + '<div class="login-card" style="width:100%;max-width:420px">'
       + '<div style="text-align:center;padding:20px 0">'
       + '<div style="font-size:64px;margin-bottom:14px">⏳</div>'
       + '<div class="login-title" style="font-size:20px">Awaiting Approval</div>'
@@ -589,8 +628,29 @@ var Auth = {
       + 'Your registration request has been submitted to the Primary Admin.<br><br>'
       + 'You will be able to sign in once your account is approved.'
       + '</div>'
-      + '<button class="btn-ghost btn-full" onclick="location.reload()">← Back to Sign In</button>'
-      + '</div></div>';
+      + '<button class="btn-primary btn-full" style="margin-bottom:10px" onclick="location.reload()">🔄 Check again</button>'
+      + '<button class="btn-ghost btn-full" onclick="Auth._leavePending()">← Sign in with a different account</button>'
+      + '</div></div></div>';
+    // On app start the sign-in screen is still hidden behind the loader
+    Auth._loginDone();
+    App._hide('loader');
+    App._hide('app-shell');
+    App._show('login-screen', 'flex');
+  },
+
+  // Leave the "Awaiting Approval" screen: end this device's session so the
+  // next start shows the normal sign-in form instead of this screen again.
+  _leavePending: function() {
+    var token = Auth._session && Auth._session.access_token;
+    if (token) {
+      fetch(SUPABASE_AUTH_URL + '/logout?scope=local', {
+        method: 'POST', keepalive: true, headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
+      }).catch(function(){});
+    }
+    Auth._session = null;
+    Utils.storage.del('ssp_session');
+    Utils.storage.del('ssp_profile');
+    location.reload();
   },
 
   /* ═══════════════════════════════════════════════════════
@@ -657,14 +717,17 @@ var Auth = {
     if (typeof SuperAdmin !== 'undefined') { SuperAdmin._isAdmin = null; SuperAdmin._data = null; }
     var token = Auth._session && Auth._session.access_token;
     if (token) {
-      fetch(SUPABASE_AUTH_URL + '/logout', {
-        method: 'POST',
+      // scope=local: sign out THIS device only (Supabase's default signs out every
+      // device). keepalive lets the request finish even though we reload next.
+      fetch(SUPABASE_AUTH_URL + '/logout?scope=local', {
+        method: 'POST', keepalive: true,
         headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
       }).catch(function(){});
     }
     Auth.currentUser = null;
     Auth._session = null;
     Utils.storage.del('ssp_session');
+    Utils.storage.del('ssp_profile');
     location.reload();
   },
 
@@ -877,9 +940,14 @@ var Auth = {
         headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
         body: JSON.stringify({ refresh_token: sess.refresh_token }),
       })
-      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ return { ok: r.ok, status: r.status, data: d }; }); })
       .then(function(result) {
-        if (!result.ok) { Utils.storage.del('ssp_session'); App.showLogin(); return; }
+        // Server trouble is not a rejected sign-in: keep it and open offline
+        if (result.status >= 500) { Auth._offlineEnter(); return; }
+        if (!result.ok || !result.data.access_token) {
+          Auth._backToLogin('🔒 Your session has expired. Please sign in again.');
+          return;
+        }
         Auth._session = {
           access_token:  result.data.access_token,
           refresh_token: result.data.refresh_token,
@@ -888,7 +956,8 @@ var Auth = {
         Utils.storage.set('ssp_session', Auth._session);
         Auth._loadProfileAndEnter();
       })
-      .catch(function() { Utils.storage.del('ssp_session'); App.showLogin(); });
+      // No connection: keep the saved sign-in (renewed once back online)
+      .catch(function() { Auth._offlineEnter(); });
       return true; // tell App we're attempting a restore (async)
     }
 
