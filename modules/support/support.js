@@ -115,29 +115,17 @@ var Support = {
       'apikey':         SUPABASE_ANON,
       'Authorization': 'Bearer ' + SUPABASE_ANON,
     };
+    // Save the ticket, then ask the server to email the platform owner about it
     fetch(SUPABASE_URL + '/rest/v1/support_tickets', {
       method:  'POST',
       headers: hdr,
       body:    JSON.stringify(ticket),
     }).then(function(r){
       console.log('Ticket synced:', r.status);
+      if (r.ok) Auth._sendEmail({ type: 'support', ticketId: ticketId }, null);
     }).catch(function(e){
       console.log('Ticket sync error:', e.message);
     });
-
-    // Also send notification email via existing edge function
-    try {
-      fetch(SUPABASE_URL + '/functions/v1/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to:      'ramidassen@gmail.com',
-          subject: '[SmartStock Support] ' + ticketNum + ': ' + subj,
-          type:    'support',
-          html:    '<h2>New Support Ticket</h2><p><b>Ticket:</b> '+ticketNum+'</p><p><b>From:</b> '+(user.name||'')+(user.email?' ('+user.email+')':'')+'</p><p><b>Business:</b> '+(biz.bizName||'')+'</p><p><b>Category:</b> '+cat+'</p><p><b>Priority:</b> '+pri+'</p><p><b>Subject:</b> '+subj+'</p><hr><p>'+msg+'</p>',
-        }),
-      }).catch(function(){});
-    } catch(e) {}
 
     Toast.show('Ticket ' + ticketNum + ' submitted ✓', 'ok');
     Support.activeTab = 'my';

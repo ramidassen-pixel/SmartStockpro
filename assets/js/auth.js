@@ -690,7 +690,7 @@ var Auth = {
       var u = Array.isArray(rows) && rows[0];
       if (!u) { Toast.show('Could not approve — check connection', 'err'); return; }
       try { if (typeof AuditLog !== 'undefined') AuditLog.record('USER_APPROVED', 'Approved: ' + u.name + ' as ' + (role||u.role)); } catch(e) {}
-      Auth._sendEmail({ to: u.email, type: 'approved', name: u.name, bizName: DB.getSettings().bizName || 'SmartStock Pro' }, null);
+      Auth._sendEmail({ type: 'approved', userId: u.id }, null);
       Toast.show(u.name + ' approved ✓', 'ok');
     })
     .catch(function() { Toast.show('Could not approve — check connection', 'err'); });
@@ -805,14 +805,17 @@ var Auth = {
   },
 
   /* ═══════════════════════════════════════════════════════
-     SEND EMAIL via Supabase Edge Function (used for the
-     custom "approved" notification only — signup/reset
-     emails are now sent natively by Supabase Auth itself)
+     SEND EMAIL via the send-email Edge Function (Brevo API).
+     Only { type:'approved', userId } and { type:'support', ticketId };
+     the server picks the recipient. Signup/reset emails are sent
+     by Supabase Auth itself.
   ═══════════════════════════════════════════════════════ */
   _sendEmail: function(payload, fallbackCode) {
+    var token = Auth._session && Auth._session.access_token;
+    if (!token) return Promise.resolve({ sent: false, code: fallbackCode });
     return fetch(SUPABASE_EMAIL_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + token },
       body: JSON.stringify(payload),
     })
     .then(function(res) { return res.json(); })
