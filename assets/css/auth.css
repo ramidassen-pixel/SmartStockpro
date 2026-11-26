@@ -1,0 +1,237 @@
+/* ===== auth.css =====
+   One look for every screen before the app opens: sign in, new business,
+   join a team, check your email, awaiting approval (index.html) and the
+   standalone forgot.html, reset.html and confirm.html.
+
+   The one decorative idea is the tiled floor behind the form: grout lines with
+   a few gold tiles laid in the top corner, like stock on a shelf. It is pure
+   CSS, so it costs nothing on a slow connection and works offline. Everything
+   else stays quiet: flat colours, left-aligned text, no glow, no gradients.
+
+   Every rule is scoped to .auth so it never touches the app itself. */
+
+.auth {
+  --au-night:  #070A12;   /* page, same as the app background */
+  --au-panel:  #0F1322;   /* form panel */
+  --au-field:  #0A0E18;   /* inputs, tab track */
+  --au-line:   #232A45;   /* borders */
+  --au-grout:  rgba(255,255,255,.045);
+  --au-gold:   #D4A843;   /* brand gold, same as the app */
+  --au-gold-h: #E2B954;   /* gold on hover */
+  --au-on-gold:#14100A;
+  --au-ink:    #F0F3FF;
+  --au-ink2:   #C9CEE0;   /* labels */
+  --au-mute:   #9AA1B9;   /* hints, secondary text */
+  --au-ok:     #3DD68C;
+  --au-err:    #FF7A8A;
+  --au-wait:   #FFB547;
+  --au-tile:   56px;      /* floor tile size */
+
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  color: var(--au-ink);
+  background-color: var(--au-night);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+.auth *, .auth *::before, .auth *::after { box-sizing: border-box; }
+.auth [hidden] { display: none !important; }
+
+/* Standalone pages (forgot / reset / confirm) put .auth on <body> */
+html:has(body.auth) { height: 100%; background: #070A12; }
+body.auth { margin: 0; min-height: 100%; }
+
+/* ── The tiled floor ──────────────────────────────────────────── */
+.au-floor {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--au-grout) 1px, transparent 1px),
+    linear-gradient(90deg, var(--au-grout) 1px, transparent 1px);
+  background-size: var(--au-tile) var(--au-tile);
+  -webkit-mask-image: radial-gradient(130% 90% at 0% 0%, #000 0%, rgba(0,0,0,.35) 45%, transparent 80%);
+          mask-image: radial-gradient(130% 90% at 0% 0%, #000 0%, rgba(0,0,0,.35) 45%, transparent 80%);
+}
+/* Laid tiles: each span sits exactly inside one grid cell (column --c, row --r) */
+.au-floor span {
+  position: absolute;
+  left: calc(var(--c) * var(--au-tile) + 1px);
+  top:  calc(var(--r) * var(--au-tile) + 1px);
+  width:  calc(var(--au-tile) - 1px);
+  height: calc(var(--au-tile) - 1px);
+  background: var(--au-gold);
+  opacity: var(--o, .12);
+}
+
+/* ── Page frame ───────────────────────────────────────────────── */
+.au-scroll {               /* index.html: the sign-in screen is a fixed overlay */
+  position: absolute; inset: 0; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.au-wrap {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 420px;
+  min-height: 100vh; min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(32px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; justify-content: center;
+}
+
+.au-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.au-brand img { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; display: block; }
+.au-name { font-size: 26px; font-weight: 800; letter-spacing: -.025em; line-height: 1.1; }
+.au-tagline { margin: 0 0 24px; font-size: 15px; color: var(--au-mute); max-width: 32ch; }
+
+.au-panel {
+  background: var(--au-panel);
+  border: 1px solid var(--au-line);
+  border-radius: 14px;
+  padding: 24px 20px;
+}
+@media (min-width: 480px) { .au-panel { padding: 28px 28px 26px; } }
+
+.au-foot { margin: 20px 0 0; font-size: 12px; color: var(--au-mute); }
+
+/* ── Headings and text inside the panel ───────────────────────── */
+.au-h1 { margin: 0 0 6px; font-size: 22px; font-weight: 750; letter-spacing: -.015em; line-height: 1.25; }
+.au-lead { margin: 0 0 20px; font-size: 15px; color: var(--au-mute); line-height: 1.6; }
+.au-lead strong { color: var(--au-ink); font-weight: 600; }
+.au-hint { margin: 6px 0 0; font-size: 13px; color: var(--au-mute); line-height: 1.45; }
+
+/* A note that explains a choice (owner / joining a team) */
+.au-note {
+  margin: 0 0 18px; padding: 10px 12px;
+  border-left: 3px solid var(--au-gold);
+  background: rgba(212,168,67,.07);
+  border-radius: 0 8px 8px 0;
+  font-size: 14px; color: var(--au-ink2); line-height: 1.5;
+}
+
+/* Status screens: a single coloured tile, echoing the floor */
+.au-status {
+  width: 56px; height: 56px; margin-bottom: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: rgba(212,168,67,.12); color: var(--au-gold);
+}
+.au-status svg { width: 28px; height: 28px; }
+.au-status.ok   { background: rgba(61,214,140,.12);  color: var(--au-ok); }
+.au-status.wait { background: rgba(255,181,71,.12);  color: var(--au-wait); }
+
+/* ── Tabs: Sign in / New business / Join a team ───────────────── */
+.au-tabs {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  margin: 0 0 22px; padding: 4px;
+  background: var(--au-field);
+  border: 1px solid var(--au-line);
+  border-radius: 10px;
+}
+.au-tab {
+  min-height: 40px; padding: 8px 4px;
+  border: 0; border-radius: 7px;
+  background: transparent; color: var(--au-mute);
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2;
+  cursor: pointer;
+}
+.au-tab:hover { color: var(--au-ink); }
+.au-tab[aria-selected="true"] { background: var(--au-gold); color: var(--au-on-gold); }
+
+/* ── Form controls (same class names the app uses, restyled here) ── */
+.auth .fg { margin: 0 0 16px; }
+.auth .fl {
+  display: block; margin: 0 0 6px;
+  font-size: 13px; font-weight: 600; color: var(--au-ink2);
+  text-transform: none; letter-spacing: 0;
+}
+.auth .fl-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.auth .fl-row .fl { margin: 0; }
+.auth .fi {
+  display: block; width: 100%;
+  padding: 13px 14px;
+  font: inherit; font-size: 16px;   /* 16px stops iPhones zooming into the field */
+  color: var(--au-ink);
+  background: var(--au-field);
+  border: 1px solid var(--au-line);
+  border-radius: 10px;
+  -webkit-appearance: none; appearance: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.auth .fi::placeholder { color: #5D6683; }
+.auth .fi:focus { outline: none; border-color: var(--au-gold); box-shadow: 0 0 0 3px rgba(212,168,67,.2); background: var(--au-field); }
+
+.auth .pw-wrap { position: relative; }
+.auth .pw-wrap .fi { padding-right: 52px; }
+.auth .pw-eye {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--au-mute); cursor: pointer; padding: 0; font-size: 0;
+}
+.auth .pw-eye svg { width: 20px; height: 20px; }
+.auth .pw-eye:hover, .auth .pw-eye[aria-pressed="true"] { color: var(--au-gold); }
+
+.auth .au-link {
+  color: var(--au-gold); font-size: 14px; font-weight: 600;
+  text-decoration: none; background: none; border: 0; padding: 0; font-family: inherit; cursor: pointer;
+}
+.auth .au-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.auth .fl-row .au-link { font-size: 13px; padding: 8px 0; margin: -8px 0; }   /* bigger tap area */
+
+.auth .btn-primary, .auth .btn-ghost {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; min-height: 48px; padding: 12px 18px;
+  border-radius: 10px;
+  font: inherit; font-size: 16px; font-weight: 700; letter-spacing: 0;
+  text-decoration: none; cursor: pointer;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+.auth .btn-primary {
+  margin-top: 6px;
+  background: var(--au-gold); color: var(--au-on-gold);
+  border: 0; box-shadow: none;
+}
+.auth .btn-primary::after { content: none; }
+.auth .btn-primary:hover { background: var(--au-gold-h); }
+.auth .btn-primary:active { transform: translateY(1px); box-shadow: none; }
+.auth .btn-primary:disabled { opacity: .55; cursor: progress; transform: none; }
+.auth .btn-ghost {
+  background: transparent; color: var(--au-ink2);
+  border: 1px solid var(--au-line); font-weight: 600;
+}
+.auth .btn-ghost:hover { border-color: var(--au-gold); color: var(--au-gold); }
+.auth .btn-ghost:disabled { opacity: .55; cursor: progress; }
+.auth .btn-sm { width: auto; min-height: 40px; padding: 8px 14px; font-size: 14px; }
+.auth .au-stack > * + * { margin-top: 10px; }
+.auth .au-alt { margin: 16px 0 0; font-size: 14px; color: var(--au-mute); text-align: center; }
+
+/* Keyboard focus, clearly visible on every control */
+.auth :is(a, button, .fi):focus-visible { outline: 2px solid var(--au-gold); outline-offset: 2px; }
+.auth .fi:focus-visible { outline: none; }
+
+/* ── Messages ─────────────────────────────────────────────────── */
+.auth .form-err, .auth .msg.err {
+  display: block; margin: 0 0 16px; padding: 11px 13px;
+  font-size: 14px; font-weight: 500; line-height: 1.5;
+  color: var(--au-err);
+  background: rgba(255,122,138,.08);
+  border: 1px solid rgba(255,122,138,.3);
+  border-radius: 8px;
+}
+.auth .form-err a, .auth .msg a { color: var(--au-gold); font-weight: 600; }
+.auth .form-err .btn-ghost { width: auto; min-height: 40px; font-size: 14px; }
+.auth .msg { display: none; }
+.auth .msg.ok {
+  display: block; margin: 0 0 16px; padding: 11px 13px;
+  font-size: 14px; line-height: 1.5;
+  color: var(--au-ok);
+  background: rgba(61,214,140,.08);
+  border: 1px solid rgba(61,214,140,.3);
+  border-radius: 8px;
+}
+.auth .au-live { min-height: 20px; margin: 0 0 12px; font-size: 14px; color: var(--au-mute); }
+.auth .au-live:empty { min-height: 0; margin: 0; }
+.auth .au-live.ok  { color: var(--au-ok); }
+.auth .au-live.err { color: var(--au-err); }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth *, .auth *::before, .auth *::after { transition: none !important; }
+}

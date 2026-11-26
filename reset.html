@@ -4,113 +4,52 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#070A12">
-<title>Reset Password — SmartStock Pro</title>
-<style>
-  :root {
-    --bg:  #070A12;
-    --bg3: #111525;
-    --bg5: #1D2238;
-    --g:   #D4A843;
-    --t1:  #EDEFF7;
-    --t2:  #9AA1B9;
-    --ok:  #3DD68C;
-    --err: #FF6B6B;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    height: 100%;
-    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--t1);
-    -webkit-font-smoothing: antialiased;
-  }
-  body {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    text-align: center;
-    background: radial-gradient(120% 80% at 50% 0%, #0E1322 0%, var(--bg) 60%);
-  }
-  .brand { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-  .brand-sub {
-    color: var(--g); font-size: 11px; font-weight: 600;
-    letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 40px;
-  }
-  .card {
-    width: 100%; max-width: 420px; text-align: left;
-    background: linear-gradient(180deg, var(--bg3), rgba(17,21,37,.6));
-    border: 1px solid var(--bg5); border-radius: 18px;
-    padding: 32px 26px 28px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.45);
-  }
-  h1 { font-size: 21px; text-align: center; margin-bottom: 6px; }
-  p.sub { color: var(--t2); font-size: 14px; text-align: center; margin-bottom: 24px; line-height: 1.6; }
-  label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em;
-          text-transform: uppercase; color: var(--t2); margin: 16px 0 6px; }
-  .pw-wrap { position: relative; }
-  input {
-    width: 100%; padding: 14px 46px 14px 14px;
-    background: var(--bg); color: var(--t1);
-    border: 1px solid var(--bg5); border-radius: 10px;
-    font-size: 16px; outline: none;
-  }
-  input:focus { border-color: var(--g); }
-  .eye {
-    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; font-size: 18px; padding: 8px; cursor: pointer;
-  }
-  .msg { display: none; margin-top: 16px; padding: 12px 14px; border-radius: 10px; font-size: 14px; }
-  .msg.err { display: block; background: rgba(255,107,107,.10); border: 1px solid rgba(255,107,107,.35); color: var(--err); }
-  .msg.ok  { display: block; background: rgba(61,214,140,.10); border: 1px solid rgba(61,214,140,.35); color: var(--ok); }
-  .btn {
-    display: block; width: 100%; margin-top: 22px;
-    padding: 15px 18px; border: none; border-radius: 12px;
-    background: linear-gradient(135deg, #E7C468, var(--g));
-    color: #14100A; font-size: 16px; font-weight: 700;
-    cursor: pointer; box-shadow: 0 6px 24px rgba(212,168,67,.35);
-  }
-  .btn:disabled { opacity: .55; }
-  .btn.link {
-    background: none; box-shadow: none; color: var(--g);
-    font-size: 14px; margin-top: 10px; text-decoration: none; text-align: center;
-  }
-  .foot { margin-top: 28px; color: var(--t2); font-size: 12px; }
-</style>
+<title>Set a new password — SmartStock Pro</title>
+<link rel="icon" href="pwa/icon-192.png">
+<link rel="stylesheet" href="assets/css/auth.css">
 </head>
-<body>
-
-  <div class="brand">SmartStock Pro</div>
-  <div class="brand-sub">Business Management System</div>
-
-  <div class="card">
-    <h1>🔑 Set a New Password</h1>
-    <p class="sub" id="sub-text">Choose a new password for your account.</p>
-
-    <div id="form-area">
-      <label for="pw1">New password (min 8 chars, uppercase + number)</label>
-      <div class="pw-wrap">
-        <input id="pw1" type="password" autocomplete="new-password">
-        <button type="button" class="eye" onclick="toggle('pw1')">👁</button>
-      </div>
-
-      <label for="pw2">Confirm new password</label>
-      <div class="pw-wrap">
-        <input id="pw2" type="password" autocomplete="new-password">
-        <button type="button" class="eye" onclick="toggle('pw2')">👁</button>
-      </div>
-
-      <div id="msg" class="msg"></div>
-
-      <button id="save-btn" class="btn" onclick="savePassword()">Save New Password</button>
-    </div>
-
-    <a class="btn link" href="index.html">← Back to Sign In</a>
+<body class="auth">
+  <div class="au-floor" aria-hidden="true">
+    <span style="--c:0;--r:0;--o:.16"></span><span style="--c:1;--r:0;--o:.09"></span><span style="--c:2;--r:0;--o:.05"></span>
+    <span style="--c:0;--r:1;--o:.10"></span><span style="--c:1;--r:1;--o:.05"></span><span style="--c:0;--r:2;--o:.05"></span>
   </div>
+  <main class="au-wrap">
+    <div class="au-brand">
+      <img src="pwa/icon-192.png" alt="" width="44" height="44">
+      <div class="au-name">SmartStock Pro</div>
+    </div>
+    <p class="au-tagline">Sales, stock and money for your shop, in one place.</p>
 
-  <div class="foot">SmartStock Pro · Rock Stone · Monrovia, Liberia</div>
+    <section class="au-panel">
+      <h1 class="au-h1">Set a new password</h1>
+      <p class="au-lead" id="sub-text">Choose a new password for your account.</p>
 
+      <div id="msg" class="msg" role="status" aria-live="polite"></div>
+
+      <div id="form-area">
+        <div class="fg">
+          <label class="fl" for="pw1">New password</label>
+          <div class="pw-wrap">
+            <input class="fi" id="pw1" type="password" autocomplete="new-password" aria-describedby="pw1-hint">
+            <button type="button" class="pw-eye" aria-label="Show password" aria-pressed="false" onclick="toggle('pw1')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+          <p class="au-hint" id="pw1-hint">At least 8 characters, with a capital letter, a small letter and a number.</p>
+        </div>
+        <div class="fg">
+          <label class="fl" for="pw2">Type it again</label>
+          <div class="pw-wrap">
+            <input class="fi" id="pw2" type="password" autocomplete="new-password">
+            <button type="button" class="pw-eye" aria-label="Show password" aria-pressed="false" onclick="toggle('pw2')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+        </div>
+        <button id="save-btn" type="button" class="btn-primary" onclick="savePassword()">Save new password</button>
+      </div>
+
+      <p class="au-alt"><a class="au-link" href="index.html">Back to sign in</a></p>
+    </section>
+
+    <p class="au-foot">SmartStock Pro V5, made in Monrovia, Liberia</p>
+  </main>
 <script>
 (function () {
   var SUPABASE_AUTH_URL = 'https://ovbtqkpvhivqnnxojjwu.supabase.co/auth/v1';
@@ -128,7 +67,7 @@
   var msg = document.getElementById('msg');
   var formArea = document.getElementById('form-area');
   var subText = document.getElementById('sub-text');
-  var NEW_LINK = ' <a href="forgot.html" style="color:var(--g);font-weight:600">Send me a new link →</a>';
+  var NEW_LINK = ' <a href="forgot.html">Send me a new link</a>';
 
   function linkProblem(text) {
     formArea.style.display = 'none';
@@ -149,7 +88,11 @@
 
   window.toggle = function (id) {
     var el = document.getElementById(id);
-    el.type = el.type === 'password' ? 'text' : 'password';
+    var show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    var eye = el.parentNode.querySelector('.pw-eye');
+    eye.setAttribute('aria-pressed', show ? 'true' : 'false');
+    eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
   };
 
   window.savePassword = function () {
@@ -176,7 +119,7 @@
     pwnedPw(pw1).then(function (pwned) {
       if (pwned) {
         saving = false;
-        btn.disabled = false; btn.textContent = 'Save New Password';
+        btn.disabled = false; btn.textContent = 'Save new password';
         msg.className = 'msg err';
         msg.textContent = 'This password has appeared in a known data breach, so it isn\'t safe to use. Please choose a different one.';
         return;
@@ -223,7 +166,7 @@
     .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
     .then(function (res) {
       saving = false;
-      btn.disabled = false; btn.textContent = 'Save New Password';
+      btn.disabled = false; btn.textContent = 'Save new password';
       if (!res.ok) {
         var code = (res.data && (res.data.error_code || res.data.code)) || '';
         if (res.status === 401 || res.status === 403 || /expired|invalid|jwt/i.test(code + ' ' + (res.data.msg || ''))) {
@@ -244,13 +187,13 @@
       }).catch(function () {});
       params.access_token = null;
       formArea.style.display = 'none';
-      subText.innerHTML = '✅ <strong style="color:var(--ok)">Password updated!</strong><br>For your safety you have been signed out on all devices. Sign in again with your new password.';
+      subText.innerHTML = '<strong style="color:var(--au-ok)">Password updated.</strong> For your safety you have been signed out on every device. Sign in again with your new password.';
     })
     .catch(function () {
       saving = false;
-      btn.disabled = false; btn.textContent = 'Save New Password';
+      btn.disabled = false; btn.textContent = 'Save new password';
       msg.className = 'msg err';
-      msg.textContent = 'Network error — check your connection and try again.';
+      msg.textContent = 'No connection. Check your internet and try again.';
     });
   }
 })();

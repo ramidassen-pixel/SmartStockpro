@@ -69,7 +69,7 @@ var Auth = {
   _loginDone: function() {
     Auth._loggingIn = false;
     var btn = Utils.get('login-submit-btn');
-    if (btn) { btn.disabled = false; btn.textContent = 'Sign In →'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in'; }
   },
 
   // Return to the sign-in screen, optionally with a message. Unless keepSession
@@ -465,16 +465,16 @@ var Auth = {
   _showCheckEmailScreen: function(email) {
     var loginScreen = Utils.get('login-screen');
     if (!loginScreen) return;
-    loginScreen.innerHTML =
-      '<div style="width:100%;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#070A12,#0d1a2e,#070A12);box-sizing:border-box">'
-      + '<div style="width:100%;max-width:420px;background:rgba(13,26,46,.9);border:1px solid rgba(212,168,67,.15);border-radius:20px;padding:24px 20px;box-sizing:border-box;text-align:center">'
-      + '<div style="font-size:52px;margin-bottom:8px">📧</div>'
-      + '<div style="font-size:20px;font-weight:800;color:var(--t1)">Check Your Email</div>'
-      + '<div style="font-size:13px;color:var(--t2);margin:12px 0 20px;line-height:1.7">We sent a confirmation link to<br><strong style="color:var(--g)">' + Utils.esc(email) + '</strong><br><br>Open the email from <strong>SmartStock Pro</strong>, tap the link, then come back here and sign in.<br><br><span style="font-size:12px;color:var(--t3)">Not there after a few minutes? Check your Spam or Promotions folder, or send it again.</span></div>'
-      + '<div id="resend-msg" style="font-size:12px;color:var(--t2);min-height:18px;margin-bottom:10px"></div>'
-      + '<button class="btn-ghost btn-full" id="resend-btn" style="margin-bottom:10px">📨 Resend email</button>'
-      + '<button class="btn-primary btn-full" onclick="location.reload()">← Back to Sign In</button>'
-      + '</div></div>';
+    loginScreen.innerHTML = Auth._statusPage(
+      '<div class="au-status" aria-hidden="true">' + Auth._ICON_MAIL + '</div>'
+      + '<h1 class="au-h1">Check your email</h1>'
+      + '<p class="au-lead">We sent a confirmation link to <strong>' + Utils.esc(email) + '</strong>. Open the email from SmartStock Pro, tap the link, then come back here and sign in.</p>'
+      + '<p class="au-hint" style="margin:0 0 18px">Not there after a few minutes? Look in Spam or Promotions, or send it again.</p>'
+      + '<div id="resend-msg" class="au-live" role="status" aria-live="polite"></div>'
+      + '<div class="au-stack">'
+      + '<button type="button" class="btn-ghost" id="resend-btn">Resend email</button>'
+      + '<button type="button" class="btn-primary" onclick="location.reload()">Back to sign in</button>'
+      + '</div>');
     loginScreen.style.display = 'block';
     loginScreen.classList.remove('hidden');
     var rb = Utils.get('resend-btn');
@@ -503,13 +503,13 @@ var Auth = {
         Auth._resendCountdown(btnId);
         return;
       }
-      if (btn) { btn.disabled = false; btn.textContent = '📨 Resend email'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Resend email'; }
       if (res.status === 429) { Auth._resendUntil = Date.now() + 60000; say('Too many emails. Please wait a minute and try again.', false); }
       else if (res.status >= 500) say('We couldn\'t send the email right now. Try again in a few minutes.', false);
       else say((res.data && (res.data.msg || res.data.error_description)) || 'Could not resend the email.', false);
     })
     .catch(function() {
-      if (btn) { btn.disabled = false; btn.textContent = '📨 Resend email'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Resend email'; }
       say('No connection. Try again when you are online.', false);
     });
   },
@@ -518,7 +518,7 @@ var Auth = {
       var btn = Utils.get(btnId); if (!btn) return;
       var left = Math.ceil((Auth._resendUntil - Date.now()) / 1000);
       if (left > 0) { btn.disabled = true; btn.textContent = 'Resend in ' + left + 's'; setTimeout(tick, 1000); }
-      else { btn.disabled = false; btn.textContent = '📨 Resend email'; }
+      else { btn.disabled = false; btn.textContent = 'Resend email'; }
     };
     tick();
   },
@@ -564,7 +564,7 @@ var Auth = {
         Auth._err('join-err',
           '❌ No business named "' + Utils.esc(bizName) + '" found.<br><br>'
           + '<strong>Is this your first time?</strong><br>'
-          + '👉 Go to <strong>New Biz</strong> tab to register your business.<br><br>'
+          + 'Open the <strong>New business</strong> tab to register your own business.<br><br>'
           + 'If your employer created the business, ask them for the <strong>exact business name</strong>.'
         );
         return;
@@ -618,19 +618,14 @@ var Auth = {
   _showPendingApproval: function(user) {
     var loginScreen = Utils.get('login-screen');
     if (!loginScreen) return;
-    loginScreen.innerHTML = '<div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">'
-      + '<div class="login-card" style="width:100%;max-width:420px">'
-      + '<div style="text-align:center;padding:20px 0">'
-      + '<div style="font-size:64px;margin-bottom:14px">⏳</div>'
-      + '<div class="login-title" style="font-size:20px">Awaiting Approval</div>'
-      + '<div class="login-sub" style="margin-bottom:16px">Your email is confirmed!</div>'
-      + '<div style="background:var(--wab);border:1px solid var(--wabd);border-radius:var(--r12);padding:16px;font-size:13px;color:var(--t1);line-height:1.7;margin-bottom:20px">'
-      + 'Your registration request has been submitted to the Primary Admin.<br><br>'
-      + 'You will be able to sign in once your account is approved.'
-      + '</div>'
-      + '<button class="btn-primary btn-full" style="margin-bottom:10px" onclick="location.reload()">🔄 Check again</button>'
-      + '<button class="btn-ghost btn-full" onclick="Auth._leavePending()">← Sign in with a different account</button>'
-      + '</div></div></div>';
+    loginScreen.innerHTML = Auth._statusPage(
+      '<div class="au-status wait" aria-hidden="true">' + Auth._ICON_CLOCK + '</div>'
+      + '<h1 class="au-h1">Waiting for the owner</h1>'
+      + '<p class="au-lead">Your email is confirmed and your request to join has been sent to the business owner. You can sign in as soon as they approve it.</p>'
+      + '<div class="au-stack">'
+      + '<button type="button" class="btn-primary" onclick="location.reload()">Check again</button>'
+      + '<button type="button" class="btn-ghost" onclick="Auth._leavePending()">Sign in with a different account</button>'
+      + '</div>');
     // On app start the sign-in screen is still hidden behind the loader
     Auth._loginDone();
     App._hide('loader');
@@ -734,11 +729,7 @@ var Auth = {
     });
     tabs.forEach(function(t) {
       var el = Utils.get(t);
-      if (el) {
-        el.classList.remove('active');
-        el.style.background = 'transparent';
-        el.style.color = 'rgba(255,255,255,0.5)';
-      }
+      if (el) { el.classList.remove('active'); el.setAttribute('aria-selected', 'false'); }
     });
     ['login-err','signup-err','join-err'].forEach(function(e) {
       var el = Utils.get(e);
@@ -749,21 +740,41 @@ var Auth = {
     var showForm = Utils.get(formMap[tab]);
     var activeTab= Utils.get(tabMap[tab]);
     if (showForm) { showForm.style.display = 'block'; showForm.classList.remove('hidden'); }
-    if (activeTab) {
-      activeTab.classList.add('active');
-      activeTab.style.background = '#D4A843';
-      activeTab.style.color = '#07080D';
-    }
+    if (activeTab) { activeTab.classList.add('active'); activeTab.setAttribute('aria-selected', 'true'); }
   },
 
   togglePw: function(id) {
     var el = Utils.get(id);
-    if (el) el.type = (el.type === 'password') ? 'text' : 'password';
+    if (!el) return;
+    var show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    var eye = el.parentNode && el.parentNode.querySelector('.pw-eye');
+    if (eye) {
+      eye.setAttribute('aria-pressed', show ? 'true' : 'false');
+      eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    }
   },
 
   /* ═══════════════════════════════════════════════════════
      HELPERS
   ═══════════════════════════════════════════════════════ */
+  // A full sign-in-style page around one status panel (check your email, awaiting approval).
+  // Same frame as the sign-in screen in index.html; styles are in assets/css/auth.css.
+  _statusPage: function(inner) {
+    return '<div class="au-floor" aria-hidden="true">'
+      + '<span style="--c:0;--r:0;--o:.16"></span><span style="--c:1;--r:0;--o:.09"></span><span style="--c:2;--r:0;--o:.05"></span>'
+      + '<span style="--c:0;--r:1;--o:.10"></span><span style="--c:1;--r:1;--o:.05"></span><span style="--c:0;--r:2;--o:.05"></span>'
+      + '</div>'
+      + '<div class="au-scroll"><main class="au-wrap">'
+      + '<div class="au-brand"><img src="pwa/icon-192.png" alt="" width="44" height="44"><div class="au-name">SmartStock Pro</div></div>'
+      + '<p class="au-tagline">Sales, stock and money for your shop, in one place.</p>'
+      + '<section class="au-panel">' + inner + '</section>'
+      + '<p class="au-foot">SmartStock Pro V5, made in Monrovia, Liberia</p>'
+      + '</main></div>';
+  },
+  _ICON_MAIL:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  _ICON_CLOCK: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+
   _err: function(id, msg) {
     var el = Utils.get(id);
     if (el) {
