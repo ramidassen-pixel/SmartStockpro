@@ -9,7 +9,7 @@
   
   [![Live App](https://img.shields.io/badge/Live%20App-GitHub%20Pages-brightgreen)](https://ramidassen-pixel.github.io/SmartStockpro/)
   [![PWA](https://img.shields.io/badge/PWA-Installable-blue)](https://ramidassen-pixel.github.io/SmartStockpro/)
-  [![AI Powered](https://img.shields.io/badge/AI-Claude%20Sonnet-gold)](https://anthropic.com)
+  [![Backend](https://img.shields.io/badge/Backend-Supabase-3ecf8e)](https://supabase.com)
 </div>
 
 ---
@@ -32,6 +32,7 @@ https://ramidassen-pixel.github.io/SmartStockpro/
 - Professional invoice printing (A4)
 - Payment receipt generation
 - Outstanding balance management
+- **Receipt scan:** photograph a handwritten paper receipt (or scan it from the computer with the phone's camera via a QR code) and the New Sale form fills itself. Staff check every line before saving.
 
 ### 📦 Inventory Management
 - Full product CRUD with categories
@@ -67,18 +68,30 @@ https://ramidassen-pixel.github.io/SmartStockpro/
 - Expense analysis by category
 - 6-month revenue trend chart
 - Daily & monthly reports
+- Day and month closing
 
 ### 🤖 AI Business Assistant
-- Powered by Claude Sonnet (Anthropic)
-- Full Daily Business Management Report
-- Real-time analysis of your live data
-- Executive Summary, Health Score /100
-- Actionable recommendations
+- Ask questions about your business in plain English or French
+- Answers come from your real figures: the AI looks them up through read-only database tools, it doesn't guess
+- Daily business report with Executive Summary, Health Score /100 and recommendations
+- Can *propose* a WhatsApp message or a draft purchase order — nothing happens until you confirm
+- Runs on a free AI provider (Google Gemini or Groq) or on Claude (Anthropic), set on the server
+
+### 👔 Team & Businesses
+- Email sign-up; the person who creates a business becomes its owner
+- Staff join an existing business and wait for the owner's approval
+- Roles and permissions for each team member
+- One account can belong to more than one business
+
+### 💳 Plans & Billing
+- Free trial, then **Shop** ($9/month, 1 shop, up to 3 staff) or **Business** ($19/month, up to 10 staff, suppliers, purchase orders, salary)
+- Pay by Mobile Money, then submit the transaction ID in the app; the platform owner approves it
 
 ### ⚙️ More Modules
 - Expense tracking & allocations
 - Salary & payroll management
 - Supplier management
+- Support center
 - Settings with logo & profile upload
 - Dark/Light theme toggle
 - Data export & backup
@@ -90,62 +103,70 @@ https://ramidassen-pixel.github.io/SmartStockpro/
 ```
 SmartStockpro/
 │
-├── index.html                    ← Entry point (links external CSS + JS)
+├── index.html                    ← The app (loads the CSS, assets/js and modules)
+├── landing.html                  ← Public landing page
+├── confirm.html                  ← Email confirmation page
+├── forgot.html                   ← "Send me a reset link" page
+├── reset.html                    ← Set a new password (from the email link)
 ├── sw.js                         ← Service worker (root scope, offline cache)
 ├── README.md
 │
 ├── assets/
-│   ├── css/
-│   │   ├── variables.css         ← Design tokens, colors, animations
-│   │   ├── reset.css             ← CSS reset & base styles
-│   │   ├── layout.css            ← Shell, topbar, nav, modals
-│   │   ├── components.css        ← Forms, buttons, cards, lists
-│   │   ├── pages.css             ← Module-specific styles
-│   │   └── responsive.css        ← Tablet/desktop + print
-│   │
+│   ├── css/                      ← variables, reset, layout, components, pages, responsive, desktop
 │   └── js/
 │       ├── utils.js              ← Utilities & helpers
-│       ├── database.js           ← Cloud-sync database engine (Supabase + localStorage)
-│       ├── auth.js               ← Supabase Auth: login, signup, password reset
+│       ├── icons.js              ← Icon set
+│       ├── qr.js                 ← QR codes (phone-camera receipt scan)
+│       ├── database.js           ← Cloud-sync engine (Supabase + offline cache & upload queue)
+│       ├── auth.js               ← Supabase Auth: sign-in, sign-up, join, confirmation
 │       ├── quickcreate.js        ← Inline supplier/product creation
 │       ├── router.js             ← Page routing
 │       ├── notifications.js      ← Stock & alert system
 │       ├── charts.js             ← Chart helpers
 │       ├── app.js                ← App boot & shell management
 │       ├── rbac.js               ← Role-based access control
-│       ├── platform.js           ← Platform/multi-business layer
+│       ├── platform.js           ← Multi-business layer
 │       ├── globalsearch.js       ← Global search
+│       ├── privacy.js            ← Privacy notice
+│       ├── sidebar.js            ← Desktop sidebar
+│       ├── install.js            ← "Install app" prompt
 │       └── boot.js               ← Splash, error guard, SW registration
 │
 ├── modules/
-│   ├── dashboard/dashboard.js    ← KPIs, breakdown card, toggles
-│   ├── products/products.js      ← Product CRUD
-│   ├── products/stock.js         ← Stock movements
-│   ├── sales/sales.js            ← POS, invoicing, receipts
-│   ├── customers/customers.js    ← Customer profiles
-│   ├── suppliers/
-│   │   ├── suppliers.js          ← Supplier management
-│   │   └── supply.js             ← PO, GRN, bills, reorder
-│   ├── expenses/
-│   │   ├── expenses.js           ← Expense tracking
-│   │   └── allocations.js        ← Recurring cost allocations
-│   ├── salary/salary.js          ← Payroll management
-│   ├── finance/finance.js        ← P&L, cash flow
-│   ├── reports/reports.js        ← Financial & daily reports
-│   ├── quotations/quotations.js  ← Quotation system
-│   ├── ai/ai.js                  ← AI assistant & reports
-│   ├── closing/closing.js        ← Day/month closing
-│   ├── support/support.js        ← Support module
-│   ├── users/usermgmt.js         ← User management
-│   └── settings/
-│       ├── settings.js           ← App configuration
-│       ├── more.js               ← More menu
-│       └── backup.js             ← Data export & backup
+│   ├── dashboard/                ← KPIs, breakdown card, toggles
+│   ├── products/                 ← Product CRUD, stock movements
+│   ├── sales/                    ← POS, invoicing, receipts, receipt scan
+│   ├── customers/                ← Customer profiles
+│   ├── suppliers/                ← Suppliers; PO, GRN, bills, reorder
+│   ├── expenses/                 ← Expenses, recurring cost allocations
+│   ├── salary/                   ← Payroll
+│   ├── finance/                  ← P&L, cash flow
+│   ├── reports/                  ← Financial & daily reports
+│   ├── quotations/               ← Quotations
+│   ├── billing/                  ← Plans & Mobile Money payments
+│   ├── ai/                       ← AI assistant & reports
+│   ├── closing/                  ← Day/month closing
+│   ├── support/                  ← Support center
+│   ├── usermgmt/                 ← User management
+│   └── settings/                 ← Settings, More menu, backup/export
+│
+├── supabase/
+│   ├── functions/                ← Edge Functions (Deno)
+│   │   ├── ai-agent-v2/          ← AI assistant (the one the app uses)
+│   │   ├── ai-agent/, ai-proxy/  ← Older AI endpoints
+│   │   ├── scan-receipt/         ← Reads receipt photos with AI
+│   │   ├── send-email/           ← App emails through the Brevo API
+│   │   └── admin-data/           ← Platform-owner admin & support data
+│   └── migrations/               ← Database changes (security, sales/stock, AI views, plans, backups)
+│
+├── ai-eval/                      ← 45-question test suite for the AI assistant (see ai-eval/README.md)
+├── marketing/                    ← Landing page copy & outreach messages
 │
 └── pwa/
     ├── manifest.json             ← PWA manifest
-    ├── icon-192.png              ← App icon (192×192)  ⚠️ add your icons
-    └── icon-512.png              ← App icon (512×512)  ⚠️ add your icons
+    ├── service-worker.js
+    ├── icon-192.png
+    └── icon-512.png
 ```
 
 ---
@@ -155,8 +176,14 @@ SmartStockpro/
 ### First Time
 1. Open the live app URL
 2. Tap **Create Account**
-3. Enter your **Business Name**, full name, username and password
-4. Start adding products and recording sales
+3. Enter your **Business Name**, your name, **email** and a password
+4. Confirm your email from the link we send (check Spam too)
+5. Sign in and start adding products and recording sales
+
+### Join a Business as Staff
+1. Tap **Create Account** and choose to join an existing business
+2. Search for the business and send your request
+3. The owner approves you, then you can sign in
 
 ### Install as App (Android)
 1. Open in Chrome
@@ -165,8 +192,10 @@ SmartStockpro/
 
 ### Forgot Password
 1. On the login screen, tap **Forgot password?**
-2. Enter your username
-3. Set a new password
+2. Enter your registered **email**
+3. Open the link in the email and set a new password
+
+Passwords found in known data breaches are refused at sign-up, join, reset and change password.
 
 ---
 
@@ -174,10 +203,13 @@ SmartStockpro/
 
 | Layer | Technology |
 |---|---|
-| Frontend | Vanilla JavaScript (ES5+) |
+| Frontend | Vanilla JavaScript, no framework or build step |
 | Styling | Custom CSS with CSS Variables |
-| Storage | localStorage (client-side) |
-| AI | Anthropic Claude Sonnet API |
+| Database & Auth | Supabase (PostgreSQL, row-level security, Auth) |
+| Server code | Supabase Edge Functions (Deno) |
+| Offline | localStorage cache + upload queue, service worker |
+| AI | Google Gemini / Groq (free) or Anthropic Claude, chosen by server secrets |
+| Email | Brevo API |
 | Hosting | GitHub Pages |
 | PWA | Service Worker + Web App Manifest |
 
@@ -185,14 +217,34 @@ SmartStockpro/
 
 ## 📋 Data & Privacy
 
-- All business data is stored **locally on your device** in localStorage
-- No data is sent to any server (except AI queries to Anthropic)
-- Export a backup anytime: Settings → Export Data
-- Import backup: Settings → Import Backup
+- Business data is stored in a **Supabase cloud database**, which is the source of truth. Every business only sees its own records: row-level security enforces this in the database itself.
+- A copy is cached on the device (localStorage) so the app keeps working offline. Changes made offline are queued and uploaded when the connection returns. The top bar shows the sync status.
+- The database is backed up every night at 02:00 (Liberia time). Backups are kept for 30 days in a private schema that the app and the internet cannot read.
+- AI questions and receipt photos are sent to the AI provider configured on the server (Google, Groq or Anthropic) to get an answer. AI keys live only in Supabase secrets, never in the app.
+- App emails (confirmation, password reset) are sent through Brevo.
+- Export a backup anytime: Settings → Export Data. Import: Settings → Import Backup.
 
 ---
 
 ## 🔧 Development
+
+### Run locally
+Serve the folder over HTTP (opening `index.html` directly won't work):
+
+```
+python -m http.server 8766 --bind 127.0.0.1
+```
+
+Then open http://127.0.0.1:8766. The local copy talks to the live Supabase project.
+
+### Supabase
+- Database changes go in `supabase/migrations/` (one dated `.sql` file each).
+- Edge Functions are deployed with JWT verification **on**. AI and email keys are Supabase secrets: `AI_API_KEY` (or `GEMINI_API_KEY` / `GROQ_API_KEY`), `ANTHROPIC_API_KEY`, optional `AI_PROVIDER`, `AI_MODEL`, `SCAN_MODEL`, `BUSINESS_TZ`.
+
+### Test the AI assistant
+See `ai-eval/README.md`: make the day's answer key from the database, then run `ai-eval/run.mjs` to grade the agent on 45 questions.
+
+---
 
 Built by **Ramie** for Rock Stone, Monrovia, Liberia.  
 Developed using Claude AI (Anthropic) as the development assistant.
